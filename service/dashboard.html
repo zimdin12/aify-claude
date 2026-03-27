@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claude Code MCP</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1117;color:#c9d1d9;display:flex;min-height:100vh}
+
+/* Sidebar */
+.sidebar{width:220px;background:#161b22;border-right:1px solid #21262d;padding:16px;flex-shrink:0;display:flex;flex-direction:column}
+.sidebar h1{color:#58a6ff;font-size:1.1em;margin-bottom:4px}
+.sidebar .ver{color:#484f58;font-size:.75em;margin-bottom:20px}
+.nav a{display:block;padding:8px 12px;color:#8b949e;text-decoration:none;border-radius:6px;margin-bottom:2px;font-size:.9em;cursor:pointer}
+.nav a:hover,.nav a.active{background:#21262d;color:#c9d1d9}
+.nav a.active{color:#58a6ff;font-weight:600}
+.sidebar-footer{margin-top:auto;padding-top:12px;border-top:1px solid #21262d;font-size:.75em;color:#484f58}
+
+/* Main */
+.main{flex:1;padding:24px;overflow-y:auto;max-height:100vh}
+.page{display:none}.page.active{display:block}
+
+/* Common */
+h2{color:#58a6ff;margin:0 0 12px;font-size:1.3em}
+h3{color:#c9d1d9;margin:18px 0 8px;font-size:1em}
+.stats{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.sc{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 20px;min-width:130px}
+.sc .n{font-size:2em;font-weight:bold;color:#58a6ff}.sc .l{color:#8b949e;font-size:.8em}
+.sc.warn .n{color:#d29922}.sc.err .n{color:#f85149}.sc.ok .n{color:#3fb950}
+
+table{width:100%;border-collapse:collapse;background:#161b22;border-radius:8px;overflow:hidden;margin-bottom:16px}
+th{background:#21262d;color:#8b949e;text-align:left;padding:8px 12px;font-size:.8em;text-transform:uppercase;letter-spacing:.3px}
+td{padding:8px 12px;border-top:1px solid #21262d;font-size:.85em;vertical-align:top}
+tr:hover{background:#1c2128}
+.t{color:#8b949e;font-size:.82em;white-space:nowrap}
+.mb{color:#8b949e;max-width:400px;word-break:break-word}
+.mu{background:#12201f}.mu td:first-child::before{content:"\25CF ";color:#3fb950}
+.rb{background:#1f6feb33;color:#58a6ff;padding:2px 8px;border-radius:12px;font-size:.8em}
+.tb{padding:2px 8px;border-radius:12px;font-size:.78em;font-weight:500}
+.t-request{background:#da363333;color:#f85149}.t-response{background:#3fb95033;color:#3fb950}
+.t-info{background:#1f6feb33;color:#58a6ff}.t-error{background:#da363366;color:#f85149}
+.t-review{background:#a371f733;color:#a371f7}.t-approval{background:#3fb95033;color:#3fb950}
+.st-idle{color:#8b949e}.st-working{color:#d29922}.st-completed{color:#3fb950}
+.st-failed,.st-error{color:#f85149}.st-stale{color:#da3633}
+.em{color:#484f58;font-style:italic;padding:16px;text-align:center}
+.fb{margin:8px 0 12px;display:flex;gap:8px;flex-wrap:wrap}
+.fb input,.fb select{background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:6px 10px;border-radius:6px;font-size:.85em}
+.fb input:focus,.fb select:focus{border-color:#58a6ff;outline:none}
+
+/* Buttons */
+.btn{background:#21262d;color:#c9d1d9;border:1px solid #30363d;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:.85em}
+.btn:hover{background:#30363d}.btn-primary{background:#1f6feb;border-color:#1f6feb;color:#fff}
+.btn-primary:hover{background:#388bfd}.btn-danger{background:#da3633;border-color:#da3633;color:#fff}
+.btn-danger:hover{background:#f85149}
+.btn-sm{padding:3px 8px;font-size:.78em}
+.btn-row{display:flex;gap:8px;margin:12px 0}
+
+/* Settings form */
+.form-group{margin-bottom:14px}
+.form-group label{display:block;color:#8b949e;font-size:.82em;margin-bottom:4px}
+.form-group input,.form-group select{background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:8px 12px;border-radius:6px;font-size:.9em;width:280px}
+.form-group input:focus{border-color:#58a6ff;outline:none}
+.form-group .hint{color:#484f58;font-size:.75em;margin-top:2px}
+.toast{position:fixed;top:16px;right:16px;background:#3fb950;color:#0d1117;padding:10px 18px;border-radius:8px;font-size:.85em;display:none;z-index:100}
+
+/* Instructions */
+.instructions{max-width:700px}
+.instructions code{background:#161b22;padding:2px 6px;border-radius:4px;font-size:.85em;color:#79c0ff}
+.instructions pre{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:14px;margin:10px 0;overflow-x:auto;font-size:.82em;color:#c9d1d9}
+.instructions p{margin:8px 0;line-height:1.5;color:#8b949e}
+.instructions li{margin:4px 0;line-height:1.5;color:#8b949e}
+.instructions ul{padding-left:20px;margin:8px 0}
+.instructions h3{color:#58a6ff;margin-top:20px}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <h1>Claude Code MCP</h1>
+  <div class="ver">v2.0.0</div>
+  <div class="nav">
+    <a onclick="showPage('dashboard')" id="nav-dashboard" class="active">Dashboard</a>
+    <a onclick="showPage('instructions')" id="nav-instructions">Instructions</a>
+    <a onclick="showPage('settings')" id="nav-settings">Settings</a>
+  </div>
+  <div class="sidebar-footer">
+    <div id="status-dot" style="color:#3fb950">&#x25CF; Connected</div>
+    <div id="last-update" style="margin-top:4px"></div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="toast" id="toast"></div>
+
+  <!-- ============ DASHBOARD PAGE ============ -->
+  <div class="page active" id="page-dashboard">
+    <h2>Dashboard</h2>
+    <div class="stats" id="stats-cards"></div>
+
+    <h3>Agents</h3>
+    <div id="agents-table"></div>
+
+    <h3>Messages</h3>
+    <div class="fb">
+      <input id="mf" placeholder="Filter messages..." oninput="filterMessages()">
+      <select id="tf" onchange="filterMessages()"><option value="">All types</option>
+        <option>request</option><option>response</option><option>info</option>
+        <option>error</option><option>review</option><option>approval</option></select>
+      <select id="rf" onchange="filterMessages()"><option value="">All</option>
+        <option value="unread">Unread</option><option value="read">Read</option></select>
+    </div>
+    <div id="messages-table"></div>
+
+    <h3>Shared Files</h3>
+    <div id="files-table"></div>
+
+    <div class="btn-row">
+      <button class="btn" onclick="runRotation()">Run Rotation</button>
+      <button class="btn btn-danger" onclick="clearAll()">Clear All Data</button>
+    </div>
+  </div>
+
+  <!-- ============ INSTRUCTIONS PAGE ============ -->
+  <div class="page" id="page-instructions">
+    <h2>Instructions</h2>
+    <div class="instructions">
+      <h3>What is this?</h3>
+      <p>This is the <b>Claude Code MCP message bus</b> — a central server that lets multiple Claude Code instances communicate with each other across any machine or environment.</p>
+
+      <h3>Quick Setup</h3>
+      <p>1. Install the MCP server in Claude Code:</p>
+      <pre>claude mcp add --scope user claude-code \
+  -e CLAUDE_MCP_SERVER_URL=http://THIS_SERVER:8800 \
+  -- node "/path/to/claude-code-mcp/index.js"</pre>
+      <p>2. Restart Claude Code, then register as an agent:</p>
+      <pre>/claude-code:register my-agent coder</pre>
+
+      <h3>Slash Commands</h3>
+      <ul>
+        <li><code>/claude-code:register &lt;id&gt; &lt;role&gt;</code> — Register as an agent</li>
+        <li><code>/claude-code:agents</code> — List all agents</li>
+        <li><code>/claude-code:send &lt;to&gt; &lt;message&gt;</code> — Send a message</li>
+        <li><code>/claude-code:inbox</code> — Check your inbox (unread only)</li>
+        <li><code>/claude-code:search &lt;query&gt;</code> — Search messages &amp; files</li>
+        <li><code>/claude-code:share &lt;file&gt;</code> — Share a file/artifact</li>
+        <li><code>/claude-code:files</code> — List shared files</li>
+        <li><code>/claude-code:dispatch &lt;role&gt; &lt;task&gt;</code> — Spawn an agent for a task</li>
+        <li><code>/claude-code:dashboard</code> — Open this dashboard</li>
+        <li><code>/claude-code:clear &lt;target&gt;</code> — Clear data</li>
+      </ul>
+
+      <h3>How Messaging Works</h3>
+      <p><code>cc_send</code> delivers short messages to an agent's inbox (like Slack DMs). <code>cc_share</code> puts files in a shared space (like a shared drive). Messages are marked as read when viewed, not deleted — they're cleaned up by the rotation policy.</p>
+
+      <h3>Dispatch</h3>
+      <p><code>cc_dispatch</code> spawns a brand new Claude Code instance to handle a task. The spawned agent works in the background and sends results back to your inbox when done.</p>
+
+      <h3>Two Modes</h3>
+      <ul>
+        <li><b>Local</b> (default) — Messages stored in <code>.messages/</code> on disk. Same-machine only.</li>
+        <li><b>Remote</b> — Set <code>CLAUDE_MCP_SERVER_URL</code> to point at this server. Cross-machine.</li>
+      </ul>
+
+      <h3>API Endpoints</h3>
+      <ul>
+        <li><code>GET /health</code> — Health check</li>
+        <li><code>GET /api/v1/agents</code> — List agents</li>
+        <li><code>POST /api/v1/agents</code> — Register agent</li>
+        <li><code>POST /api/v1/messages/send</code> — Send message</li>
+        <li><code>GET /api/v1/messages/inbox/{id}</code> — Check inbox</li>
+        <li><code>GET /api/v1/messages/search</code> — Search</li>
+        <li><code>GET/POST /api/v1/shared</code> — List/upload artifacts</li>
+        <li><code>GET/PUT /api/v1/settings</code> — View/update settings</li>
+        <li><code>POST /api/v1/rotate</code> — Run message rotation</li>
+        <li><code>GET /api/v1/stats</code> — Aggregate statistics</li>
+        <li><code>POST /api/v1/clear</code> — Clear data</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============ SETTINGS PAGE ============ -->
+  <div class="page" id="page-settings">
+    <h2>Settings</h2>
+    <form id="settings-form" onsubmit="saveSettings(event)">
+      <div class="form-group">
+        <label>Message Retention (days)</label>
+        <input type="number" id="s-retention" min="1" max="3650">
+        <div class="hint">Messages older than this are deleted during rotation. Default: 90</div>
+      </div>
+      <div class="form-group">
+        <label>Max Messages Per Agent</label>
+        <input type="number" id="s-max-msgs" min="10" max="100000">
+        <div class="hint">Oldest messages trimmed when inbox exceeds this. Default: 1000</div>
+      </div>
+      <div class="form-group">
+        <label>Max Shared Files Size (MB)</label>
+        <input type="number" id="s-max-shared" min="10" max="100000">
+        <div class="hint">Oldest files deleted when total exceeds this. Default: 500</div>
+      </div>
+      <div class="form-group">
+        <label>Stale Agent Threshold (hours)</label>
+        <input type="number" id="s-stale" min="1" max="8760">
+        <div class="hint">Agents not seen for this long are marked stale. Default: 24</div>
+      </div>
+      <div class="form-group">
+        <label>Dashboard Refresh (seconds)</label>
+        <input type="number" id="s-refresh" min="5" max="300">
+        <div class="hint">How often this dashboard auto-updates. Default: 15</div>
+      </div>
+      <div class="form-group">
+        <label>Auto-Rotation</label>
+        <select id="s-rotation">
+          <option value="true">Enabled</option>
+          <option value="false">Disabled</option>
+        </select>
+        <div class="hint">Whether the rotation policy is active</div>
+      </div>
+      <div class="btn-row">
+        <button type="submit" class="btn btn-primary">Save Settings</button>
+        <button type="button" class="btn" onclick="loadSettings()">Reset</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const API = '/api/v1';
+let refreshInterval;
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+}
+
+function toast(msg, color) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = color || '#3fb950';
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+function fmtTime(ts) {
+  if (!ts) return '?';
+  const d = new Date(ts);
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+function fmtSize(b) {
+  if (b > 1048576) return (b/1048576).toFixed(1) + ' MB';
+  if (b > 1024) return (b/1024).toFixed(1) + ' KB';
+  return b + ' B';
+}
+
+// ─── Dashboard data ──────────────────────────────
+
+async function refreshDashboard() {
+  try {
+    const [statsRes, agentsRes, sharedRes] = await Promise.all([
+      fetch(API + '/stats').then(r => r.json()),
+      fetch(API + '/agents').then(r => r.json()),
+      fetch(API + '/shared').then(r => r.json()),
+    ]);
+
+    // Stats cards
+    document.getElementById('stats-cards').innerHTML =
+      `<div class="sc"><div class="n">${statsRes.agents}</div><div class="l">Agents</div></div>` +
+      `<div class="sc${statsRes.unread_messages ? ' warn' : ''}"><div class="n">${statsRes.unread_messages}</div><div class="l">Unread</div></div>` +
+      `<div class="sc"><div class="n">${statsRes.total_messages}</div><div class="l">Total Messages</div></div>` +
+      `<div class="sc"><div class="n">${statsRes.messages_today}</div><div class="l">Today</div></div>` +
+      `<div class="sc"><div class="n">${statsRes.shared_files}</div><div class="l">Files</div></div>` +
+      `<div class="sc"><div class="n">${statsRes.shared_size_mb}</div><div class="l">MB Used</div></div>`;
+
+    // Agents table
+    const agents = Object.entries(agentsRes.agents || {});
+    if (!agents.length) {
+      document.getElementById('agents-table').innerHTML = '<p class="em">No agents registered.</p>';
+    } else {
+      let html = '<table><thead><tr><th>ID</th><th>Role</th><th>Name</th><th>Status</th><th>Unread</th><th>Last Seen</th><th></th></tr></thead><tbody>';
+      for (const [id, info] of agents) {
+        const st = info.status || 'idle';
+        html += `<tr><td><b>${esc(id)}</b></td><td><span class="rb">${esc(info.role)}</span></td>` +
+          `<td>${esc(info.name)}</td><td><span class="st-${st}">${st}</span></td>` +
+          `<td>${info.unread || 0}</td><td class="t">${esc(info.lastSeen)}</td>` +
+          `<td><button class="btn btn-sm btn-danger" onclick="deleteAgent('${esc(id)}')">Remove</button></td></tr>`;
+      }
+      html += '</tbody></table>';
+      document.getElementById('agents-table').innerHTML = html;
+    }
+
+    // Messages — fetch all inboxes
+    let allMsgs = [];
+    for (const [id] of agents) {
+      try {
+        const inbox = await fetch(API + '/messages/inbox/' + id + '?filter=all&limit=200').then(r => r.json());
+        for (const m of inbox.messages) { m._to = id; allMsgs.push(m); }
+      } catch(e) {}
+    }
+    allMsgs.sort((a,b) => (b.timestamp||0) - (a.timestamp||0));
+    window._allMsgs = allMsgs;
+
+    renderMessages(allMsgs);
+
+    // Shared files
+    const files = sharedRes.files || [];
+    if (!files.length) {
+      document.getElementById('files-table').innerHTML = '<p class="em">No shared files.</p>';
+    } else {
+      let html = '<table><thead><tr><th>Name</th><th>From</th><th>Size</th><th>Description</th><th>Shared At</th><th></th></tr></thead><tbody>';
+      for (const f of files) {
+        html += `<tr><td><b>${esc(f.name)}</b></td><td>${esc(f.from)}</td>` +
+          `<td>${fmtSize(f.size)}</td><td>${esc(f.description)}</td>` +
+          `<td class="t">${esc(f.sharedAt)}</td>` +
+          `<td><button class="btn btn-sm btn-danger" onclick="deleteFile('${esc(f.name)}')">Delete</button></td></tr>`;
+      }
+      html += '</tbody></table>';
+      document.getElementById('files-table').innerHTML = html;
+    }
+
+    document.getElementById('last-update').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+    document.getElementById('status-dot').style.color = '#3fb950';
+    document.getElementById('status-dot').innerHTML = '&#x25CF; Connected';
+  } catch(e) {
+    document.getElementById('status-dot').style.color = '#f85149';
+    document.getElementById('status-dot').innerHTML = '&#x25CF; Disconnected';
+  }
+}
+
+function renderMessages(msgs) {
+  if (!msgs.length) {
+    document.getElementById('messages-table').innerHTML = '<p class="em">No messages.</p>';
+    return;
+  }
+  let html = '<table id="mt"><thead><tr><th>Time</th><th>From</th><th>To</th><th>Type</th><th>Subject</th><th>Body</th></tr></thead><tbody>';
+  for (const m of msgs.slice(0, 200)) {
+    const cls = m.read ? 'mr' : 'mu';
+    html += `<tr class="${cls}"><td class="t">${fmtTime(m.timestamp)}</td>` +
+      `<td>${esc(m.from)}</td><td>${esc(m._to)}</td>` +
+      `<td><span class="tb t-${esc(m.type||'info')}">${esc(m.type)}</span></td>` +
+      `<td><b>${esc(m.subject)}</b></td>` +
+      `<td class="mb">${esc((m.body||'').slice(0,200))}</td></tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('messages-table').innerHTML = html;
+}
+
+function filterMessages() {
+  const text = document.getElementById('mf').value.toLowerCase();
+  const type = document.getElementById('tf').value;
+  const read = document.getElementById('rf').value;
+  const rows = document.querySelectorAll('#mt tbody tr');
+  rows.forEach(r => {
+    const c = r.textContent.toLowerCase();
+    const isUnread = r.classList.contains('mu');
+    const badge = r.querySelector('.tb');
+    const ok = (!text || c.includes(text)) &&
+               (!type || badge?.textContent === type) &&
+               (!read || (read==='unread'&&isUnread) || (read==='read'&&!isUnread));
+    r.style.display = ok ? '' : 'none';
+  });
+}
+
+// ─── Actions ──────────────────────────────
+
+async function deleteAgent(id) {
+  if (!confirm('Remove agent "' + id + '"?')) return;
+  await fetch(API + '/agents/' + id, {method:'DELETE'});
+  toast('Agent removed');
+  refreshDashboard();
+}
+
+async function deleteFile(name) {
+  if (!confirm('Delete "' + name + '"?')) return;
+  await fetch(API + '/shared/' + name, {method:'DELETE'});
+  toast('File deleted');
+  refreshDashboard();
+}
+
+async function runRotation() {
+  const r = await fetch(API + '/rotate', {method:'POST'}).then(r=>r.json());
+  if (r.ok) {
+    const s = r.stats;
+    toast(`Rotated: ${s.expired_messages} expired, ${s.trimmed_messages} trimmed, ${s.expired_files} files`);
+    refreshDashboard();
+  } else {
+    toast(r.reason || 'Rotation failed', '#f85149');
+  }
+}
+
+async function clearAll() {
+  if (!confirm('Clear ALL agents, messages, and shared files?')) return;
+  await fetch(API + '/clear', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({target:'all'})});
+  toast('All data cleared');
+  refreshDashboard();
+}
+
+// ─── Settings ──────────────────────────────
+
+async function loadSettings() {
+  const s = await fetch(API + '/settings').then(r=>r.json());
+  document.getElementById('s-retention').value = s.retention_days;
+  document.getElementById('s-max-msgs').value = s.max_messages_per_agent;
+  document.getElementById('s-max-shared').value = s.max_shared_size_mb;
+  document.getElementById('s-stale').value = s.stale_agent_hours;
+  document.getElementById('s-refresh').value = s.dashboard_refresh_seconds;
+  document.getElementById('s-rotation').value = String(s.rotation_enabled);
+
+  // Apply refresh interval
+  if (refreshInterval) clearInterval(refreshInterval);
+  refreshInterval = setInterval(refreshDashboard, s.dashboard_refresh_seconds * 1000);
+}
+
+async function saveSettings(e) {
+  e.preventDefault();
+  const body = {
+    retention_days: parseInt(document.getElementById('s-retention').value),
+    max_messages_per_agent: parseInt(document.getElementById('s-max-msgs').value),
+    max_shared_size_mb: parseInt(document.getElementById('s-max-shared').value),
+    stale_agent_hours: parseInt(document.getElementById('s-stale').value),
+    dashboard_refresh_seconds: parseInt(document.getElementById('s-refresh').value),
+    rotation_enabled: document.getElementById('s-rotation').value === 'true',
+  };
+  await fetch(API + '/settings', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  toast('Settings saved');
+  loadSettings();
+}
+
+// ─── Init ──────────────────────────────
+
+refreshDashboard();
+loadSettings();
+</script>
+</body>
+</html>
