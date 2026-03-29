@@ -1,14 +1,25 @@
 {
-  "name": "aify-mcp-stdio",
-  "version": "0.1.0",
-  "description": "Host-side MCP server (stdio transport) for aify container service",
-  "main": "server.js",
+  "name": "claude-code-mcp",
+  "version": "2.0.0",
+  "description": "MCP server for Claude Code inter-agent communication, task spawning, and orchestration",
   "type": "module",
-  "scripts": {
-    "start": "node server.js"
+  "main": "index.js",
+  "bin": {
+    "claude-code-mcp": "./index.js"
   },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "mcp",
+    "claude-code",
+    "agent",
+    "multi-agent",
+    "orchestration"
+  ],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
-    "zod": "^3.23.0"
+    "@modelcontextprotocol/sdk": "^1.28.0"
   }
 }
