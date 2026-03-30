@@ -1,8 +1,8 @@
 # aify-claude
 
-Inter-agent communication hub for Claude Code instances. Message bus, task dispatch, shared artifacts, and a live dashboard — all in a Docker container.
+Inter-agent communication hub for Claude Code. Messaging, group chat (channels), file sharing, triggering, and a live dashboard — all in a Docker container.
 
-Multiple Claude Code instances on any machine can register as agents, send messages, share files, dispatch tasks to each other, and monitor everything through a web dashboard.
+Multiple Claude Code instances can register as agents, send messages, share files, chat in channels, trigger each other, and monitor everything through a web dashboard.
 
 Built on [aify-container](https://github.com/zimdin12/aify-container).
 
@@ -11,185 +11,158 @@ Built on [aify-container](https://github.com/zimdin12/aify-container).
 ```bash
 git clone https://github.com/zimdin12/aify-claude.git
 cd aify-claude
-bash setup.sh                     # Copy config templates
-docker compose up -d --build      # Start the service
+bash setup.sh
+docker compose up -d --build
 # Dashboard: http://localhost:8800/api/v1/dashboard
 ```
 
 ### Connect Claude Code
 
-Run these commands on any machine that has Claude Code installed.
-If the server is on the same machine, use `localhost`. Otherwise, replace with the server's IP.
-
 ```bash
-# 1. Clone the repo and install dependencies
-git clone https://github.com/zimdin12/aify-claude.git
+# 1. Install MCP client
 cd aify-claude/mcp/stdio
 npm install
 
-# 2. Register with Claude Code
-#    Same machine as the Docker server:
+# 2. Register with Claude Code (same machine)
 claude mcp add --scope user aify-claude \
   -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
   -- node "$HOME/aify-claude/mcp/stdio/server.js"
 
-#    Different machine (replace 192.168.1.100 with your server's IP):
+# Remote server — replace with server IP:
 # claude mcp add --scope user aify-claude \
 #   -e CLAUDE_MCP_SERVER_URL=http://192.168.1.100:8800 \
 #   -- node "$HOME/aify-claude/mcp/stdio/server.js"
 
-#    With API key (if you set API_KEY in .env on the server):
+# With API key:
 # claude mcp add --scope user aify-claude \
 #   -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
-#   -e CLAUDE_MCP_API_KEY=your-secret-key \
+#   -e CLAUDE_MCP_API_KEY=your-secret \
 #   -- node "$HOME/aify-claude/mcp/stdio/server.js"
 
-# 3. Install slash commands (optional but recommended)
+# 3. Install slash commands (optional)
 cd ~/aify-claude
 mkdir -p ~/.claude/commands/aify-claude
 cp .claude/commands/*.md ~/.claude/commands/aify-claude/
 
-# 4. Restart Claude Code (close and reopen), then try:
+# 4. Restart Claude Code, then:
 #    /aify-claude:register my-agent coder
 #    /aify-claude:agents
 #    /aify-claude:dashboard
 ```
 
-> **Windows users**: Replace `$HOME/aify-claude` with the full path where you cloned the repo, e.g. `C:/Users/yourname/aify-claude`.
+> **Windows**: Replace `$HOME/aify-claude` with full path, e.g. `C:/Users/yourname/aify-claude`
 
 ## Architecture
 
 ```
-Claude Code (any machine)          Claude Code (any machine)
-     |                                   |
-     | MCP server (mcp/stdio/server.js)  | MCP server
-     |                                   |
-     └────────── HTTP ──────────────────┘
-                    |
-                    v
-          ┌─────────────────────┐
-          │   aify-claude       │
-          │   Docker container  │
-          │   FastAPI :8800     │
-          │                     │
-          │   /data/            │
-          │     agents.json     │
-          │     inbox/          │
-          │     shared/         │
-          │     settings.json   │
-          └─────────────────────┘
+Claude Code (any machine)         Claude Code (any machine)
+     |                                  |
+     | MCP client (server.js)           | MCP client (server.js)
+     |                                  |
+     └─────────── HTTP ────────────────┘
+                   |
+                   v
+         ┌──────────────────────┐
+         │  aify-claude         │
+         │  Docker, port 8800   │
+         │                      │
+         │  agents, inboxes,    │
+         │  channels, shared    │
+         │  files, settings,    │
+         │  dashboard           │
+         └──────────────────────┘
 ```
 
-## MCP Tools (16)
+## Tools (15)
 
-### Spawning — run child Claude Code instances
+### Messaging
 | Tool | Description |
 |------|-------------|
-| `cc_run` | One-shot prompt to a new instance |
-| `cc_parallel` | Run N prompts concurrently |
-| `cc_review` | Code review via child instance |
-| `cc_status` | CLI health check |
+| **cc_register** | Register as agent with ID, role, cwd, model, instructions |
+| **cc_agents** | List agents with unread counts |
+| **cc_send** | Send message. `trigger=true` spawns local Claude instance |
+| **cc_inbox** | Check inbox (unread only, marks read, limit 20) |
+| **cc_search** | Search messages and shared artifacts |
 
-### Messaging — agent-to-agent communication
+### Channels (group chat)
 | Tool | Description |
 |------|-------------|
-| `cc_register` | Register as agent with ID and role |
-| `cc_agents` | List agents with status and unread counts |
-| `cc_send` | Send message (Slack-style DM) |
-| `cc_inbox` | Check inbox (unread only, marks as read) |
-| `cc_search` | Search messages and artifacts |
+| **cc_channel_create** | Create a channel |
+| **cc_channel_join** | Join a channel |
+| **cc_channel_send** | Post to channel (all members see it) |
+| **cc_channel_read** | Read channel messages |
+| **cc_channel_list** | List all channels |
 
-### Sharing — pass files between agents
+### File sharing
 | Tool | Description |
 |------|-------------|
-| `cc_share` | Share text/files/images to shared space |
-| `cc_read` | Read a shared artifact |
-| `cc_files` | List shared artifacts |
-
-### Dispatch — spawn + assign
-| Tool | Description |
-|------|-------------|
-| `cc_dispatch` | Spawn agent for task (background) |
-| `cc_dispatch_wait` | Same, but wait for result |
+| **cc_share** | Share text, files, or images to shared space |
+| **cc_read** | Read a shared artifact |
+| **cc_files** | List shared artifacts |
 
 ### Management
 | Tool | Description |
 |------|-------------|
-| `cc_clear` | Clear data with optional age filter |
-| `cc_dashboard` | Open dashboard in browser |
+| **cc_clear** | Clear data with optional age filter |
+| **cc_dashboard** | Open dashboard in browser |
+
+## Trigger
+
+`cc_send` with `trigger=true` delivers the message AND spawns a Claude Code instance locally:
+
+```
+Agent A: cc_send(to="tester", body="run tests", trigger=true)
+  → message delivered to tester's inbox
+  → claude --print spawned locally with tester's registered role/cwd/instructions
+  → result sent back to Agent A's inbox
+```
+
+Only works on the **same machine** (the MCP client spawns the process). Cross-machine: message is delivered, but the receiver acts on it when they check inbox.
 
 ## Dashboard
 
-Live web dashboard at `http://localhost:8800/api/v1/dashboard`:
-
-- **Dashboard** — agents, messages, shared files, stats, bulk actions
+Live at `http://localhost:8800/api/v1/dashboard` with 3 pages:
+- **Dashboard** — agents, messages, files, stats, actions
 - **Instructions** — setup guide, slash commands, API reference
-- **Settings** — retention, rotation, refresh interval
-
-Auto-refreshes. Dark theme. Configurable.
+- **Settings** — retention (90d), max messages (1000), rotation, refresh interval
 
 ## Settings
 
-Persisted to `/data/settings.json`, configurable via dashboard or API:
-
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `retention_days` | 90 | Auto-delete messages older than this |
+| `retention_days` | 90 | Auto-delete old messages |
 | `max_messages_per_agent` | 1000 | Trim oldest when exceeded |
 | `max_shared_size_mb` | 500 | Delete oldest files when exceeded |
-| `stale_agent_hours` | 24 | Mark agents stale after this |
-| `dashboard_refresh_seconds` | 15 | Dashboard auto-refresh interval |
-| `rotation_enabled` | true | Enable/disable auto-rotation |
+| `stale_agent_hours` | 24 | Mark agents stale |
+| `dashboard_refresh_seconds` | 15 | Auto-refresh interval |
+| `rotation_enabled` | true | Enable/disable rotation |
 
 ## API
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/health` | GET | Health check |
-| `/api/v1/agents` | GET/POST | List/register agents |
-| `/api/v1/agents/{id}` | DELETE | Remove agent |
+| `/api/v1/agents` | GET/POST/DELETE | Agents |
 | `/api/v1/messages/send` | POST | Send message |
 | `/api/v1/messages/inbox/{id}` | GET | Check inbox |
 | `/api/v1/messages/search` | GET | Search |
-| `/api/v1/shared` | GET/POST | List/upload artifacts |
-| `/api/v1/shared/{name}` | GET/DELETE | Download/delete artifact |
-| `/api/v1/settings` | GET/PUT | View/update settings |
-| `/api/v1/rotate` | POST | Run message rotation |
-| `/api/v1/stats` | GET | Aggregate statistics |
+| `/api/v1/shared` | GET/POST | Artifacts |
+| `/api/v1/shared/{name}` | GET/DELETE | Single artifact |
+| `/api/v1/channels` | GET/POST | Channels |
+| `/api/v1/channels/{name}` | GET/DELETE | Single channel |
+| `/api/v1/channels/{name}/join` | POST | Join |
+| `/api/v1/channels/{name}/send` | POST | Post message |
+| `/api/v1/settings` | GET/PUT | Settings |
+| `/api/v1/rotate` | POST | Run rotation |
+| `/api/v1/stats` | GET | Statistics |
 | `/api/v1/clear` | POST | Clear data |
 | `/api/v1/dashboard` | GET | Web dashboard |
 
-## Two Modes
+## Security
 
-The MCP client (`mcp/stdio/server.js`) supports:
-
-- **Remote** (recommended) — `CLAUDE_MCP_SERVER_URL=http://host:8800` → talks to this Docker service
-- **Local** (fallback) — no URL set → uses filesystem `.messages/` directory, same-machine only
-
-## Project Structure
-
-```
-aify-claude/
-├── Dockerfile                    # Container image
-├── docker-compose.yml            # Production compose
-├── .env                          # Config (ports, project name)
-├── service/
-│   ├── main.py                   # FastAPI entry point
-│   ├── config.py                 # Config loader
-│   ├── dashboard.html            # SPA dashboard
-│   └── routers/
-│       ├── api.py                # Message bus API
-│       ├── health.py             # Health/readiness
-│       └── containers.py        # Container management
-├── mcp/
-│   └── stdio/
-│       ├── server.js             # MCP client for Claude Code
-│       └── package.json
-├── .claude/commands/             # Slash commands (16)
-├── config/                       # Service config
-├── integrations/                 # Claude Code, OpenClaw, Open WebUI
-└── scripts/                      # Utility scripts
-```
+- **API key** (optional): Set `API_KEY` in `.env`. Clients need `CLAUDE_MCP_API_KEY` env var.
+- **Prompt injection protection**: Message bodies wrapped in code fences with safety warnings.
+- Leave `API_KEY` empty for no auth (local use).
 
 ## License
 

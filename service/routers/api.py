@@ -82,6 +82,7 @@ class MessageSend(BaseModel):
     subject: str
     body: str
     inReplyTo: Optional[str] = None
+    trigger: bool = False  # If true, spawn a Claude Code instance to handle this message
 
 class ClearRequest(BaseModel):
     target: str  # inbox, shared, agents, all, channels

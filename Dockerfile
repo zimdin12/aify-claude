@@ -1,20 +1,27 @@
 FROM python:3.12-slim
 
-# System dependencies (extend as needed for your service)
+# System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user with docker group access
-# The GID should match the host's docker group - override via DOCKER_GID build arg
+# Install Node.js 20 (needed for Claude Code CLI)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Claude Code CLI globally
+RUN npm install -g @anthropic-ai/claude-code
+
+# Create non-root user
 ARG DOCKER_GID=999
 RUN groupadd -g ${DOCKER_GID} docker 2>/dev/null || true && \
     useradd -m -s /bin/bash service && \
     usermod -aG docker service && \
-    mkdir -p /app /data && \
-    chown -R service:service /app /data
+    mkdir -p /app /data /home/service/.claude && \
+    chown -R service:service /app /data /home/service/.claude
 
 WORKDIR /app
 
@@ -22,19 +29,25 @@ WORKDIR /app
 COPY service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install MCP client dependencies
+COPY mcp/stdio/package.json ./mcp/stdio/
+RUN cd mcp/stdio && npm install
+
 # Copy service code
 COPY service/ ./service/
 COPY mcp/ ./mcp/
 COPY config/ ./config/
 
-# The /data directory is where named volumes mount for persistence
 VOLUME /data
+
+# Mount point for Claude auth — mount ~/.claude from host
+# docker-compose.yml maps this automatically
+VOLUME /home/service/.claude
 
 EXPOSE 8800
 
 USER service
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:8800/health || exit 1
 

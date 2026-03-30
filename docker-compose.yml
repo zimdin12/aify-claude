@@ -21,6 +21,9 @@ services:
       - ./config:/app/config:ro
       # Docker socket: allows the container manager to start/stop sub-containers
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Mount Claude Code auth from host — enables trigger/dispatch inside container
+      # Uses your Max subscription, no API key needed
+      - ${CLAUDE_CONFIG_DIR:-~/.claude}:/home/service/.claude:ro
     env_file:
       - .env
     environment:

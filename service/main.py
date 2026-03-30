@@ -99,9 +99,6 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.error(f"Container manager init failed: {e}")
 
-    # TODO: Initialize your service resources here
-    #   app.state.my_resource = await create_resource()
-
     # Mount MCP server if enabled
     if config.mcp_enabled:
         try:

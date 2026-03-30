@@ -1,124 +1,80 @@
-# aify-claude
+# aify-claude v3
 
-Inter-agent communication hub for Claude Code. Message bus + task dispatch + dashboard in Docker.
+Inter-agent communication hub for Claude Code. Messaging, channels (group chat), file sharing, triggering, and dashboard.
 
 ## First-time Setup
 
-When setting this up, determine the ABSOLUTE PATH to this repo first. All commands below use that path.
-On Linux/Mac: use $HOME/aify-claude. On Windows: use the full path like C:/Users/name/aify-claude.
+Determine the ABSOLUTE PATH to this repo. On Linux/Mac: `$HOME/aify-claude`. On Windows: `C:/Users/name/aify-claude`.
 
 ### Option A: Server + Client (same machine, most common)
 ```bash
-# Start the Docker server
 bash setup.sh
 docker compose up -d --build
-
-# Install MCP client
 cd mcp/stdio && npm install && cd ../..
-
-# Register with Claude Code (localhost since same machine)
 claude mcp add --scope user aify-claude \
   -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
-  -- node "ABSOLUTE_PATH_TO_REPO/mcp/stdio/server.js"
-
-# Install slash commands
+  -- node "ABSOLUTE_PATH/mcp/stdio/server.js"
 mkdir -p ~/.claude/commands/aify-claude
 cp .claude/commands/*.md ~/.claude/commands/aify-claude/
 ```
 
 ### Option B: Client only (connect to remote server)
 ```bash
-# Install MCP client
 cd mcp/stdio && npm install && cd ../..
-
-# Register with Claude Code (replace SERVER_IP with the actual IP)
 claude mcp add --scope user aify-claude \
   -e CLAUDE_MCP_SERVER_URL=http://SERVER_IP:8800 \
-  -- node "ABSOLUTE_PATH_TO_REPO/mcp/stdio/server.js"
-
-# If the server has an API key set:
-# claude mcp add --scope user aify-claude \
-#   -e CLAUDE_MCP_SERVER_URL=http://SERVER_IP:8800 \
-#   -e CLAUDE_MCP_API_KEY=the-key \
-#   -- node "ABSOLUTE_PATH_TO_REPO/mcp/stdio/server.js"
-
-# Install slash commands
-mkdir -p ~/.claude/commands/aify-claude
-cp .claude/commands/*.md ~/.claude/commands/aify-claude/
+  -- node "ABSOLUTE_PATH/mcp/stdio/server.js"
 ```
 
-### Option C: Local only (no Docker, no server)
+### Option C: Local only (no Docker)
 ```bash
 cd mcp/stdio && npm install && cd ../..
-
 claude mcp add --scope user aify-claude \
-  -- node "ABSOLUTE_PATH_TO_REPO/mcp/stdio/server.js"
+  -- node "ABSOLUTE_PATH/mcp/stdio/server.js"
 ```
 
-**After any option: restart Claude Code (close and reopen) for the MCP server to be picked up.**
+**After setup: restart Claude Code.**
 
-## Tools (16, prefix cc_)
-
-### Spawning
-| Tool | Purpose |
-|------|---------|
-| `cc_run` | One-shot prompt to a child instance |
-| `cc_parallel` | Fan-out N prompts concurrently |
-| `cc_review` | Code review via child instance |
-| `cc_status` | CLI health check |
+## Tools (15)
 
 ### Messaging
 | Tool | Purpose |
 |------|---------|
-| `cc_register` | Register as agent (ID + role) |
+| `cc_register` | Register as agent (ID, role, cwd, model, instructions) |
 | `cc_agents` | List agents with unread counts |
-| `cc_send` | Send message to agent (DM) |
-| `cc_inbox` | Check inbox (unread only by default) |
-| `cc_search` | Search messages + artifacts |
+| `cc_send` | Send message. `trigger=true` spawns local Claude instance to handle it |
+| `cc_inbox` | Check inbox (unread only, marks read, limit 20) |
+| `cc_search` | Search messages + shared artifacts |
 
-### Sharing
+### Channels (group chat)
 | Tool | Purpose |
 |------|---------|
-| `cc_share` | Share text/file/image |
-| `cc_read` | Read shared artifact |
+| `cc_channel_create` | Create a channel |
+| `cc_channel_join` | Join a channel |
+| `cc_channel_send` | Send to channel (all members see it) |
+| `cc_channel_read` | Read channel messages |
+| `cc_channel_list` | List all channels |
+
+### File sharing
+| Tool | Purpose |
+|------|---------|
+| `cc_share` | Share text/file/image to shared space |
+| `cc_read` | Read a shared artifact |
 | `cc_files` | List shared artifacts |
-
-### Dispatch
-| Tool | Purpose |
-|------|---------|
-| `cc_dispatch` | Spawn agent for task (background) |
-| `cc_dispatch_wait` | Same, wait for result |
 
 ### Management
 | Tool | Purpose |
 |------|---------|
-| `cc_clear` | Clear inbox/shared/agents |
+| `cc_clear` | Clear inbox/shared/agents with age filter |
 | `cc_dashboard` | Open web dashboard |
 
-## Slash Commands
+## Trigger (same machine)
 
-All at `/aify-claude:<name>`:
-run, parallel, review, status, register, agents, send, inbox,
-search, share, read, files, dispatch, dispatch-wait, clear, dashboard
+`cc_send` with `trigger=true` delivers the message AND spawns `claude --print` locally using the target agent's registered cwd/model/instructions. The result is sent back to the sender's inbox. Only works on the same machine (the MCP client spawns the process).
 
 ## Key Behaviors
 
-- `cc_send` = DM to inbox. `cc_share` = file in shared space.
-- `cc_inbox` returns unread only (limit 20). Messages marked read, not deleted.
-- Rotation auto-cleans messages older than retention_days (default 90).
-- Dashboard at http://SERVER:8800/api/v1/dashboard (auto-refreshes).
-- Settings persisted in Docker volume at /data/settings.json.
-
-## Architecture
-
-- Docker service: FastAPI on port 8800, data in /data volume
-- MCP client: mcp/stdio/server.js (Node.js, connects via HTTP or local filesystem)
-- Slash commands: .claude/commands/ (copy to ~/.claude/commands/aify-claude/)
-- Dashboard: service/dashboard.html (SPA with 3 pages)
-
-## Dev Notes
-
-- Server code: `service/routers/api.py` (all message bus endpoints)
-- MCP client: `mcp/stdio/server.js` (tools that call the HTTP API)
-- Dashboard: `service/dashboard.html` (client-side JS, fetches from API)
-- Config: `.env` for Docker, `config/service.json` for service definition
+- `cc_send` = DM. `cc_share` = file. `cc_channel_*` = group chat.
+- Messages wrapped in code fences to prevent prompt injection.
+- Rotation: configurable via dashboard settings (default 90 days).
+- Dashboard: http://SERVER:8800/api/v1/dashboard (auto-refreshes).
