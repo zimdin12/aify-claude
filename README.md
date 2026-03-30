@@ -16,27 +16,46 @@ docker compose up -d --build      # Start the service
 # Dashboard: http://localhost:8800/api/v1/dashboard
 ```
 
-### Connect Claude Code (from any machine)
+### Connect Claude Code
+
+Run these commands on any machine that has Claude Code installed.
+If the server is on the same machine, use `localhost`. Otherwise, replace with the server's IP.
 
 ```bash
-# Clone and install MCP client
+# 1. Clone the repo and install dependencies
 git clone https://github.com/zimdin12/aify-claude.git
-cd aify-claude/mcp/stdio && npm install && cd ../..
+cd aify-claude/mcp/stdio
+npm install
 
-# Register with Claude Code (global)
+# 2. Register with Claude Code
+#    Same machine as the Docker server:
 claude mcp add --scope user aify-claude \
-  -e CLAUDE_MCP_SERVER_URL=http://YOUR_SERVER_IP:8800 \
-  -- node "$(pwd)/mcp/stdio/server.js"
+  -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
+  -- node "$HOME/aify-claude/mcp/stdio/server.js"
 
-# Copy slash commands (optional but recommended)
+#    Different machine (replace 192.168.1.100 with your server's IP):
+# claude mcp add --scope user aify-claude \
+#   -e CLAUDE_MCP_SERVER_URL=http://192.168.1.100:8800 \
+#   -- node "$HOME/aify-claude/mcp/stdio/server.js"
+
+#    With API key (if you set API_KEY in .env on the server):
+# claude mcp add --scope user aify-claude \
+#   -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
+#   -e CLAUDE_MCP_API_KEY=your-secret-key \
+#   -- node "$HOME/aify-claude/mcp/stdio/server.js"
+
+# 3. Install slash commands (optional but recommended)
+cd ~/aify-claude
 mkdir -p ~/.claude/commands/aify-claude
 cp .claude/commands/*.md ~/.claude/commands/aify-claude/
 
-# Restart Claude Code, then:
-# /aify-claude:register my-agent coder
-# /aify-claude:send tester Please test the auth module
-# /aify-claude:dashboard
+# 4. Restart Claude Code (close and reopen), then try:
+#    /aify-claude:register my-agent coder
+#    /aify-claude:agents
+#    /aify-claude:dashboard
 ```
+
+> **Windows users**: Replace `$HOME/aify-claude` with the full path where you cloned the repo, e.g. `C:/Users/yourname/aify-claude`.
 
 ## Architecture
 

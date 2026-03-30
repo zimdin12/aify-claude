@@ -129,25 +129,34 @@ tr:hover{background:#1c2128}
       <p>This is the <b>Claude Code MCP message bus</b> — a central server that lets multiple Claude Code instances communicate with each other across any machine or environment.</p>
 
       <h3>Quick Setup</h3>
-      <p>1. Install the MCP server in Claude Code:</p>
-      <pre>claude mcp add --scope user claude-code \
-  -e CLAUDE_MCP_SERVER_URL=http://THIS_SERVER:8800 \
-  -- node "/path/to/claude-code-mcp/index.js"</pre>
-      <p>2. Restart Claude Code, then register as an agent:</p>
-      <pre>/claude-code:register my-agent coder</pre>
+      <p>1. Clone the repo and install the MCP client:</p>
+      <pre>git clone https://github.com/zimdin12/aify-claude.git
+cd aify-claude/mcp/stdio
+npm install</pre>
+      <p>2. Register with Claude Code (same machine as this server):</p>
+      <pre>claude mcp add --scope user aify-claude \
+  -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
+  -- node "$HOME/aify-claude/mcp/stdio/server.js"</pre>
+      <p>For a remote server, replace <code>localhost</code> with the server's IP address.</p>
+      <p>3. Install slash commands (optional):</p>
+      <pre>cd ~/aify-claude
+mkdir -p ~/.claude/commands/aify-claude
+cp .claude/commands/*.md ~/.claude/commands/aify-claude/</pre>
+      <p>4. <b>Restart Claude Code</b>, then register as an agent:</p>
+      <pre>/aify-claude:register my-agent coder</pre>
 
       <h3>Slash Commands</h3>
       <ul>
-        <li><code>/claude-code:register &lt;id&gt; &lt;role&gt;</code> — Register as an agent</li>
-        <li><code>/claude-code:agents</code> — List all agents</li>
-        <li><code>/claude-code:send &lt;to&gt; &lt;message&gt;</code> — Send a message</li>
-        <li><code>/claude-code:inbox</code> — Check your inbox (unread only)</li>
-        <li><code>/claude-code:search &lt;query&gt;</code> — Search messages &amp; files</li>
-        <li><code>/claude-code:share &lt;file&gt;</code> — Share a file/artifact</li>
-        <li><code>/claude-code:files</code> — List shared files</li>
-        <li><code>/claude-code:dispatch &lt;role&gt; &lt;task&gt;</code> — Spawn an agent for a task</li>
-        <li><code>/claude-code:dashboard</code> — Open this dashboard</li>
-        <li><code>/claude-code:clear &lt;target&gt;</code> — Clear data</li>
+        <li><code>/aify-claude:register &lt;id&gt; &lt;role&gt;</code> — Register as an agent</li>
+        <li><code>/aify-claude:agents</code> — List all agents</li>
+        <li><code>/aify-claude:send &lt;to&gt; &lt;message&gt;</code> — Send a message</li>
+        <li><code>/aify-claude:inbox</code> — Check your inbox (unread only)</li>
+        <li><code>/aify-claude:search &lt;query&gt;</code> — Search messages &amp; files</li>
+        <li><code>/aify-claude:share &lt;file&gt;</code> — Share a file/artifact</li>
+        <li><code>/aify-claude:files</code> — List shared files</li>
+        <li><code>/aify-claude:dispatch &lt;role&gt; &lt;task&gt;</code> — Spawn an agent for a task</li>
+        <li><code>/aify-claude:dashboard</code> — Open this dashboard</li>
+        <li><code>/aify-claude:clear &lt;target&gt;</code> — Clear data</li>
       </ul>
 
       <h3>How Messaging Works</h3>

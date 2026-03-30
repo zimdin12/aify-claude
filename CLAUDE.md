@@ -2,42 +2,60 @@
 
 Inter-agent communication hub for Claude Code. Message bus + task dispatch + dashboard in Docker.
 
-## First-time Setup (run these commands)
+## First-time Setup
 
-### Option A: Server mode (Docker — run on the machine hosting the message bus)
+When setting this up, determine the ABSOLUTE PATH to this repo first. All commands below use that path.
+On Linux/Mac: use $HOME/aify-claude. On Windows: use the full path like C:/Users/name/aify-claude.
+
+### Option A: Server + Client (same machine, most common)
 ```bash
-cd <this-repo>
+# Start the Docker server
 bash setup.sh
 docker compose up -d --build
-# Verify: curl http://localhost:8800/health
-```
 
-### Option B: Client mode (connect Claude Code to an existing server)
-```bash
-cd <this-repo>/mcp/stdio
-npm install
+# Install MCP client
+cd mcp/stdio && npm install && cd ../..
 
-# Register MCP server — replace YOUR_SERVER with the actual IP/hostname
+# Register with Claude Code (localhost since same machine)
 claude mcp add --scope user aify-claude \
-  -e CLAUDE_MCP_SERVER_URL=http://YOUR_SERVER:8800 \
-  -- node "<absolute-path-to-this-repo>/mcp/stdio/server.js"
+  -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
+  -- node "ABSOLUTE_PATH_TO_REPO/mcp/stdio/server.js"
 
-# Copy slash commands globally
+# Install slash commands
 mkdir -p ~/.claude/commands/aify-claude
-cp <this-repo>/.claude/commands/*.md ~/.claude/commands/aify-claude/
-
-# Restart Claude Code
+cp .claude/commands/*.md ~/.claude/commands/aify-claude/
 ```
 
-### Option C: Local mode (no Docker, same-machine only)
+### Option B: Client only (connect to remote server)
 ```bash
-cd <this-repo>/mcp/stdio
-npm install
+# Install MCP client
+cd mcp/stdio && npm install && cd ../..
 
-# Register without server URL — uses local filesystem
+# Register with Claude Code (replace SERVER_IP with the actual IP)
 claude mcp add --scope user aify-claude \
-  -- node "<absolute-path-to-this-repo>/mcp/stdio/server.js"
+  -e CLAUDE_MCP_SERVER_URL=http://SERVER_IP:8800 \
+  -- node "ABSOLUTE_PATH_TO_REPO/mcp/stdio/server.js"
+
+# If the server has an API key set:
+# claude mcp add --scope user aify-claude \
+#   -e CLAUDE_MCP_SERVER_URL=http://SERVER_IP:8800 \
+#   -e CLAUDE_MCP_API_KEY=the-key \
+#   -- node "ABSOLUTE_PATH_TO_REPO/mcp/stdio/server.js"
+
+# Install slash commands
+mkdir -p ~/.claude/commands/aify-claude
+cp .claude/commands/*.md ~/.claude/commands/aify-claude/
 ```
+
+### Option C: Local only (no Docker, no server)
+```bash
+cd mcp/stdio && npm install && cd ../..
+
+claude mcp add --scope user aify-claude \
+  -- node "ABSOLUTE_PATH_TO_REPO/mcp/stdio/server.js"
+```
+
+**After any option: restart Claude Code (close and reopen) for the MCP server to be picked up.**
 
 ## Tools (16, prefix cc_)
 
