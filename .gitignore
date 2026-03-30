@@ -30,8 +30,13 @@ mcp/stdio/package-lock.json
 .DS_Store
 Thumbs.db
 
-# Claude Code
-.claude/
+# Claude Code (keep .claude/commands/ — those are the slash commands)
+.claude/settings*
+.claude/projects/
+
+# Message bus (local mode runtime data)
+.messages/
+mcp/stdio/.messages/
 
 # Logs
 *.log

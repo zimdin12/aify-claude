@@ -1,14 +1,14 @@
 {
-  "name": "claude-code-mcp",
-  "version": "2.0.0",
-  "description": "MCP server for Claude Code inter-agent communication, task spawning, and orchestration",
+  "name": "aify-claude-mcp",
+  "version": "3.0.0",
+  "description": "MCP client for aify-claude inter-agent communication",
   "type": "module",
-  "main": "index.js",
+  "main": "server.js",
   "bin": {
-    "claude-code-mcp": "./index.js"
+    "aify-claude-mcp": "./server.js"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node server.js"
   },
   "keywords": [
     "mcp",
