@@ -24,11 +24,23 @@ Dashboard: http://localhost:8800
 
 Install aify-claude as a Claude Code plugin. This sets up the MCP server, skill, and notification hook — same as a marketplace install.
 
-**Step 1: Clone and install dependencies**
+**Step 1: Clone, install dependencies, and copy skill**
 ```bash
+# Clone the plugin
 git clone https://github.com/zimdin12/aify-claude.git ~/.claude/plugins/aify-claude
+
+# Install MCP dependencies
 cd ~/.claude/plugins/aify-claude/mcp/stdio && npm install && cd ~
+
+# Copy skill (teaches Claude how to use the tools, register, and listen for messages)
+cp -r ~/.claude/plugins/aify-claude/.claude/skills/aify-claude ~/.claude/skills/aify-claude
+
+# Copy slash commands — /register, /send, /inbox, etc.
+mkdir -p ~/.claude/commands/aify-claude
+cp ~/.claude/plugins/aify-claude/.claude/commands/*.md ~/.claude/commands/aify-claude/
 ```
+
+On Windows, replace `~` with your home directory (e.g. `C:/Users/yourname`).
 
 **Step 2: Register the MCP server**
 ```bash
@@ -51,21 +63,9 @@ Create or edit `~/.claude/settings.local.json`:
 
 Replace `SERVER_IP` with the machine running the Docker container. Use `localhost` if it's the same machine.
 
-For per-project overrides, add `.claude/settings.local.json` in the project root (gitignored).
+**Step 4: Restart Claude Code**
 
-**Step 4: Copy skill and commands (optional but recommended)**
-```bash
-# Skill — auto-activates and teaches Claude how to use the cc_* tools
-cp -r ~/.claude/plugins/aify-claude/.claude/skills/aify-claude ~/.claude/skills/aify-claude
-
-# Slash commands — /register, /send, /inbox, etc.
-mkdir -p ~/.claude/commands/aify-claude
-cp ~/.claude/plugins/aify-claude/.claude/commands/*.md ~/.claude/commands/aify-claude/
-```
-
-**Step 5: Restart Claude Code**
-
-The 15 `cc_*` tools appear automatically. The skill tells Claude how to use them.
+The 15 `cc_*` tools appear automatically. The skill teaches Claude how to register, send messages, and listen for incoming messages when idle.
 
 ### Client — other install methods
 
