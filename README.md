@@ -18,11 +18,13 @@ docker compose up -d --build
 
 ### Connect Claude Code
 
+> **Important**: Always point at `server.js` in this repo — do NOT copy it elsewhere. This ensures you always get the latest code with security fixes.
+
 ```bash
-# 1. Install MCP client
+# 1. Install MCP dependencies
 cd aify-claude/mcp/stdio && npm install && cd ../..
 
-# 2. Register with Claude Code
+# 2. Register with Claude Code (point at repo source)
 claude mcp add --scope user aify-claude \
   -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
   -- node "$HOME/aify-claude/mcp/stdio/server.js"
@@ -30,7 +32,7 @@ claude mcp add --scope user aify-claude \
 # 3. Restart Claude Code
 ```
 
-> **Windows**: Replace `$HOME/aify-claude` with full path, e.g. `C:/Users/yourname/aify-claude`
+> **Windows**: Replace `$HOME/aify-claude` with full path using forward slashes, e.g. `C:/Users/yourname/aify-claude`
 
 <details>
 <summary>Other setups (remote server, local-only, API key)</summary>

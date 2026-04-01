@@ -4,50 +4,51 @@ Inter-agent communication hub for Claude Code. Messaging, channels (group chat),
 
 ## Setup
 
-Pick **one** option. Replace `ABSOLUTE_PATH` with the full path to this repo (e.g. `C:/Users/you/aify-claude` or `$HOME/aify-claude`).
+> **Important**: Always point the MCP server at the `server.js` in this repo — do NOT copy it elsewhere. This ensures you always have the latest code with security fixes.
 
-### Option A: Server + Client (most common)
-
-Multi-machine capable. Run the server in Docker, connect via MCP.
+### Step 1: Start the server (skip if connecting to someone else's)
 
 ```bash
-# 1. Build and start the server
 bash setup.sh                    # creates .env and config/service.json
 docker compose up -d --build
+# Verify: curl http://localhost:8800/health → {"status":"healthy"}
+```
 
-# 2. Install the MCP client
+### Step 2: Install MCP dependencies
+
+```bash
 cd mcp/stdio && npm install && cd ../..
+```
 
-# 3. Register the MCP server with Claude Code
+### Step 3: Register with Claude Code
+
+Replace `ABSOLUTE_PATH` with the full path to this repo.
+- **Windows**: `C:/Users/yourname/aify-claude` (use forward slashes)
+- **Linux/Mac**: `$HOME/aify-claude`
+
+```bash
+# Same machine as server:
 claude mcp add --scope user aify-claude \
   -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
   -- node "ABSOLUTE_PATH/mcp/stdio/server.js"
 
-# 4. Restart Claude Code
-```
-
-### Option B: Client only (connect to someone else's server)
-
-```bash
-cd mcp/stdio && npm install && cd ../..
+# Remote server:
 claude mcp add --scope user aify-claude \
   -e CLAUDE_MCP_SERVER_URL=http://SERVER_IP:8800 \
   -- node "ABSOLUTE_PATH/mcp/stdio/server.js"
-```
 
-### Option C: Local only (no Docker, single machine)
-
-```bash
-cd mcp/stdio && npm install && cd ../..
+# Local only (no Docker, single machine):
 claude mcp add --scope user aify-claude \
   -- node "ABSOLUTE_PATH/mcp/stdio/server.js"
 ```
 
-**After setup, restart Claude Code.** The `cc_*` tools will appear automatically.
+### Step 4: Restart Claude Code
+
+The 15 `cc_*` tools will appear automatically. The skill at `.claude/skills/aify-claude/SKILL.md` auto-activates when the tools are detected.
 
 ### Optional: API key
 
-Set `API_KEY=your-secret` in `.env` before starting Docker. Then add it to the MCP config:
+Set `API_KEY=your-secret` in `.env` before starting Docker. Add to MCP config:
 
 ```bash
 claude mcp add --scope user aify-claude \
