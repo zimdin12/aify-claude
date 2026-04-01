@@ -1,0 +1,16 @@
+{
+  "name": "aify-claude",
+  "owner": {
+    "name": "zimdin12"
+  },
+  "metadata": {
+    "description": "Inter-agent communication hub for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "aify-claude",
+      "description": "Messaging, channels, file sharing, triggers, and dashboard for multi-agent Claude Code workflows. Requires a running aify-claude server (Docker or hosted).",
+      "source": "."
+    }
+  ]
+}
