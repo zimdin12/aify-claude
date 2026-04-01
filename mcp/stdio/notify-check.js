@@ -12,9 +12,12 @@
 
 import fs from "fs";
 import path from "path";
+import { loadSettingsEnv } from "./load-env.js";
 
-const SERVER_URL = process.argv[2] || process.env.CLAUDE_MCP_SERVER_URL || "";
-const API_KEY = process.env.CLAUDE_MCP_API_KEY || "";
+loadSettingsEnv();
+
+const SERVER_URL = process.argv[2] || process.env.CLAUDE_MCP_SERVER_URL || process.env.AIFY_SERVER_URL || "";
+const API_KEY = process.env.CLAUDE_MCP_API_KEY || process.env.AIFY_API_KEY || "";
 const AGENT_FILE = path.join(process.cwd(), ".aify-agent");
 
 // Skip if no server URL (local mode) or no agent file

@@ -21,13 +21,17 @@ import { randomUUID } from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { loadSettingsEnv } from "./load-env.js";
+
+// Load env from settings.local.json (user-level + project-level merge)
+loadSettingsEnv();
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
 const DEFAULT_CWD = process.cwd();
-const SERVER_URL = process.env.CLAUDE_MCP_SERVER_URL || "";
+const SERVER_URL = process.env.CLAUDE_MCP_SERVER_URL || process.env.AIFY_SERVER_URL || "";
 const IS_REMOTE = !!SERVER_URL;
-const API_KEY = process.env.CLAUDE_MCP_API_KEY || "";
+const API_KEY = process.env.CLAUDE_MCP_API_KEY || process.env.AIFY_API_KEY || "";
 
 // ── Local filesystem paths (used only in local mode) ─────────────────────────
 

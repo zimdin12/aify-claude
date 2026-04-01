@@ -47,8 +47,8 @@ mcp/stdio/.messages/
 # Agent identity file (written by cc_register)
 .aify-agent
 
-# MCP config (user-specific paths)
-.mcp.json
+# MCP config (user-specific, root level only — .claude-plugin/.mcp.json is tracked)
+/.mcp.json
 
 # Logs
 *.log

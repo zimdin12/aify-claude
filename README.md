@@ -22,35 +22,46 @@ Dashboard: http://localhost:8800
 
 ### Client (run on every machine that needs the tools)
 
-> **Important**: Always point at `server.js` in this repo — do NOT copy it elsewhere.
-
-**Option A: install.sh (recommended)**
+**Option A: Plugin install (recommended)**
 ```bash
-git clone https://github.com/zimdin12/aify-claude.git
-cd aify-claude
-bash install.sh http://localhost:8800 --with-hook
-# Restart Claude Code after this
+# Add aify-claude as a marketplace source
+claude plugin marketplace add https://github.com/zimdin12/aify-claude
+
+# Install the plugin
+claude plugin install aify-claude
 ```
 
-For a remote server, replace `localhost` with the server's IP:
-```bash
-bash install.sh http://192.168.1.100:8800 --with-hook
+Then add your server URL to `~/.claude/settings.local.json`:
+```json
+{
+  "env": {
+    "AIFY_SERVER_URL": "http://SERVER_IP:8800"
+  }
+}
 ```
 
-**Option B: SSE (no clone needed, works with any MCP client)**
+Restart Claude Code. Done — no clone, no npm, no manual MCP registration.
+
+**Option B: SSE (zero install, works with any MCP client)**
 ```bash
 claude mcp add --scope user aify-claude --transport sse http://SERVER_IP:8800/mcp/sse
 ```
-Works with Claude Code, OpenCode, Cursor, or any MCP-compatible client.
+Works with Claude Code, OpenCode, Cursor, or any MCP-compatible client. No local files.
 
-**Option C: Manual**
+**Option C: Clone + install.sh**
+```bash
+git clone https://github.com/zimdin12/aify-claude.git
+cd aify-claude
+bash install.sh http://SERVER_IP:8800 --with-hook
+```
+
+**Option D: Manual**
 ```bash
 cd aify-claude/mcp/stdio && npm install && cd ../..
 claude mcp add --scope user aify-claude \
-  -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
+  -e CLAUDE_MCP_SERVER_URL=http://SERVER_IP:8800 \
   -- node "/full/path/to/aify-claude/mcp/stdio/server.js"
 ```
-On Windows use forward slashes: `C:/Users/yourname/aify-claude/mcp/stdio/server.js`
 
 ### After install
 
