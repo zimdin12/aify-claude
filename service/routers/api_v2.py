@@ -2,6 +2,7 @@
 aify-claude v2 API — SQLite backend.
 Drop-in replacement for api.py with identical endpoint signatures.
 """
+import asyncio
 import json
 import re
 import time
@@ -11,6 +12,9 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form, Request
 from fastapi.responses import HTMLResponse
+
+# Per-agent wake-up events for cc_listen
+_listen_events: dict[str, asyncio.Event] = {}
 
 from service.db import get_db
 from service.models import (
@@ -244,6 +248,9 @@ async def send_message(req: MessageSend, request: Request):
             await ws.broadcast("message_sent", {"id": msg_id, "from": req.from_agent, "to": recipients, "subject": req.subject})
             for r in recipients:
                 await ws.notify_agent(r, "new_message", {"from": req.from_agent, "subject": req.subject})
+        # Wake up any listening agents
+        for r in recipients:
+            _wake_agent(r)
         return {"ok": True, "messageId": msg_id, "recipients": recipients, "recipientStatus": recipient_info}
     finally:
         await db.close()
@@ -416,6 +423,86 @@ async def agent_heartbeat(agent_id: str, request: Request):
         return {"ok": True}
     finally:
         await db.close()
+
+
+@router.get("/agents/{agent_id}/listen")
+async def listen_for_messages(agent_id: str, request: Request, timeout: int = Query(300, ge=1, le=600)):
+    """Long-poll: blocks until agent has unread messages or timeout. Returns the messages."""
+    validate_name(agent_id, "agent ID")
+
+    # Set status to idle (waiting for work)
+    db = await get_db()
+    try:
+        await db.execute("UPDATE agents SET status = 'idle', last_seen = ? WHERE id = ?", (_now(), agent_id))
+        await db.commit()
+    finally:
+        await db.close()
+
+    # Create/get wake-up event for this agent
+    if agent_id not in _listen_events:
+        _listen_events[agent_id] = asyncio.Event()
+    event = _listen_events[agent_id]
+    event.clear()
+
+    # Poll for unread messages, waiting on the event
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        db = await get_db()
+        try:
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM messages m LEFT JOIN read_receipts r ON m.id = r.message_id AND r.agent_id = ? WHERE m.to_agent = ? AND r.message_id IS NULL",
+                (agent_id, agent_id)
+            )
+            unread = (await cursor.fetchone())[0]
+            if unread > 0:
+                # Fetch and return the messages (mark as read)
+                now = _now()
+                mc = await db.execute(
+                    "SELECT m.* FROM messages m LEFT JOIN read_receipts r ON m.id = r.message_id AND r.agent_id = ? WHERE m.to_agent = ? AND r.message_id IS NULL ORDER BY m.timestamp DESC",
+                    (agent_id, agent_id)
+                )
+                rows = await mc.fetchall()
+                messages = []
+                for row in rows:
+                    msg = {
+                        "id": row["id"], "from": row["from_agent"], "type": row["type"],
+                        "source": row["source"], "channel": row["channel"],
+                        "subject": row["subject"], "body": row["body"],
+                        "priority": row["priority"], "timestamp": row["timestamp"],
+                        "inReplyTo": row["in_reply_to"],
+                    }
+                    # Parent context for replies
+                    if row["in_reply_to"]:
+                        pc = await db.execute("SELECT from_agent, subject, body FROM messages WHERE id = ?", (row["in_reply_to"],))
+                        parent = await pc.fetchone()
+                        if parent:
+                            msg["parentContext"] = {"from": parent["from_agent"], "subject": parent["subject"], "preview": (parent["body"] or "")[:100]}
+                    messages.append(msg)
+                    await db.execute("INSERT OR IGNORE INTO read_receipts (message_id, agent_id, read_at) VALUES (?,?,?)", (row["id"], agent_id, now))
+
+                # Set status to working
+                await db.execute("UPDATE agents SET status = 'working', last_seen = ? WHERE id = ?", (now, agent_id))
+                await db.commit()
+                return {"total": len(messages), "messages": messages}
+        finally:
+            await db.close()
+
+        # Wait for wake-up signal or check every 2 seconds
+        try:
+            await asyncio.wait_for(event.wait(), timeout=2.0)
+            event.clear()
+        except asyncio.TimeoutError:
+            pass
+
+    # Timeout — no messages arrived
+    return {"total": 0, "messages": []}
+
+
+def _wake_agent(agent_id: str):
+    """Signal a listening agent that they have new messages."""
+    ev = _listen_events.get(agent_id)
+    if ev:
+        ev.set()
 
 
 @router.delete("/messages/{message_id}")
@@ -707,6 +794,10 @@ async def send_channel_message(name: str, req: ChannelMessage, request: Request)
         ws = await _get_ws(request)
         if ws:
             await ws.broadcast("channel_message", {"channel": name, "from": req.from_agent, "body": req.body[:200]})
+        # Wake up any listening members
+        for member in members:
+            if member != req.from_agent:
+                _wake_agent(member)
         return {"ok": True, "messageId": msg_id, "members": members}
     finally:
         await db.close()

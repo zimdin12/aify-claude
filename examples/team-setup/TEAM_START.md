@@ -14,8 +14,7 @@ Register as an aify-claude agent:
 
 Join the "dev" channel. If it doesn't exist, create it with description "Team coordination".
 
-Set up a recurring reminder to check messages every 5 minutes:
-/loop 5m /aify-claude:inbox
+When idle, use cc_listen to wait for messages — it blocks until something arrives, no polling needed.
 
 Read CLAUDE.MANAGER.md for your role details.
 
@@ -32,8 +31,7 @@ Register as an aify-claude agent:
 
 Join the "dev" channel.
 
-Set up a recurring reminder to check messages every 5 minutes:
-/loop 5m /aify-claude:inbox
+When idle, use cc_listen to wait for messages — it blocks until something arrives, no polling needed.
 
 Read CLAUDE.CODER.md for your role details.
 
@@ -50,8 +48,7 @@ Register as an aify-claude agent:
 
 Join the "dev" channel.
 
-Set up a recurring reminder to check messages every 5 minutes:
-/loop 5m /aify-claude:inbox
+When idle, use cc_listen to wait for messages — it blocks until something arrives, no polling needed.
 
 Read CLAUDE.TESTER.md for your role details.
 
@@ -68,8 +65,7 @@ Register as an aify-claude agent:
 
 Join the "dev" channel.
 
-Set up a recurring reminder to check messages every 5 minutes:
-/loop 5m /aify-claude:inbox
+When idle, use cc_listen to wait for messages — it blocks until something arrives, no polling needed.
 
 Read CLAUDE.ARCHITECT.md for your role details.
 
@@ -86,8 +82,7 @@ Register as an aify-claude agent:
 
 Join the "dev" channel.
 
-Set up a recurring reminder to check messages every 5 minutes:
-/loop 5m /aify-claude:inbox
+When idle, use cc_listen to wait for messages — it blocks until something arrives, no polling needed.
 
 Read CLAUDE.RESEARCHER.md for your role details.
 

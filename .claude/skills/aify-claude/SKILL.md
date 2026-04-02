@@ -15,9 +15,13 @@ You have access to the aify-claude MCP tools (`cc_*` prefix). These let you comm
 cc_register(agentId="my-agent", role="coder", cwd="/path/to/project")
 ```
 
-If the PostToolUse notification hook is configured, you'll see `[aify-claude] N unread message(s)` after tool calls. Call `cc_inbox` when you see this.
+**When idle, listen for messages:**
+```
+cc_listen(agentId="my-agent")
+```
+This blocks until a message arrives — no polling, no loops. When a message comes in, it returns immediately with the content. Process it, then call `cc_listen` again when done.
 
-## Tools (19)
+## Tools (20)
 
 ### Messaging
 | Tool | Use |
@@ -27,6 +31,7 @@ If the PostToolUse notification hook is configured, you'll see `[aify-claude] N 
 | `cc_status` | Set status + optional note: `cc_status("working", note="NRD pipeline")`. |
 | `cc_agent_info` | Check another agent's status, unread count, and last message they read. |
 | `cc_send` | DM by ID (`to`) or role (`toRole`). Optional `priority`. Returns recipient's status + unread count. |
+| `cc_listen` | **Wait for messages.** Blocks until a message arrives. Call when idle instead of polling. |
 | `cc_inbox` | Check inbox. Returns unread, newest first. Replies include parent context. |
 | `cc_unsend` | Delete a sent message by ID. |
 | `cc_search` | Search messages and shared artifacts by keyword. |

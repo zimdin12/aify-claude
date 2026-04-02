@@ -702,6 +702,70 @@ server.tool(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 5d. cc_listen -- Block until messages arrive (replaces polling)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+server.tool(
+  "cc_listen",
+  "Wait for incoming messages. Blocks until a message arrives or timeout. " +
+    "Call this when you're idle — it replaces polling loops. " +
+    "Returns immediately if you already have unread messages.",
+  {
+    agentId: z.string().describe("Your agent ID"),
+    timeout: z.number().optional().describe("Max seconds to wait (default: 300, max: 600)"),
+  },
+  async ({ agentId, timeout }) => {
+    try { validateName(agentId, "agent ID"); } catch (e) { return { content: [{ type: "text", text: e.message }], isError: true }; }
+    const maxWait = Math.min(timeout || 300, 600);
+
+    if (IS_REMOTE) {
+      const url = `${SERVER_URL}/api/v1/agents/${agentId}/listen?timeout=${maxWait}`;
+      const options = { headers: {}, signal: AbortSignal.timeout((maxWait + 10) * 1000) };
+      if (API_KEY) options.headers["X-API-Key"] = API_KEY;
+      try {
+        const res = await fetch(url, options);
+        const r = await res.json();
+        if (!r.messages || r.messages.length === 0) {
+          return { content: [{ type: "text", text: "No messages received (timeout). Call cc_listen again to keep waiting." }] };
+        }
+        const registry = {};
+        try { const a = await httpCall("GET", "/agents"); registry.agents = a.agents; } catch {}
+        const formatted = r.messages.map((m) => formatInboxMessage(m, registry));
+        return {
+          content: [{ type: "text", text: `${SAFETY_HEADER}\n\n${r.total} message(s) received:\n\n${formatted.join("\n\n")}` }],
+        };
+      } catch (e) {
+        if (e.name === "TimeoutError" || e.name === "AbortError") {
+          return { content: [{ type: "text", text: "No messages received (timeout). Call cc_listen again to keep waiting." }] };
+        }
+        return { content: [{ type: "text", text: `Listen error: ${e.message}` }], isError: true };
+      }
+    }
+
+    // Local mode — poll inbox
+    const deadline = Date.now() + maxWait * 1000;
+    while (Date.now() < deadline) {
+      const messages = readInbox(agentId, "unread");
+      if (messages.length > 0) {
+        markAsRead(agentId, messages);
+        const registry = readAgents();
+        if (registry.agents[agentId]) {
+          registry.agents[agentId].status = "working";
+          registry.agents[agentId].lastSeen = new Date().toISOString();
+          writeAgents(registry);
+        }
+        const formatted = messages.map((m) => formatInboxMessage(m, registry));
+        return {
+          content: [{ type: "text", text: `${SAFETY_HEADER}\n\n${messages.length} message(s) received:\n\n${formatted.join("\n\n")}` }],
+        };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    return { content: [{ type: "text", text: "No messages received (timeout). Call cc_listen again to keep waiting." }] };
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // 5c. cc_unsend -- Delete a message by ID
 // ═══════════════════════════════════════════════════════════════════════════════
 
