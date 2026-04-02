@@ -230,9 +230,14 @@ server.tool(
       instructions: instructions || "",
     };
 
-    // Write agent ID to cwd so the notification hook can find it
+    // Write agent ID to temp so the notification hook can find it (session-specific)
     const agentCwd = cwd || DEFAULT_CWD;
     try { fs.writeFileSync(path.join(agentCwd, ".aify-agent"), agentId); } catch { /* best effort */ }
+    // Also write to a session-specific temp file keyed by PID
+    try {
+      const tmpDir = process.env.TEMP || process.env.TMP || "/tmp";
+      fs.writeFileSync(path.join(tmpDir, `aify-agent-${process.ppid || process.pid}`), agentId);
+    } catch { /* best effort */ }
 
     if (IS_REMOTE) {
       const r = await httpCall("POST", "/agents", agentData);

@@ -16,12 +16,20 @@ loadSettingsEnv();
 
 const SERVER_URL = process.argv[2] || process.env.CLAUDE_MCP_SERVER_URL || process.env.AIFY_SERVER_URL || "";
 const API_KEY = process.env.CLAUDE_MCP_API_KEY || process.env.AIFY_API_KEY || "";
-const AGENT_FILE = path.join(process.cwd(), ".aify-agent");
+const tmpDir = process.env.TEMP || process.env.TMP || "/tmp";
 
 if (!SERVER_URL) process.exit(0);
-if (!fs.existsSync(AGENT_FILE)) process.exit(0);
 
-const agentId = fs.readFileSync(AGENT_FILE, "utf-8").trim();
+// Find agent ID: check session-specific temp file first (by parent PID), then cwd
+let agentId = "";
+const SESSION_FILE = path.join(tmpDir, `aify-agent-${process.ppid || ""}`);
+const CWD_FILE = path.join(process.cwd(), ".aify-agent");
+
+if (fs.existsSync(SESSION_FILE)) {
+  agentId = fs.readFileSync(SESSION_FILE, "utf-8").trim();
+} else if (fs.existsSync(CWD_FILE)) {
+  agentId = fs.readFileSync(CWD_FILE, "utf-8").trim();
+}
 if (!agentId) process.exit(0);
 
 // Rate limit: only check every 30 seconds
