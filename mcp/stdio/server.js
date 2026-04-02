@@ -831,7 +831,27 @@ server.tool(
     try { validateName(name); } catch (e) { return { content: [{ type: "text", text: e.message }], isError: true }; }
 
     if (IS_REMOTE) {
-      const r = await httpCall("GET", `/shared/${encodeURIComponent(name)}`);
+      const url = `${SERVER_URL}/api/v1/shared/${encodeURIComponent(name)}`;
+      const options = { headers: {} };
+      if (API_KEY) options.headers["X-API-Key"] = API_KEY;
+      const res = await fetch(url, options);
+      if (!res.ok) {
+        return { content: [{ type: "text", text: `Artifact "${name}" not found.` }], isError: true };
+      }
+      const contentType = res.headers.get("content-type") || "";
+      // Binary file — save locally and return path
+      if (!contentType.includes("application/json")) {
+        const tmpDir = process.env.TEMP || process.env.TMP || "/tmp";
+        const localPath = path.join(tmpDir, `aify-shared-${name}`);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        fs.writeFileSync(localPath, buffer);
+        return { content: [{ type: "text", text:
+          `Binary artifact "${name}" (${buffer.length} bytes)\n` +
+          `Saved to: ${localPath.replace(/\\/g, "/")}\n` +
+          `(Use the Read tool on the path to view images)` }] };
+      }
+      // Text content — return inline
+      const r = await res.json();
       if (r.content) {
         const meta = r.meta || {};
         const header = meta.from
@@ -839,7 +859,7 @@ server.tool(
           : "";
         return { content: [{ type: "text", text: header + r.content }] };
       }
-      return { content: [{ type: "text", text: `"${name}" -- binary file on server.` }] };
+      return { content: [{ type: "text", text: `"${name}" — empty or unreadable.` }] };
     }
 
     const artifactPath = path.join(SHARED_DIR, name);
