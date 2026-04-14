@@ -232,6 +232,7 @@ Important:
 - Managed workers are best for triggerable execution, long-lived runtime state, and unattended background work.
 - If the owning stdio bridge is closed, queued resident/managed runs stay on the server until that bridge reconnects.
 - Only one active dispatched run is processed at a time per registered agent/worker, so later triggers queue behind the current run instead of starting immediately.
+- Newer bridge instances now supersede stale older bridge instances for the same agent, so orphaned running runs can be recovered automatically instead of blocking the queue forever.
 - Active dispatch requires the local `stdio` MCP server. SSE-only clients are message/control clients, not local launchers.
 
 ### Trigger Tradeoffs

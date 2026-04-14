@@ -42,6 +42,7 @@ const SERVER_URL = process.env.CLAUDE_MCP_SERVER_URL || process.env.AIFY_SERVER_
 const IS_REMOTE = !!SERVER_URL;
 const API_KEY = process.env.CLAUDE_MCP_API_KEY || process.env.AIFY_API_KEY || "";
 const MACHINE_ID = defaultMachineId();
+const BRIDGE_INSTANCE_ID = randomUUID();
 const REMOTE_AGENT_STATE = new Map();
 const ACTIVE_RUNS = new Map();
 const LOCAL_RUNTIME_STATE = new Map();
@@ -183,6 +184,10 @@ function formatQueuedRun(run = {}) {
   return text;
 }
 
+function currentBridgeId(info = {}) {
+  return info.runtimeState?.bridgeInstanceId || "";
+}
+
 // ── Local filesystem helpers ─────────────────────────────────────────────────
 
 function readAgents() {
@@ -280,12 +285,44 @@ async function runDispatchLoop() {
         continue;
       }
 
+      let liveAgent = null;
+      try {
+        const agentRes = await httpCall("GET", `/agents/${encodeURIComponent(agentId)}`);
+        liveAgent = agentRes.agent || null;
+        if (liveAgent) {
+          state.info = {
+            ...state.info,
+            ...liveAgent,
+            runtimeState: liveAgent.runtimeState || state.info.runtimeState || {},
+          };
+        }
+      } catch {
+        // best effort
+      }
+
+      const liveActiveRun = liveAgent?.dispatchState?.activeRun;
+      const liveBridgeId = currentBridgeId(state.info);
+      if (liveActiveRun?.runId && liveActiveRun.claimBridgeId && liveBridgeId && liveActiveRun.claimBridgeId !== liveBridgeId) {
+        try {
+          await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(liveActiveRun.runId)}`, {
+            status: "failed",
+            error: `Active run was owned by stale bridge instance ${liveActiveRun.claimBridgeId} and was superseded by ${liveBridgeId}`,
+            agentStatus: "idle",
+            appendEvent: `Recovered from stale bridge ${liveActiveRun.claimBridgeId}; superseded by ${liveBridgeId}`,
+            eventType: "failed",
+          });
+        } catch (error) {
+          console.error("[aify] stale run recovery error:", error);
+        }
+      }
+
       const executionModes = supportedExecutionModes(state.info);
       if (!executionModes.length) continue;
 
       const claim = await httpCall("POST", "/dispatch/claim", {
         agentId,
         machineId: state.info.machineId || MACHINE_ID,
+        bridgeId: BRIDGE_INSTANCE_ID,
         executionModes,
       });
       if (!claim?.run) continue;
@@ -465,7 +502,7 @@ async function processRunControls(agentId, activeRun) {
 
 const server = new McpServer({
   name: "claude-code-mcp",
-  version: "3.5.1",
+  version: "3.5.2",
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -538,6 +575,14 @@ server.tool(
       try {
         const agentInfo = await httpCall("GET", `/agents/${encodeURIComponent(agentId)}`);
         runtimeState = agentInfo.agent?.runtimeState || {};
+      } catch {
+        // best effort
+      }
+      runtimeState = { ...runtimeState, bridgeInstanceId: BRIDGE_INSTANCE_ID };
+      try {
+        await httpCall("PATCH", `/agents/${encodeURIComponent(agentId)}/runtime-state`, {
+          runtimeState,
+        });
       } catch {
         // best effort
       }

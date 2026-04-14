@@ -190,6 +190,7 @@ WSL note:
 Current limits:
 - One active dispatched run per registered agent/worker.
 - `cc_agent_info` and dispatch responses now show when new work is queued behind an already-running run.
+- If a bridge instance is replaced by a newer registration for the same agent, stale older active runs can now be recovered automatically instead of blocking the queue forever.
 - Claude supports interruption but not in-flight steering.
 - Codex supports both interruption and steering.
 - OpenCode supports interruption, but not in-flight steering.

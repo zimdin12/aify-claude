@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS dispatch_runs (
     in_reply_to TEXT,
     status TEXT NOT NULL DEFAULT 'queued',
     claim_machine_id TEXT DEFAULT '',
+    claim_bridge_id TEXT DEFAULT '',
     summary TEXT DEFAULT '',
     error_text TEXT DEFAULT '',
     result_message_id TEXT DEFAULT '',
@@ -163,6 +164,7 @@ AGENT_MIGRATIONS = {
 
 DISPATCH_RUN_MIGRATIONS = {
     "execution_mode": "ALTER TABLE dispatch_runs ADD COLUMN execution_mode TEXT DEFAULT 'managed'",
+    "claim_bridge_id": "ALTER TABLE dispatch_runs ADD COLUMN claim_bridge_id TEXT DEFAULT ''",
 }
 
 

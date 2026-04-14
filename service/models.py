@@ -75,6 +75,7 @@ class DispatchRequest(BaseModel):
 class DispatchClaimRequest(BaseModel):
     agentId: str
     machineId: Optional[str] = None
+    bridgeId: Optional[str] = None
     executionModes: Optional[list[str]] = None
 
 

@@ -278,6 +278,7 @@ def _format_dispatch_state(active_row, queued_count: int) -> dict[str, Any]:
             "from": active_row["from_agent"],
             "executionMode": active_row["execution_mode"] or "managed",
             "runtime": active_row["runtime"] or "",
+            "claimBridgeId": active_row["claim_bridge_id"] or "",
             "requestedAt": active_row["requested_at"] or "",
             "startedAt": active_row["started_at"] or active_row["claimed_at"] or "",
         }
@@ -292,6 +293,7 @@ async def _get_dispatch_state_for_agent(db, agent_id: str) -> dict[str, Any]:
     active_cursor = await db.execute(
         """
         SELECT id, from_agent, subject, status, execution_mode, runtime, requested_at, claimed_at, started_at
+             , claim_bridge_id
         FROM dispatch_runs
         WHERE target_agent = ? AND status IN ('claimed', 'running')
         ORDER BY COALESCE(started_at, claimed_at, requested_at) ASC
@@ -457,7 +459,7 @@ async def _create_dispatch_runs(
 async def root():
     return {
         "service": "aify-claude",
-        "version": "3.5.1",
+        "version": "3.5.2",
         "storage": "sqlite",
         "endpoints": {
             "agents": "/api/v1/agents",
@@ -1318,8 +1320,8 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
 
         claimed_at = _now()
         await db.execute(
-            "UPDATE dispatch_runs SET status = 'claimed', claimed_at = ?, claim_machine_id = ?, runtime = ? WHERE id = ?",
-            (claimed_at, req.machineId or "", agent_runtime, selected_run["id"])
+            "UPDATE dispatch_runs SET status = 'claimed', claimed_at = ?, claim_machine_id = ?, claim_bridge_id = ?, runtime = ? WHERE id = ?",
+            (claimed_at, req.machineId or "", req.bridgeId or "", agent_runtime, selected_run["id"])
         )
         if selected_run["message_id"]:
             await db.execute(
@@ -1348,6 +1350,7 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
                 "status": "claimed",
                 "mode": selected_run["dispatch_mode"],
                 "executionMode": selected_run["execution_mode"] or "managed",
+                "claimBridgeId": req.bridgeId or "",
                 "requestedRuntime": selected_run["requested_runtime"] or None,
                 "claimedAt": claimed_at,
             }
@@ -1394,6 +1397,7 @@ async def list_dispatch_runs(
                 "mode": row["dispatch_mode"],
                 "executionMode": row["execution_mode"] or "managed",
                 "runtime": row["runtime"] or "",
+                "claimBridgeId": row["claim_bridge_id"] or "",
                 "requestedRuntime": row["requested_runtime"] or "",
                 "subject": row["subject"],
                 "summary": row["summary"] or "",
@@ -1464,6 +1468,7 @@ async def get_dispatch_run(run_id: str, request: Request):
                 "mode": row["dispatch_mode"],
                 "executionMode": row["execution_mode"] or "managed",
                 "runtime": row["runtime"] or "",
+                "claimBridgeId": row["claim_bridge_id"] or "",
                 "requestedRuntime": row["requested_runtime"] or "",
                 "summary": row["summary"] or "",
                 "error": row["error_text"] or "",
