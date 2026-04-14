@@ -1,11 +1,9 @@
 #!/usr/bin/env node
 /**
  * aify-claude inbox notification checker + heartbeat.
- * Called by Claude Code PostToolUse hook.
  *
- * 1. Sends heartbeat to server (signals agent is alive/working)
- * 2. Checks for unread messages
- * 3. Prints notification if unread messages exist
+ * Claude Code hooks tolerate plain stdout notices.
+ * Codex PostToolUse hooks expect JSON when anything is emitted.
  */
 
 import fs from "fs";
@@ -18,6 +16,36 @@ const SERVER_URL = process.argv[2] || process.env.CLAUDE_MCP_SERVER_URL || proce
 const API_KEY = process.env.CLAUDE_MCP_API_KEY || process.env.AIFY_API_KEY || "";
 const tmpDir = process.env.TEMP || process.env.TMP || "/tmp";
 
+async function readHookPayload() {
+  if (process.stdin.isTTY) return null;
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  const text = Buffer.concat(chunks).toString("utf8").trim();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function fileAgeMs(filePath) {
+  try {
+    return Date.now() - fs.statSync(filePath).mtimeMs;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function emitNotice(message, hookPayload) {
+  if (!message) return;
+  if (hookPayload?.hook_event_name === "PostToolUse") {
+    process.stdout.write(JSON.stringify({ systemMessage: message }) + "\n");
+    return;
+  }
+  console.log(message);
+}
+
 if (!SERVER_URL) process.exit(0);
 
 // If server was unreachable recently, skip entirely (check every 60s)
@@ -27,14 +55,18 @@ try {
   if (Date.now() - lastDown < 60_000) process.exit(0);
 } catch { /* no file = never failed */ }
 
-// Find agent ID: check session-specific temp file first (by parent PID), then cwd
+const hookPayload = await readHookPayload();
+
+// Find agent ID: prefer the session-specific temp file.
 let agentId = "";
 const SESSION_FILE = path.join(tmpDir, `aify-agent-${process.ppid || ""}`);
 const CWD_FILE = path.join(process.cwd(), ".aify-agent");
+let heartbeatAllowed = false;
 
 if (fs.existsSync(SESSION_FILE)) {
   agentId = fs.readFileSync(SESSION_FILE, "utf-8").trim();
-} else if (fs.existsSync(CWD_FILE)) {
+  heartbeatAllowed = true;
+} else if (fs.existsSync(CWD_FILE) && fileAgeMs(CWD_FILE) < 8 * 60 * 60 * 1000) {
   agentId = fs.readFileSync(CWD_FILE, "utf-8").trim();
 }
 if (!agentId) process.exit(0);
@@ -51,11 +83,6 @@ const headers = { "Accept": "application/json" };
 if (API_KEY) headers["X-API-Key"] = API_KEY;
 
 try {
-  // Heartbeat — signals agent is alive (sets status to "working")
-  fetch(`${SERVER_URL}/api/v1/agents/${agentId}/heartbeat`, {
-    method: "POST", headers, signal: AbortSignal.timeout(2000),
-  }).catch(() => {});
-
   // Check inbox
   const url = `${SERVER_URL}/api/v1/messages/inbox/${agentId}?filter=unread&limit=3&peek=true`;
   const resp = await fetch(url, { headers, signal: AbortSignal.timeout(3000) });
@@ -63,6 +90,12 @@ try {
   // Server is up — clear any previous down marker
   try { fs.unlinkSync(DOWN_FILE); } catch {}
   const data = await resp.json();
+
+  if (heartbeatAllowed) {
+    fetch(`${SERVER_URL}/api/v1/agents/${agentId}/heartbeat`, {
+      method: "POST", headers, signal: AbortSignal.timeout(2000),
+    }).catch(() => {});
+  }
 
   if (data.total > 0) {
     const msgs = data.messages || [];
@@ -73,7 +106,7 @@ try {
       return `  - From ${m.from}${p}: "${m.subject}"`;
     }).join("\n");
     const more = data.total > 3 ? `\n  ...and ${data.total - 3} more` : "";
-    console.log(`[aify-claude]${tag} ${data.total} unread message(s):\n${previews}${more}\nUse cc_inbox to read them.`);
+    emitNotice(`[aify-claude]${tag} ${data.total} unread message(s):\n${previews}${more}\nUse cc_inbox to read them.`, hookPayload);
   }
 } catch {
   // Server unreachable — cache the failure so we skip quickly next time

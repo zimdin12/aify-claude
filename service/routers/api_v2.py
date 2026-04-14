@@ -161,7 +161,7 @@ async def _compute_agent_status(row, idle_minutes: int, offline_minutes: int):
             age = datetime.now(timezone.utc) - last
             if age > timedelta(minutes=offline_minutes):
                 status = "offline"
-            elif age > timedelta(minutes=idle_minutes) and status not in ("working",):
+            elif age > timedelta(minutes=idle_minutes):
                 status = "idle"
         except Exception:
             pass
@@ -668,7 +668,7 @@ async def agent_heartbeat(agent_id: str, request: Request):
     db = await get_db()
     try:
         await db.execute(
-            "UPDATE agents SET last_seen = ?, status = CASE WHEN status IN ('blocked','completed') THEN status ELSE 'working' END WHERE id = ?",
+            "UPDATE agents SET last_seen = ?, status = CASE WHEN status IN ('blocked','completed','working') THEN status ELSE 'active' END WHERE id = ?",
             (_now(), agent_id)
         )
         await db.commit()
