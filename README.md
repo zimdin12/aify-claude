@@ -48,7 +48,7 @@ After every install or update:
 
 ### Client — Claude Code install (manual)
 
-Install aify-claude as a Claude Code plugin. This sets up the MCP server, skill, and notification hook — same as a marketplace install.
+Install aify-claude as a Claude Code plugin. For resident Claude wakeups, manual setup needs both the normal MCP server and the separate `aify-claude-channel` bridge.
 
 **Step 1: Clone, install dependencies, and copy skill**
 ```bash
@@ -68,22 +68,43 @@ cp ~/.claude/plugins/aify-claude/.claude/commands/*.md ~/.claude/commands/aify-c
 
 On Windows, replace `~` with your home directory (e.g. `C:/Users/yourname`).
 
-**Step 2: Register the MCP server**
+**Step 2: Register the MCP servers**
 ```bash
 # Same machine as server:
 claude mcp add --scope user aify-claude \
   -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
   -- node "$HOME/.claude/plugins/aify-claude/mcp/stdio/server.js"
 
+claude mcp add --scope user aify-claude-channel \
+  -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
+  -- node "$HOME/.claude/plugins/aify-claude/mcp/stdio/claude-channel.js"
+
 # Remote server:
 claude mcp add --scope user aify-claude \
   -e CLAUDE_MCP_SERVER_URL=http://SERVER_IP:8800 \
   -- node "$HOME/.claude/plugins/aify-claude/mcp/stdio/server.js"
+
+claude mcp add --scope user aify-claude-channel \
+  -e CLAUDE_MCP_SERVER_URL=http://SERVER_IP:8800 \
+  -- node "$HOME/.claude/plugins/aify-claude/mcp/stdio/claude-channel.js"
 ```
 
 On Windows, replace `$HOME` with your home directory using forward slashes (e.g. `C:/Users/yourname`).
 
-**Step 3: Restart Claude Code**
+**Step 3: Install the `claude-aify` wrapper**
+
+```bash
+mkdir -p ~/.local/bin
+cat > ~/.local/bin/claude-aify <<'EOF'
+#!/bin/bash
+set -euo pipefail
+export AIFY_CLAUDE_CHANNEL_ENABLED=1
+exec claude --dangerously-load-development-channels server:aify-claude-channel "$@"
+EOF
+chmod +x ~/.local/bin/claude-aify
+```
+
+**Step 4: Restart Claude Code**
 
 The 24 `cc_*` tools appear automatically. The skill teaches Claude how to register resident sessions, spawn managed workers, send messages, listen for incoming messages, dispatch active work, and control active runs.
 

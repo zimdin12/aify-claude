@@ -395,16 +395,62 @@ async def _fail_active_runs_for_superseded_bridges(
     return affected_run_ids
 
 
+async def _fail_pending_controls_for_run(
+    db,
+    run_id: str,
+    *,
+    handled_at: str,
+    response_text: str,
+):
+    cursor = await db.execute(
+        """
+        SELECT id, action
+        FROM dispatch_controls
+        WHERE run_id = ? AND status IN ('pending', 'claimed')
+        ORDER BY requested_at ASC, id ASC
+        """,
+        (run_id,),
+    )
+    controls = await cursor.fetchall()
+    if not controls:
+        return
+
+    for control in controls:
+        await db.execute(
+            """
+            UPDATE dispatch_controls
+            SET status = 'failed', response_text = ?, handled_at = ?
+            WHERE id = ?
+            """,
+            (response_text, handled_at, control["id"]),
+        )
+        await _append_dispatch_event(
+            db,
+            run_id,
+            f"control:{control['action']}:failed",
+            response_text,
+        )
+
+
+def _status_with_dispatch(status: str, dispatch_state: Optional[dict[str, Any]]) -> str:
+    if not dispatch_state:
+        return status
+    if dispatch_state.get("hasActiveRun") and status not in _MANUAL_STATUSES and status != "stale":
+        return "working"
+    return status
+
+
 def _agent_record_to_dict(row, status: str, unread: int, dispatch_state: Optional[dict[str, Any]] = None):
     runtime = _normalize_runtime(row["runtime"] or "generic")
     session_mode = _normalize_session_mode(row["session_mode"] or "resident")
+    effective_status = _status_with_dispatch(status, dispatch_state)
     return {
         "role": row["role"],
         "name": row["name"],
         "cwd": row["cwd"],
         "model": row["model"],
         "instructions": row["instructions"],
-        "status": status,
+        "status": effective_status,
         "registeredAt": row["registered_at"],
         "lastSeen": row["last_seen"],
         "unread": unread,
@@ -534,7 +580,7 @@ async def _create_dispatch_runs(
 async def root():
     return {
         "service": "aify-claude",
-        "version": "3.5.4",
+        "version": "3.5.5",
         "storage": "sqlite",
         "endpoints": {
             "agents": "/api/v1/agents",
@@ -1373,6 +1419,7 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
         if active_run:
             if req.bridgeId and active_run.get("claimBridgeId") and active_run.get("claimBridgeId") != req.bridgeId:
                 if await _bridge_is_superseded(db, active_run["claimBridgeId"], req.agentId):
+                    finished_at = _now()
                     await db.execute(
                         """
                         UPDATE dispatch_runs
@@ -1381,7 +1428,7 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
                         """,
                         (
                             f'Run was owned by superseded bridge instance "{active_run["claimBridgeId"]}" and was replaced by "{req.bridgeId}"',
-                            _now(),
+                            finished_at,
                             active_run["runId"],
                         )
                     )
@@ -1391,6 +1438,12 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
                         "failed",
                         f'Superseded bridge recovery: {active_run["claimBridgeId"]} -> {req.bridgeId}',
                     )
+                    await _fail_pending_controls_for_run(
+                        db,
+                        active_run["runId"],
+                        handled_at=finished_at,
+                        response_text=f'Run was superseded by newer bridge "{req.bridgeId}" before the control could be handled.',
+                    )
                     active_run = None
                 else:
                     await db.commit()
@@ -1399,6 +1452,7 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
                 bridge_registered_at = await _bridge_registered_at(db, req.bridgeId, req.agentId)
                 active_started_at = active_run.get("startedAt") or active_run.get("requestedAt") or ""
                 if bridge_registered_at and active_started_at and active_started_at < bridge_registered_at:
+                    finished_at = _now()
                     await db.execute(
                         """
                         UPDATE dispatch_runs
@@ -1407,7 +1461,7 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
                         """,
                         (
                             f'Legacy active run without bridge ownership was superseded by bridge "{req.bridgeId}" registered at {bridge_registered_at}',
-                            _now(),
+                            finished_at,
                             active_run["runId"],
                         )
                     )
@@ -1416,6 +1470,12 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
                         active_run["runId"],
                         "failed",
                         f'Legacy bridge recovery: unowned run superseded by {req.bridgeId}',
+                    )
+                    await _fail_pending_controls_for_run(
+                        db,
+                        active_run["runId"],
+                        handled_at=finished_at,
+                        response_text=f'Legacy run was superseded by newer bridge "{req.bridgeId}" before the control could be handled.',
                     )
                     active_run = None
                 else:
@@ -1694,6 +1754,13 @@ async def update_dispatch_run(run_id: str, req: DispatchRunUpdate, request: Requ
         if updates:
             params.append(run_id)
             await db.execute(f"UPDATE dispatch_runs SET {', '.join(updates)} WHERE id = ?", params)
+            if req.status in ("completed", "failed", "cancelled"):
+                await _fail_pending_controls_for_run(
+                    db,
+                    run_id,
+                    handled_at=now,
+                    response_text=f'Run ended with status "{req.status}" before the control could be handled.',
+                )
 
         if req.agentStatus:
             await db.execute(

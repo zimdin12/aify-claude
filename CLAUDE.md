@@ -51,6 +51,8 @@ claude mcp add --scope user aify-claude \
 
 The 24 `cc_*` tools will appear automatically. The skill at `.claude/skills/aify-claude/SKILL.md` auto-activates when the tools are detected.
 
+For resident Claude wakeups, use [install.claude.md](/D:/Docker%20Storage/Images/aify-claude/install.claude.md) or additionally register `aify-claude-channel` in user scope and start the session with `claude-aify`.
+
 ### Optional: API key
 
 Set `API_KEY=your-secret` in `.env` before starting Docker. Add to MCP config:
