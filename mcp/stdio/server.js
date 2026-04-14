@@ -112,6 +112,20 @@ function runtimeSummary(info = {}) {
   return `${runtime} @ ${machine} (${sessionMode})`;
 }
 
+function wakeModeSummary(info = {}) {
+  const explicit = String(info.wakeMode || "").trim();
+  if (explicit) return explicit;
+  const runtime = normalizeRuntime(info.runtime || "generic");
+  const sessionMode = normalizeSessionMode(info.sessionMode || info.session_mode);
+  const capabilities = Array.isArray(info.capabilities) ? info.capabilities : [];
+  if (sessionMode === "managed" && capabilities.includes("managed-run")) return "managed-worker";
+  if (sessionMode === "resident" && runtime === "claude-code" && capabilities.includes("resident-run")) return "claude-live";
+  if (sessionMode === "resident" && runtime === "codex" && capabilities.includes("resident-run") && info.sessionHandle) return "codex-thread-resume";
+  if (sessionMode === "resident" && runtime === "codex" && !info.sessionHandle) return "codex-missing-handle";
+  if (sessionMode === "resident" && runtime === "claude-code") return "claude-needs-channel";
+  return "message-only";
+}
+
 function dedupePreserveOrder(values) {
   const seen = new Set();
   const result = [];
@@ -717,7 +731,7 @@ server.tool(
       if (!entries.length) return { content: [{ type: "text", text: "No agents registered." }] };
       const lines = entries.map(([id, info]) => {
         const status = info.status ? ` [${info.status}]` : "";
-        return `- ${id} (${info.role})${status} -- "${info.name}" | ${runtimeSummary(info)} | unread: ${info.unread || 0} | last seen: ${info.lastSeen}`;
+        return `- ${id} (${info.role})${status} -- "${info.name}" | ${runtimeSummary(info)} | wake: ${wakeModeSummary(info)} | unread: ${info.unread || 0} | last seen: ${info.lastSeen}`;
       });
       return { content: [{ type: "text", text: lines.join("\n") }] };
     }
@@ -728,7 +742,7 @@ server.tool(
     const lines = entries.map(([id, info]) => {
       const unread = readInbox(id, "unread").length;
       const status = info.status ? ` [${info.status}]` : "";
-      return `- ${id} (${info.role})${status} -- "${info.name}" | ${runtimeSummary(info)} | unread: ${unread} | last seen: ${info.lastSeen}`;
+      return `- ${id} (${info.role})${status} -- "${info.name}" | ${runtimeSummary(info)} | wake: ${wakeModeSummary(info)} | unread: ${unread} | last seen: ${info.lastSeen}`;
     });
     return { content: [{ type: "text", text: lines.join("\n") }] };
   }
@@ -1336,6 +1350,7 @@ server.tool(
         return { content: [{ type: "text", text:
           `${agentId} (${info.role}) [${info.status}]\n` +
           `  Runtime: ${runtimeSummary(info)}\n` +
+          `  Wake mode: ${wakeModeSummary(info)}\n` +
           `  Unread: ${info.unread}\n` +
           `  Last seen: ${info.lastSeen}\n` +
           `  Last read: ${lastRead}`
@@ -1353,6 +1368,7 @@ server.tool(
     return { content: [{ type: "text", text:
       `${agentId} (${info.role}) [${info.status || "idle"}]\n` +
       `  Runtime: ${runtimeSummary(info)}\n` +
+      `  Wake mode: ${wakeModeSummary(info)}\n` +
       `  Unread: ${unread}\n` +
       `  Last seen: ${info.lastSeen}`
     }] };

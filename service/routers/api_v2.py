@@ -143,6 +143,25 @@ def _row_capabilities(row) -> list[str]:
     return _json_loads_or(row["capabilities"], [])
 
 
+def _agent_wake_mode(row) -> str:
+    runtime = _normalize_runtime((row["runtime"] if row else "") or "generic")
+    session_mode = _normalize_session_mode((row["session_mode"] if row else "") or "resident")
+    session_handle = str((row["session_handle"] if row else "") or "").strip()
+    capabilities = _row_capabilities(row) if row else []
+
+    if session_mode == "managed" and "managed-run" in capabilities:
+        return "managed-worker"
+    if session_mode == "resident" and runtime == "claude-code" and "resident-run" in capabilities:
+        return "claude-live"
+    if session_mode == "resident" and runtime == "codex" and "resident-run" in capabilities and session_handle:
+        return "codex-thread-resume"
+    if session_mode == "resident" and runtime == "codex" and not session_handle:
+        return "codex-missing-handle"
+    if session_mode == "resident" and runtime == "claude-code":
+        return "claude-needs-channel"
+    return "message-only"
+
+
 def _agent_execution_mode(row, requested_runtime: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
     runtime = _normalize_runtime(row["runtime"] or "generic")
     session_mode = _normalize_session_mode(row["session_mode"] or "resident")
@@ -238,6 +257,7 @@ def _agent_record_to_dict(row, status: str, unread: int):
         "machineId": row["machine_id"] or "",
         "launchMode": row["launch_mode"] or "detached",
         "sessionMode": session_mode,
+        "wakeMode": _agent_wake_mode(row),
         "sessionHandle": row["session_handle"] or "",
         "managedBy": row["managed_by"] or "",
         "capabilities": _json_loads_or(row["capabilities"], []),

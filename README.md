@@ -200,13 +200,13 @@ Claude Code (any machine)         Claude Code (any machine)
 
 - `cc_register(...)` registers a resident session: the exact live Claude/Codex session that is currently open.
 - `cc_spawn_agent(...)` creates a managed worker: a triggerable logical agent hosted by the local stdio bridge on that machine.
-- Resident Codex sessions become directly triggerable when `cc_register` captures a real `thread.id` and the bridge can resume that thread through `codex app-server`.
+- Resident Codex sessions use `thread.id`-based resume when `cc_register` captures a real `thread.id` and the bridge can resume that thread through `codex app-server`.
 - Resident Claude CLI sessions become wakeable when Claude is started through the installed `claude-aify` wrapper, which loads the local aify channel bridge.
 - Managed workers remain the detached cross-machine execution path for long-running/background work.
 
 ## Active Dispatch
 
-`cc_send(trigger=true)` and `cc_dispatch(...)` queue work in the service and let the target agent's local MCP server claim and execute it on the correct machine/runtime. If the target is a resident Codex session with a bound `thread.id`, aify resumes that exact thread. If the target is a resident Claude CLI session started through `claude-aify`, the local channel bridge wakes that exact session. Otherwise the managed worker path is used:
+`cc_send(trigger=true)` and `cc_dispatch(...)` queue work in the service and let the target agent's local MCP server claim and execute it on the correct machine/runtime. If the target is a resident Codex session with a bound `thread.id`, aify resumes that exact stored thread. If the target is a resident Claude CLI session started through `claude-aify`, the local channel bridge wakes that exact session live. Otherwise the managed worker path is used:
 
 ```
 Agent A: cc_spawn_agent(from="lead", agentId="tester-worker", role="tester", runtime="codex")
@@ -220,7 +220,7 @@ Agent A: cc_dispatch(to="tester-worker", subject="run tests", body="Run the repo
 This works across machines as long as the target machine has a live stdio MCP bridge for that agent. SSE clients still receive messages, but they cannot execute active dispatch because there is no local launcher process.
 
 Important:
-- Resident Codex sessions can be directly triggered when a live `thread.id` is bound.
+- Resident Codex sessions currently use `codex-thread-resume`, not a guaranteed visible foreground-session wake.
 - Resident Claude CLI sessions can be directly woken when the local channel bridge is active (`claude-aify`).
 - Managed workers are best for triggerable execution, long-lived runtime state, and unattended background work.
 - If the owning stdio bridge is closed, queued resident/managed runs stay on the server until that bridge reconnects.
@@ -233,6 +233,7 @@ Important:
 - Resident Codex triggering only works when the bridge talks to the same Codex thread store as the live session. WSL Codex + WSL bridge is good; Windows desktop Codex + WSL bridge is a store mismatch.
 - Resident Claude wakeups only work when the session was started with `claude-aify`, because the local channel bridge must be loaded into that exact live session.
 - `claude-aify` only makes sense when the Claude install was done with a real shared aify server URL. In local-only mode, the wrapper/channel wake path is intentionally disabled.
+- In aify surfaces, wake modes are intentionally distinct: `claude-live`, `codex-thread-resume`, `managed-worker`, and `message-only`.
 - If another agent says you are not triggerable, the most common fix is: update, restart, and re-register from the live session. Missing `thread.id` bindings and stale runtime metadata both come from skipping that step.
 
 ### Runtime Notes

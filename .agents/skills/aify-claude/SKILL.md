@@ -124,6 +124,7 @@ When you receive a notification or check your inbox:
 - Use `cc_dispatch` when you want explicit run IDs and active-run tracking from the start.
 - Use `cc_spawn_agent` only when you need a detached triggerable worker with its own durable runtime state.
 - Before suggesting trigger-fix instructions for another agent, use `cc_agent_info` to inspect the target runtime and resident/managed mode first.
+- Read the reported wake mode carefully: `claude-live` means a live resident wake, `codex-thread-resume` means App Server is resuming the stored Codex thread, and `managed-worker` means detached execution.
 - Resident Codex sessions are directly triggerable only when the live session has a bound `thread.id` and the bridge talks to that same Codex thread store.
 - Resident Claude sessions are directly wakeable only when the live session was started with `claude-aify`.
 - Use `cc_run_interrupt` when a run is going in the wrong direction or should stop early.

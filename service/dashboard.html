@@ -399,15 +399,17 @@ async function refreshDashboard() {
     if (!agents.length) {
       document.getElementById('agents-table').innerHTML = '<p class="em">No agents registered.</p>';
     } else {
-      let html = '<table><thead><tr><th>ID</th><th>Role</th><th>Status</th><th>Session</th><th>Runtime</th><th>Unread</th><th>Last Seen</th><th></th></tr></thead><tbody>';
+      let html = '<table><thead><tr><th>ID</th><th>Role</th><th>Status</th><th>Session</th><th>Wake</th><th>Runtime</th><th>Unread</th><th>Last Seen</th><th></th></tr></thead><tbody>';
       for (const [id, info] of agents) {
         const rawStatus = info.status || 'idle';
         const st = rawStatus.split(':')[0].trim();
         const runtime = `${info.runtime || 'generic'}${info.machineId ? ' @ ' + info.machineId : ''}`;
         const session = `${info.sessionMode || 'resident'}${info.managedBy ? ' by ' + info.managedBy : ''}`;
+        const wake = info.wakeMode || 'message-only';
         html += `<tr><td><b>${esc(id)}</b></td><td><span class="rb">${esc(info.role)}</span></td>` +
           `<td><span class="st-${st}">${esc(rawStatus)}</span></td>` +
           `<td class="t">${esc(session)}</td>` +
+          `<td class="t">${esc(wake)}</td>` +
           `<td class="t">${esc(runtime)}</td>` +
           `<td>${info.unread || 0}</td><td class="t">${esc(info.lastSeen)}</td>` +
           `<td><button class="btn btn-sm btn-danger" onclick="deleteAgent('${esc(id)}')">Remove</button></td></tr>`;

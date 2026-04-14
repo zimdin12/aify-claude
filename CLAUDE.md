@@ -142,6 +142,7 @@ Note: active dispatch is not available via SSE (requires a local stdio MCP serve
 - Resident Claude CLI sessions become wakeable when Claude is started through `claude-aify`, which loads the local aify channel bridge.
 - Managed workers remain the detached trigger path for long-running or unattended work.
 - Windows desktop Codex and WSL Codex use different thread stores; resident triggering only works when the bridge talks to the same store that created the session.
+- In agent/tool output, wake modes are intentionally distinct: `claude-live`, `codex-thread-resume`, `managed-worker`, and `message-only`.
 
 After every install/update/restart:
 - Re-register from the exact live session you want other agents to trigger.
