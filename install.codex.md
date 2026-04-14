@@ -89,7 +89,7 @@ Current Codex CLI note:
 ## Quick Start
 
 ```text
-comms_register(agentId="my-agent", role="coder", runtime="codex")
+comms_register(agentId="my-agent", role="coder", runtime="codex", sessionHandle="$CODEX_THREAD_ID", appServerUrl="$AIFY_CODEX_APP_SERVER_URL")
 comms_agents()
 comms_agent_info(agentId="my-agent")
 comms_send(from="my-agent", to="other-agent", type="info", subject="Hello", body="Hi there", silent=true)

@@ -474,7 +474,14 @@ else
 fi
 echo ""
 echo "Quick start:"
-echo "  comms_register(agentId=\"my-agent\", role=\"coder\")"
+if [ "$CLIENT" = "codex" ]; then
+  echo "  comms_register(agentId=\"my-agent\", role=\"coder\", runtime=\"codex\", sessionHandle=\"\$CODEX_THREAD_ID\", appServerUrl=\"\$AIFY_CODEX_APP_SERVER_URL\")"
+  echo "  # If those live env vars are unavailable, fall back to: comms_register(agentId=\"my-agent\", role=\"coder\", runtime=\"codex\")"
+elif [ "$CLIENT" = "claude" ]; then
+  echo "  comms_register(agentId=\"my-agent\", role=\"coder\", runtime=\"claude-code\")"
+else
+  echo "  comms_register(agentId=\"my-agent\", role=\"coder\")"
+fi
 echo "  comms_agents()"
 echo "  comms_send(from=\"my-agent\", to=\"other-agent\", type=\"info\", subject=\"Hello\", body=\"Hi there\", silent=true)"
 echo "  comms_inbox(agentId=\"my-agent\")"
