@@ -36,7 +36,6 @@ claude-aify
 ```
 
 That wrapper enables the local aify channel bridge and adds Claude’s current development-channel flag automatically.
-It also starts Claude with `--permission-mode auto`.
 If Claude says `server:aify-claude-channel · no MCP server configured with that name`, rerun the installer with a real server URL and restart Claude Code.
 
 Important:

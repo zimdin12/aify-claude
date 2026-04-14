@@ -81,7 +81,7 @@ install_claude_wrapper() {
 #!/bin/bash
 set -euo pipefail
 export AIFY_CLAUDE_CHANNEL_ENABLED=1
-exec claude --permission-mode auto --dangerously-load-development-channels server:aify-claude-channel "\$@"
+exec claude --dangerously-load-development-channels server:aify-claude-channel "\$@"
 EOF
   chmod +x "$wrapper_path"
 }
