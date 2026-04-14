@@ -99,7 +99,9 @@ EOF
 
 remove_claude_wrapper() {
   local wrapper_path="$HOME/.local/bin/claude-aify"
+  local shim_path="$HOME/.local/bin/claude-aify.cmd"
   rm -f "$wrapper_path"
+  rm -f "$shim_path"
 }
 
 install_codex_wrapper() {

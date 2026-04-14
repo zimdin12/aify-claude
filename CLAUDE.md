@@ -158,6 +158,7 @@ After every install/update/restart:
 - If those live env vars are unavailable, fall back to `comms_register(..., runtime="codex")`.
 - If bare registration still reports `message-only`, re-register from that same session with `sessionHandle="$CODEX_THREAD_ID"`.
 - The full `sessionHandle + appServerUrl` form is the safest option when multiple `codex-aify` sessions are open on the same machine or the wrapper was launched from a different directory than the registered `cwd`.
+- If the installer was run from Git Bash on Windows, it also installs `claude-aify.cmd` / `codex-aify.cmd` shims in `%USERPROFILE%\.local\bin` so the wrappers can be launched from PowerShell or `cmd.exe`.
 - Confirm with `comms_agent_info(...)`.
 - If another agent says you are not triggerable, assume your runtime metadata is stale before assuming the server is broken.
 
