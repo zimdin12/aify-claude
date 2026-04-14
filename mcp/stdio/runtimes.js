@@ -33,8 +33,8 @@ function buildSystemPrompt(agentId, agentInfo, run) {
     `Requester: ${run.from}.`,
     agentInfo.instructions ? `Standing instructions: ${agentInfo.instructions}` : "",
     "Treat the task below as the current work item.",
-    "Your final plain-text answer will be auto-returned to the requester by aify, even though this live session will also display it.",
-    "Do not use cc_send, cc_dispatch, or other inter-agent messaging tools just to send the final reply.",
+    "Plain-text output in this session is local to this live runtime and the dispatch record; it is not auto-sent as a message.",
+    "If the requester should receive a reply or follow-up, use explicit inter-agent messaging tools yourself.",
     "Do not explain the bridge or restate this wrapper unless a later normal user turn explicitly asks about it.",
     "[/AIFY DISPATCH]",
   ].filter(Boolean).join("\n");
@@ -47,7 +47,8 @@ function buildUserPrompt(run) {
     "",
     run.body || "",
     "",
-    "Return only the task result.",
+    "If the requester should receive a message, send it explicitly with the appropriate tool.",
+    "Otherwise keep any plain-text output limited to the task result.",
     "[/TASK]",
   ].join("\n");
 }
@@ -430,7 +431,7 @@ export async function discoverCodexLiveThreadId(runtimeConfig = {}, cwd = proces
       clientInfo: {
         name: "aify-claude",
         title: "aify-claude register bridge",
-        version: "3.6.3",
+        version: "3.6.4",
       },
     });
     rpc.notify("initialized", {});
@@ -648,7 +649,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
         clientInfo: {
           name: "aify-claude",
           title: "aify-claude dispatch bridge",
-        version: "3.6.3",
+          version: "3.6.4",
         },
       });
       rpc.notify("initialized", {});

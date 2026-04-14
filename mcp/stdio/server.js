@@ -421,25 +421,16 @@ async function runDispatchLoop() {
 
       controller.promise
         .then(async (result) => {
-          const replyType =
-            result.status === "completed" ? "response" :
-            result.status === "cancelled" ? "info" :
-            "error";
-          const replySubject = `[${result.status?.toUpperCase() || "DONE"}] ${run.subject}`;
-          const replyBody = result.summary || "(no output)";
-          const sendResult = await httpCall("POST", "/messages/send", {
-            from_agent: agentId,
-            to: run.from,
-            type: replyType,
-            subject: replySubject,
-            body: replyBody,
-          });
+          const summary = result.summary || "";
           await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, {
             status: result.status === "cancelled" ? "cancelled" : "completed",
-            summary: replyBody,
-            resultMessageId: sendResult.messageId || "",
+            summary,
+            resultMessageId: "",
             agentStatus: "idle",
-            appendEvent: result.status === "cancelled" ? "Run cancelled" : "Run completed successfully",
+            appendEvent:
+              result.status === "cancelled"
+                ? "Run cancelled. No automatic reply message was sent."
+                : "Run completed successfully. No automatic reply message was sent.",
             eventType: result.status === "cancelled" ? "cancelled" : "completed",
           });
           if (result.runtimeState) {
@@ -452,19 +443,12 @@ async function runDispatchLoop() {
         .catch(async (error) => {
           const message = error?.message || String(error);
           try {
-            const sendResult = await httpCall("POST", "/messages/send", {
-              from_agent: agentId,
-              to: run.from,
-              type: "error",
-              subject: `[FAILED] ${run.subject}`,
-              body: message,
-            });
             await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, {
               status: "failed",
               error: message,
-              resultMessageId: sendResult.messageId || "",
+              resultMessageId: "",
               agentStatus: "idle",
-              appendEvent: message,
+              appendEvent: `${message}\nNo automatic reply message was sent.`,
               eventType: "failed",
             });
           } catch (inner) {
@@ -520,7 +504,7 @@ async function processRunControls(agentId, activeRun) {
 
 const server = new McpServer({
   name: "claude-code-mcp",
-  version: "3.6.3",
+  version: "3.6.4",
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -951,7 +935,7 @@ server.tool(
           content: [{
             type: "text",
             text:
-              `Sent + queued dispatch for ${queued.join(", ") || "no launchable recipients"}. Results will arrive in your inbox.` +
+              `Sent + queued dispatch for ${queued.join(", ") || "no launchable recipients"}. Use cc_run_status(...) to inspect progress. No reply message will be sent unless the target sends one explicitly.` +
               (skipped.length ? `\nNot started: ${skipped.join("; ")}` : ""),
           }],
         };
@@ -1021,7 +1005,7 @@ server.tool(
         content: [{
           type: "text",
           text:
-            `Sent + triggered locally for ${started.join(", ") || "no launchable recipients"}. Results will arrive in your inbox.` +
+            `Sent + triggered locally for ${started.join(", ") || "no launchable recipients"}. No reply message will be sent unless the target sends one explicitly.` +
             (skipped.length ? `\nSkipped: ${skipped.join(", ")}` : ""),
         }],
       };
@@ -1095,7 +1079,7 @@ server.tool(
         text:
           `Queued ${r.runs?.length || 0} dispatch run(s):\n${lines.join("\n") || "- none"}` +
           (skipped.length ? `\n\nNot started:\n${skipped.join("\n")}` : "") +
-          `\n\nResults will arrive in your inbox.`,
+          `\n\nUse cc_run_status(...) to inspect progress. No reply message will be sent unless the target sends one explicitly.`,
       }],
     };
   }
@@ -1244,23 +1228,6 @@ function spawnTriggeredAgent({ targetId, targetInfo, from, type, subject, body }
   };
   const baseState = parseJson(targetInfo.runtimeState, {});
   const runtimeState = { ...baseState, ...(LOCAL_RUNTIME_STATE.get(targetId) || {}) };
-  const sendReply = (replyBody, replyType, replySubject) => {
-    const reply = {
-      id: `${Date.now()}-${randomUUID().slice(0, 8)}`,
-      from: targetId,
-      type: replyType,
-      subject: replySubject,
-      body: replyBody,
-    };
-    if (IS_REMOTE) {
-      httpCall("POST", "/messages/send", {
-        from_agent: targetId, to: from, type: replyType,
-        subject: replySubject, body: replyBody,
-      }).catch(() => {});
-    } else {
-      deliverMessage(from, reply);
-      }
-    };
 
   const controller = launchRuntimeRun({
     agentId: targetId,
@@ -1283,19 +1250,8 @@ function spawnTriggeredAgent({ targetId, targetInfo, from, type, subject, body }
   });
 
   controller.promise
-    .then((result) => {
-      const output = result.summary || "(no output)";
-      const truncated = output.length > 2000 ? output.slice(0, 2000) + "\n..." : output;
-      const tag = result.status === "completed" ? "DONE" : (result.status || "FAILED").toUpperCase();
-      const replyType =
-        result.status === "completed" ? "response" :
-        result.status === "cancelled" ? "info" :
-        "error";
-      sendReply(truncated, replyType, `[${tag}] ${subject}`);
-    })
-    .catch((err) => {
-      sendReply(err.message, "error", `[ERROR] ${subject}`);
-    });
+    .then(() => {})
+    .catch(() => {});
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

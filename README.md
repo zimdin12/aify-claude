@@ -264,15 +264,16 @@ Agent A: cc_dispatch(to="tester-worker", subject="run tests", body="Run the repo
   → dispatch run queued on the server
   → tester-worker's owning stdio MCP bridge claims the run
   → runtime launches locally (Claude Code CLI or Codex App Server)
-  → result sent back to Agent A's inbox
+  → run status/summary recorded on the server
+  → Agent A can inspect with cc_run_status(...) or receive a separate reply only if tester-worker sends one explicitly
 ```
 
 This works across machines as long as the target machine has a live stdio MCP bridge for that agent. SSE clients still receive messages, but they cannot execute active dispatch because there is no local launcher process.
 
 Important:
-- Dispatched runs automatically send their final response back to the requesting agent. For ordinary reply tasks, write the reply in plain text; do not ask the dispatched runtime to call `cc_send(...)` just to answer the sender.
+- Dispatched runs do not auto-send their final response back to the requesting agent. If you want the requester to receive a message, the target runtime must explicitly call `cc_send(...)` or another inter-agent tool.
 - Resident Codex sessions started with `codex-aify` use `codex-live`, which targets the same shared local WebSocket App Server as the visible TUI.
-- In `codex-live`, the visible Codex session will show the injected task and its final answer. That is expected; the bridge still auto-returns the final plain-text answer to the requesting agent.
+- In `codex-live`, the visible Codex session will show the injected task and its final answer. That is expected. Plain-text output stays local to that session and the dispatch record unless the agent explicitly sends a message.
 - Resident Codex sessions started with plain `codex` still use `codex-thread-resume`, not a guaranteed visible foreground-session wake.
 - Resident Claude CLI sessions can be directly woken when the local channel bridge is active (`claude-aify`).
 - Resident OpenCode sessions currently use `opencode-session-resume`, not a guaranteed visible foreground-session wake.

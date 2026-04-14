@@ -165,7 +165,7 @@ Note: active dispatch is not available via SSE (requires a local stdio MCP serve
 - Re-registering the same agent ID supersedes the older bridge instance for that agent on that machine. This is how stale-run recovery works after a restart.
 - `cc_spawn_agent(...)` creates a managed worker: a triggerable logical agent hosted by the local stdio bridge on that machine.
 - Resident Codex sessions started with `codex-aify` become `codex-live`: the visible TUI and the aify bridge share the same local WebSocket `codex app-server`.
-- In `codex-live`, the live Codex terminal will show the injected task and the answer. That is expected; aify still auto-returns the final plain-text answer to the requesting agent.
+- In `codex-live`, the live Codex terminal will show the injected task and the answer. That is expected. Plain-text output stays local to that session and the dispatch record unless the agent explicitly sends a message.
 - Resident Codex sessions started with plain `codex` still fall back to `codex-thread-resume`, which resumes the bound stored `thread.id` through a separate App Server worker.
 - Resident Claude CLI sessions become wakeable when Claude is started through `claude-aify`, which loads the local aify channel bridge.
 - OpenCode supports managed workers directly, and resident session resume when registered with a real `sessionHandle`.
@@ -185,7 +185,7 @@ After every install/update/restart:
 
 Use `cc_send(trigger=true)` as the default "wake this agent now" path. Use `cc_spawn_agent(...)` only when you explicitly want a detached/background worker.
 
-When you dispatch a task, the target run's final plain-text answer is automatically sent back to you by the bridge. For simple reply/acknowledgement tasks, ask for the reply text directly instead of telling the target to call `cc_send(...)` back to you.
+When you dispatch a task, the target run's final plain-text answer is kept in the live session and dispatch record. If you want a message back, tell the target to use `cc_send(...)` explicitly.
 
 If Codex auto-detection is wrong, pass `runtime="codex"` to `cc_register`.
 
