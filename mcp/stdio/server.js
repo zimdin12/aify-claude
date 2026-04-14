@@ -520,7 +520,7 @@ async function processRunControls(agentId, activeRun) {
 
 const server = new McpServer({
   name: "claude-code-mcp",
-  version: "3.6.1",
+  version: "3.6.2",
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -662,7 +662,14 @@ server.tool(
           type: "text",
           text:
             `Registered "${r.agentId}" (${resolvedSessionMode}, role: ${r.role}, runtime: ${resolvedRuntime}, machine: ${resolvedMachineId}).` +
-            (resolvedSessionHandle ? ` Session: ${resolvedSessionHandle}` : ""),
+            (resolvedSessionHandle ? ` Session: ${resolvedSessionHandle}` : "") +
+            (
+              resolvedRuntime === "codex" &&
+              hasCodexLiveAppServer(runtimeConfig) &&
+              !resolvedSessionHandle
+                ? ` Live Codex app-server detected, but no thread was auto-bound. Re-run cc_register(..., runtime="codex", sessionHandle="$CODEX_THREAD_ID") from that same codex-aify session.`
+                : ""
+            ),
         }],
       };
     }
@@ -693,7 +700,14 @@ server.tool(
         type: "text",
         text:
           `Registered "${agentId}" (${resolvedSessionMode}, role: ${role}, cwd: ${agentCwd}, runtime: ${resolvedRuntime}).` +
-          (resolvedSessionHandle ? ` Session: ${resolvedSessionHandle}` : ""),
+          (resolvedSessionHandle ? ` Session: ${resolvedSessionHandle}` : "") +
+          (
+            resolvedRuntime === "codex" &&
+            hasCodexLiveAppServer(runtimeConfig) &&
+            !resolvedSessionHandle
+              ? ` Live Codex app-server detected, but no thread was auto-bound. Re-run cc_register(..., runtime="codex", sessionHandle="$CODEX_THREAD_ID") from that same codex-aify session.`
+              : ""
+          ),
       }],
     };
   }

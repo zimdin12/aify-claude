@@ -594,7 +594,7 @@ async def _create_dispatch_runs(
 async def root():
     return {
         "service": "aify-claude",
-        "version": "3.6.1",
+        "version": "3.6.2",
         "storage": "sqlite",
         "endpoints": {
             "agents": "/api/v1/agents",

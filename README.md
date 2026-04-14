@@ -47,6 +47,18 @@ After every install or update:
 3. Re-register from the exact live session you want other agents to trigger.
 4. Confirm your runtime and resident state with `cc_agent_info(...)`.
 
+For Codex specifically, the reliable live-wake registration sequence is:
+
+```text
+cc_register(agentId="my-agent", role="coder", runtime="codex")
+```
+
+If that still reports `message-only` from inside a `codex-aify` session, use:
+
+```text
+cc_register(agentId="my-agent", role="coder", runtime="codex", sessionHandle="$CODEX_THREAD_ID")
+```
+
 ### Client — Claude Code install (manual)
 
 Install aify-claude as a Claude Code plugin. For resident Claude wakeups, manual setup needs both the normal MCP server and the separate `aify-claude-channel` bridge.

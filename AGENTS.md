@@ -174,6 +174,7 @@ Note: active dispatch is not available via SSE (requires a local stdio MCP serve
 
 After every install/update/restart:
 - Re-register from the exact live session you want other agents to trigger.
+- For `codex-aify`, first try `cc_register(..., runtime="codex")`. If that still reports `message-only`, re-register from that same session with `sessionHandle="$CODEX_THREAD_ID"`.
 - Confirm with `cc_agent_info(...)`.
 - If another agent says you are not triggerable, assume your runtime metadata is stale before assuming the server is broken.
 

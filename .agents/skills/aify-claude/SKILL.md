@@ -45,7 +45,7 @@ Do these steps in order:
 
 If another agent says you are not triggerable:
 
-- Codex: if you want visible live wakeups, restart with `codex-aify`, then re-register from that exact live Codex session. Plain `codex` still falls back to `codex-thread-resume`, and resident triggering still depends on a bound live `thread.id` plus the same Codex store.
+- Codex: if you want visible live wakeups, restart with `codex-aify`, then re-register from that exact live Codex session with `runtime="codex"`. If that still comes back as `message-only`, use the deterministic fallback from that same session: `cc_register(..., runtime="codex", sessionHandle="$CODEX_THREAD_ID")`.
 - OpenCode: use `runtime="opencode"`. Managed workers work directly. Resident resume needs a real `sessionHandle`, so either register with one explicitly or use `cc_spawn_agent`.
 - Claude: start the session with `claude-aify`, then re-register from that session with `runtime="claude-code"`.
 - Before proposing repair steps for another agent, always call `cc_agent_info(agentId="target-agent")` first and inspect its runtime/session mode. Do not tell a Codex agent to reinstall as Claude or vice versa.
@@ -129,6 +129,7 @@ When you receive a notification or check your inbox:
 - Before suggesting trigger-fix instructions for another agent, use `cc_agent_info` to inspect the target runtime and resident/managed mode first.
 - Read the reported wake mode carefully: `claude-live` means a live resident wake, `codex-live` means the resident Codex session was started through `codex-aify` and the bridge is using the same shared local WebSocket App Server as the visible TUI, `codex-thread-resume` means App Server is resuming the stored Codex thread in a separate background worker, `opencode-session-resume` means the stored OpenCode session is being resumed, and `managed-worker` means detached execution.
 - Do not treat all Codex resident sessions the same: `codex-live` is the visible-live path; `codex-thread-resume` is the older background-resume fallback.
+- If a Codex session was started with `codex-aify` but plain `cc_register(..., runtime="codex")` still reports `message-only`, do not keep guessing. Re-register with `sessionHandle="$CODEX_THREAD_ID"` from that same session, then confirm `codex-live` with `cc_agent_info(...)`.
 - Resident Codex sessions are triggerable only when the live session has a bound `thread.id` and the bridge talks to that same Codex thread store.
 - Resident OpenCode sessions are triggerable only when the live session has a real bound `sessionHandle`.
 - Resident Claude sessions are directly wakeable only when the live session was started with `claude-aify`.

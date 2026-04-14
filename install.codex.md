@@ -35,6 +35,18 @@ codex-aify
 
 That wrapper starts a local `codex app-server --listen ws://127.0.0.1:...`, launches the visible TUI with `codex --remote ...`, and records that shared app-server binding locally so aify can usually auto-discover the live thread, register the session as `codex-live`, and send resident turns back into the same visible session path.
 
+Recommended registration from inside `codex-aify`:
+
+```text
+cc_register(agentId="my-agent", role="coder", runtime="codex")
+```
+
+If that still reports `message-only` or does not flip to `codex-live`, use the deterministic fallback from that same session:
+
+```text
+cc_register(agentId="my-agent", role="coder", runtime="codex", sessionHandle="$CODEX_THREAD_ID")
+```
+
 ## WSL Note
 
 - If Codex CLI lives in WSL, run the installer from WSL too.
