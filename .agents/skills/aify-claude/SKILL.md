@@ -45,7 +45,7 @@ Do these steps in order:
 
 If another agent says you are not triggerable:
 
-- Codex: re-register from the live Codex session after restart. Resident Codex triggering depends on a bound live `thread.id`. If the bridge and the session are using different Codex stores, resident triggering will not work.
+- Codex: if you want visible live wakeups, restart with `codex-aify`, then re-register from that exact live Codex session. Plain `codex` still falls back to `codex-thread-resume`, and resident triggering still depends on a bound live `thread.id` plus the same Codex store.
 - OpenCode: use `runtime="opencode"`. Managed workers work directly. Resident resume needs a real `sessionHandle`, so either register with one explicitly or use `cc_spawn_agent`.
 - Claude: start the session with `claude-aify`, then re-register from that session with `runtime="claude-code"`.
 - Before proposing repair steps for another agent, always call `cc_agent_info(agentId="target-agent")` first and inspect its runtime/session mode. Do not tell a Codex agent to reinstall as Claude or vice versa.
@@ -145,7 +145,7 @@ When you receive a notification or check your inbox:
 
 - `stdio` install: full experience, including active dispatch and local runtime launch.
 - `SSE` install: messaging, channels, shared files, and run inspection, but not local process launch. SSE clients can request dispatch, but they cannot be the local executor and cannot host triggerable resident sessions or managed workers.
-- Resident Codex sessions are best when you want aify to resume the existing stored Codex thread by `thread.id`.
+- Resident Codex sessions started through `codex-aify` are best when you want visible live wakeups; plain resident Codex sessions are still useful when background `thread.id` resume is acceptable.
 - Resident OpenCode sessions are best when you already have a stable `sessionHandle`; otherwise prefer a managed worker.
 - Resident Claude sessions become wakeable when the session was started with `claude-aify`, which loads the local aify channel bridge.
 - Managed workers are best for active execution, unattended work, and cross-machine triggering.

@@ -141,8 +141,8 @@ function canUseDefaultResidentCodexBridge() {
   return process.env.AIFY_CODEX_ALLOW_DESKTOP_RESIDENT === "1";
 }
 
-function canUseResidentClaudeChannel() {
-  return process.env.AIFY_CLAUDE_CHANNEL_ENABLED === "1";
+export function hasClaudeLiveChannel(runtimeConfig = {}) {
+  return runtimeConfig?.channelEnabled === true || process.env.AIFY_CLAUDE_CHANNEL_ENABLED === "1";
 }
 
 function getRuntimeConfig(agentInfo) {
@@ -372,6 +372,81 @@ function createWebSocketRpcClient(url, { token, onNotification, onStderr } = {})
   });
 }
 
+function parseTimestamp(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const text = String(value || "").trim();
+  if (!text) return 0;
+  const numeric = Number(text);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function pickNewestCodexThreadId(listResult, cwd) {
+  const threads = Array.isArray(listResult?.threads) ? listResult.threads : [];
+  if (!threads.length) return "";
+
+  const normalizedCwd = String(cwd || "").trim();
+  const preferred = [];
+  const fallback = [];
+
+  for (const thread of threads) {
+    const id = String(thread?.id || "").trim();
+    if (!id) continue;
+    const threadCwd = String(thread?.cwd || thread?.directory || thread?.worktree || "").trim();
+    if (normalizedCwd && threadCwd && threadCwd === normalizedCwd) preferred.push(thread);
+    else fallback.push(thread);
+  }
+
+  const candidates = preferred.length ? preferred : fallback;
+  candidates.sort((a, b) => {
+    const aTime = parseTimestamp(a?.updatedAt || a?.lastUpdatedAt || a?.createdAt || a?.timestamp);
+    const bTime = parseTimestamp(b?.updatedAt || b?.lastUpdatedAt || b?.createdAt || b?.timestamp);
+    return bTime - aTime;
+  });
+
+  return String(candidates[0]?.id || "").trim();
+}
+
+export async function discoverCodexLiveThreadId(runtimeConfig = {}, cwd = process.cwd()) {
+  if (!hasCodexLiveAppServer(runtimeConfig)) return "";
+  const appServerUrl = String(runtimeConfig?.appServerUrl || "").trim();
+  if (!appServerUrl) return "";
+  const remoteAuthTokenEnv = String(runtimeConfig?.remoteAuthTokenEnv || "").trim();
+  const remoteAuthToken = remoteAuthTokenEnv ? String(process.env[remoteAuthTokenEnv] || "").trim() : "";
+
+  let rpc = null;
+  try {
+    rpc = await createWebSocketRpcClient(appServerUrl, {
+      token: remoteAuthToken || undefined,
+    });
+    await rpc.request("initialize", {
+      clientInfo: {
+        name: "aify-claude",
+        title: "aify-claude register bridge",
+        version: "3.6.1",
+      },
+    });
+    rpc.notify("initialized", {});
+
+    let result = null;
+    try {
+      result = await rpc.request("thread/list", { limit: 20, sourceKinds: ["cli", "vscode"] }, 5000);
+    } catch {
+      result = await rpc.request("thread/list", {}, 5000);
+    }
+    return pickNewestCodexThreadId(result, cwd);
+  } catch {
+    return "";
+  } finally {
+    try {
+      rpc?.close?.();
+    } catch {
+      // best effort
+    }
+  }
+}
+
 function createClaudeController({ agentId, agentInfo, run, runtimeState, callbacks }) {
   const config = getRuntimeConfig(agentInfo);
   const launcher = defaultClaudeCommand();
@@ -567,7 +642,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
         clientInfo: {
           name: "aify-claude",
           title: "aify-claude dispatch bridge",
-          version: "3.6.0",
+          version: "3.6.1",
         },
       });
       rpc.notify("initialized", {});
@@ -922,6 +997,11 @@ export function defaultCapabilitiesForRuntime(runtime, sessionMode = "resident",
     }
   }
 
+  if (normalizedRuntime === "claude-code") {
+    if (!hasClaudeLiveChannel(runtimeConfig)) return [];
+    return ["resident-run", "interrupt"];
+  }
+
   if (!resolvedSessionHandle) return [];
   switch (normalizedRuntime) {
     case "codex":
@@ -929,9 +1009,6 @@ export function defaultCapabilitiesForRuntime(runtime, sessionMode = "resident",
       return ["resident-run", "resume", "interrupt", "steer"];
     case "opencode":
       return ["resident-run", "resume", "interrupt"];
-    case "claude-code":
-      if (!canUseResidentClaudeChannel()) return [];
-      return ["resident-run", "interrupt"];
     default:
       return [];
   }

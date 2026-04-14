@@ -22,12 +22,14 @@ import { randomUUID } from "crypto";
 import fs from "fs";
 import path from "path";
 import { loadSettingsEnv } from "./load-env.js";
+import { readRuntimeMarker } from "./runtime-markers.js";
 import {
   canLaunchRuntime,
   defaultCapabilitiesForRuntime,
   defaultSessionHandleForRuntime,
   defaultMachineId,
   detectRuntime,
+  discoverCodexLiveThreadId,
   hasCodexLiveAppServer,
   launchRuntimeRun,
   normalizeRuntime,
@@ -155,18 +157,28 @@ function normalizeSessionMode(mode) {
   return value === "managed" ? "managed" : "resident";
 }
 
-function resolvedRuntimeConfigForRegistration(runtime, previousInfo = null) {
+function resolvedRuntimeMarker(runtime, cwd) {
+  const normalizedRuntime = normalizeRuntime(runtime || "generic");
+  const resolvedCwd = String(cwd || DEFAULT_CWD || process.cwd()).trim() || process.cwd();
+  return readRuntimeMarker(normalizedRuntime, resolvedCwd);
+}
+
+function resolvedRuntimeConfigForRegistration(runtime, previousInfo = null, cwd = DEFAULT_CWD) {
   const normalizedRuntime = normalizeRuntime(runtime || "generic");
   const previousRuntimeConfig = parseJson(previousInfo?.runtimeConfig, {});
   const runtimeConfig = { ...previousRuntimeConfig };
+  const marker = resolvedRuntimeMarker(normalizedRuntime, cwd);
 
   if (normalizedRuntime === "codex") {
-    const appServerUrl = String(process.env.AIFY_CODEX_APP_SERVER_URL || "").trim();
+    const appServerUrl = String(marker?.appServerUrl || process.env.AIFY_CODEX_APP_SERVER_URL || "").trim();
     const remoteAuthTokenEnv = String(process.env.AIFY_CODEX_REMOTE_AUTH_TOKEN_ENV || "").trim();
     if (appServerUrl) runtimeConfig.appServerUrl = appServerUrl;
     else delete runtimeConfig.appServerUrl;
     if (remoteAuthTokenEnv) runtimeConfig.remoteAuthTokenEnv = remoteAuthTokenEnv;
     else delete runtimeConfig.remoteAuthTokenEnv;
+  } else if (normalizedRuntime === "claude-code") {
+    if (marker?.channelEnabled) runtimeConfig.channelEnabled = true;
+    else delete runtimeConfig.channelEnabled;
   }
 
   return runtimeConfig;
@@ -508,7 +520,7 @@ async function processRunControls(agentId, activeRun) {
 
 const server = new McpServer({
   name: "claude-code-mcp",
-  version: "3.6.0",
+  version: "3.6.1",
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -540,9 +552,15 @@ server.tool(
     const resolvedMachineId = machineId || MACHINE_ID;
     const resolvedSessionMode = normalizeSessionMode(sessionMode);
     const previousInfo = REMOTE_AGENT_STATE.get(agentId)?.info;
-    const runtimeConfig = resolvedRuntimeConfigForRegistration(resolvedRuntime, previousInfo);
+    const resolvedCwd = cwd || DEFAULT_CWD;
+    const runtimeConfig = resolvedRuntimeConfigForRegistration(resolvedRuntime, previousInfo, resolvedCwd);
+    const discoveredCodexThreadId =
+      resolvedRuntime === "codex" && hasCodexLiveAppServer(runtimeConfig)
+        ? await discoverCodexLiveThreadId(runtimeConfig, resolvedCwd)
+        : "";
     const resolvedSessionHandle =
       sessionHandle ||
+      discoveredCodexThreadId ||
       defaultSessionHandleForRuntime(resolvedRuntime) ||
       previousInfo?.sessionHandle ||
       "";
@@ -552,7 +570,7 @@ server.tool(
       agentId,
       role,
       name,
-      cwd: cwd || DEFAULT_CWD,
+      cwd: resolvedCwd,
       model: model || "",
       instructions: instructions || "",
       runtime: resolvedRuntime,
@@ -568,7 +586,7 @@ server.tool(
 
     // Write agent ID to temp so the notification hook can find it (session-specific).
     // Only resident sessions represent the current UI/CLI session.
-    const agentCwd = cwd || DEFAULT_CWD;
+    const agentCwd = resolvedCwd;
     if (resolvedSessionMode === "resident") {
       try { fs.writeFileSync(path.join(agentCwd, ".aify-agent"), agentId); } catch { /* best effort */ }
       // Also write to a session-specific temp file keyed by PID

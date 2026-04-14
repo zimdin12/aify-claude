@@ -35,7 +35,7 @@ For resident-session wakeups, start Claude with:
 claude-aify
 ```
 
-That wrapper enables the local aify channel bridge and adds Claude’s current development-channel flag automatically.
+That wrapper enables the local aify channel bridge, adds Claude’s current development-channel flag automatically, and records the live resident-session binding so `cc_register` can advertise `claude-live` reliably.
 If Claude says `server:aify-claude-channel · no MCP server configured with that name`, rerun the installer with a real server URL and restart Claude Code.
 
 Important:

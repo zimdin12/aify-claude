@@ -33,7 +33,7 @@ For the live-wake path, start Codex with:
 codex-aify
 ```
 
-That wrapper starts a local `codex app-server --listen ws://127.0.0.1:...`, launches the visible TUI with `codex --remote ...`, and exports the shared app-server URL so aify can send resident turns back into the same session.
+That wrapper starts a local `codex app-server --listen ws://127.0.0.1:...`, launches the visible TUI with `codex --remote ...`, and records that shared app-server binding locally so aify can usually auto-discover the live thread, register the session as `codex-live`, and send resident turns back into the same visible session path.
 
 ## WSL Note
 
@@ -44,6 +44,7 @@ Important:
 - Active dispatch works only when the agent is installed through the local `stdio` MCP server.
 - `cc_register` creates a resident session for messaging/presence and, for Codex, captures the live `thread.id` when available.
 - If the session was started with `codex-aify`, resident Codex wakeups use the same WebSocket app-server as the visible TUI and show up as `codex-live`.
+- If `codex-aify` is running but `cc_agent_info(...)` still does not show `codex-live`, re-register once more with `runtime="codex"`. If the live thread still is not auto-detected, pass `sessionHandle="$CODEX_THREAD_ID"` explicitly from that same session.
 - If the session was started with plain `codex`, resident Codex still falls back to `codex-thread-resume`, which resumes the stored thread through a separate hidden app-server.
 - `cc_spawn_agent` still creates a managed worker for detached/background execution and long-lived worker state.
 - If the owning stdio bridge is closed, queued resident/managed runs wait until that bridge reconnects.

@@ -99,8 +99,16 @@ mkdir -p ~/.local/bin
 cat > ~/.local/bin/claude-aify <<'EOF'
 #!/bin/bash
 set -euo pipefail
-export AIFY_CLAUDE_CHANNEL_ENABLED=1
-exec claude --dangerously-load-development-channels server:aify-claude-channel "$@"
+MARKER_CWD="$(pwd)"
+node "$HOME/.claude/plugins/aify-claude/mcp/stdio/runtime-markers.js" write claude-code "$MARKER_CWD" "{\"channelEnabled\":true,\"pid\":$$}" >/dev/null
+cleanup() {
+  node "$HOME/.claude/plugins/aify-claude/mcp/stdio/runtime-markers.js" remove claude-code "$MARKER_CWD" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+
+claude --dangerously-load-development-channels server:aify-claude-channel "$@"
+STATUS=$?
+exit "$STATUS"
 EOF
 chmod +x ~/.local/bin/claude-aify
 ```
@@ -279,9 +287,9 @@ Important:
 - Claude managed workers use the local `claude -p` CLI with a persistent `session-id` per worker.
 - Codex managed workers use `codex app-server` with a persistent thread per worker.
 - OpenCode managed workers use the official OpenCode SDK/server flow with a persistent `sessionId` per worker.
-- Codex resident sessions started with `codex-aify` export a shared `AIFY_CODEX_APP_SERVER_URL`, so aify can drive the same local WebSocket App Server as the visible TUI and report `codex-live`.
+- Codex resident sessions started with `codex-aify` record the shared local WebSocket App Server binding through the wrapper, so aify can drive the same App Server as the visible TUI and report `codex-live`.
 - Plain Codex resident sessions still use the `CODEX_THREAD_ID` exposed by the live session and resume that thread through a separate App Server worker as `codex-thread-resume`.
-- Claude resident wakeups use the local `aify-claude-channel` server plus Claude Channels. The installer adds the server and a `claude-aify` wrapper that starts Claude with the required development-channel flag.
+- Claude resident wakeups use the local `aify-claude-channel` server plus Claude Channels. The installer adds the server and a `claude-aify` wrapper that starts Claude with the required development-channel flag and records the live resident binding for `cc_register`.
 - OpenCode resident resume works when you register with a real `sessionHandle`; interrupt is supported, steering is not wired yet.
 - For Claude, the installer registers both `aify-claude` and `aify-claude-channel` in Claude user scope so the wrapper works across projects and sessions.
 - On Windows, the Codex bridge defaults to `wsl.exe -e codex app-server`. If your Codex CLI lives in WSL, prefer running the Codex-side MCP server from inside WSL so the registered `cwd` is already a Linux path.

@@ -82,8 +82,16 @@ install_claude_wrapper() {
   cat > "$wrapper_path" <<EOF
 #!/bin/bash
 set -euo pipefail
-export AIFY_CLAUDE_CHANNEL_ENABLED=1
-exec claude --dangerously-load-development-channels server:aify-claude-channel "\$@"
+MARKER_CWD="\$(pwd)"
+node "$SCRIPT_DIR/mcp/stdio/runtime-markers.js" write claude-code "\$MARKER_CWD" "{\"channelEnabled\":true,\"pid\":\$\$}" >/dev/null
+cleanup() {
+  node "$SCRIPT_DIR/mcp/stdio/runtime-markers.js" remove claude-code "\$MARKER_CWD" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+
+claude --dangerously-load-development-channels server:aify-claude-channel "\$@"
+STATUS=\$?
+exit "\$STATUS"
 EOF
   chmod +x "$wrapper_path"
 }
@@ -144,6 +152,7 @@ fi
 
 APP_SERVER_URL="ws://127.0.0.1:$PORT"
 export AIFY_CODEX_APP_SERVER_URL="$APP_SERVER_URL"
+MARKER_CWD="$(pwd)"
 
 LOG_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/aify-claude"
 mkdir -p "$LOG_ROOT"
@@ -151,8 +160,10 @@ LOG_FILE="$LOG_ROOT/codex-aify-app-server.log"
 
 codex app-server --listen "$APP_SERVER_URL" >>"$LOG_FILE" 2>&1 &
 APP_SERVER_PID=$!
+node "__SCRIPT_DIR__/mcp/stdio/runtime-markers.js" write codex "$MARKER_CWD" "{\"appServerUrl\":\"$APP_SERVER_URL\",\"pid\":$$}" >/dev/null
 
 cleanup() {
+  node "__SCRIPT_DIR__/mcp/stdio/runtime-markers.js" remove codex "$MARKER_CWD" >/dev/null 2>&1 || true
   if kill -0 "$APP_SERVER_PID" >/dev/null 2>&1; then
     kill "$APP_SERVER_PID" >/dev/null 2>&1 || true
     wait "$APP_SERVER_PID" 2>/dev/null || true
@@ -170,6 +181,8 @@ codex --remote "$APP_SERVER_URL" "$@"
 STATUS=$?
 exit "$STATUS"
 EOF
+  sed -i.bak "s|__SCRIPT_DIR__|$SCRIPT_DIR|g" "$wrapper_path"
+  rm -f "$wrapper_path.bak"
   chmod +x "$wrapper_path"
 }
 

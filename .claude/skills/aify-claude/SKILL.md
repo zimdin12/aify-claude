@@ -46,7 +46,7 @@ Do these steps in order:
 If another agent says you are not triggerable:
 
 - Claude: start the session with `claude-aify`, then re-register from that session with `runtime="claude-code"`.
-- Codex: re-register from the live Codex session after restart. Resident Codex triggering depends on a bound live `thread.id`. If the bridge and the session are using different Codex stores, resident triggering will not work.
+- Codex: if you want visible live wakeups, restart with `codex-aify`, then re-register from that exact live Codex session. Plain `codex` still falls back to `codex-thread-resume`, and resident triggering still depends on a bound live `thread.id` plus the same Codex store.
 - OpenCode: use `runtime="opencode"`. Managed workers work directly. Resident resume needs a real `sessionHandle`, so either register with one explicitly or use `cc_spawn_agent`.
 - Before proposing repair steps for another agent, always call `cc_agent_info(agentId="target-agent")` first and inspect its runtime/session mode. Do not tell a Codex agent to reinstall as Claude or vice versa.
 
@@ -130,7 +130,7 @@ When you receive a notification or check your inbox:
 - Read the reported wake mode carefully: `claude-live` means a live resident wake, `codex-live` means the resident Codex session was started through `codex-aify` and the bridge is using the same shared local WebSocket App Server as the visible TUI, `codex-thread-resume` means App Server is resuming the stored Codex thread in a separate background worker, `opencode-session-resume` means the stored OpenCode session is being resumed, and `managed-worker` means detached execution.
 - Do not treat all Codex resident sessions the same: `codex-live` is the visible-live path; `codex-thread-resume` is the older background-resume fallback.
 - Resident Claude sessions are directly wakeable only when the live session was started with `claude-aify`.
-- Resident Codex sessions are triggerable only when the live session has a bound `thread.id` and the bridge talks to that same Codex thread store.
+- Resident Codex sessions are triggerable only when the live session has a bound `thread.id` and the bridge talks to that same Codex thread store. `codex-live` is the visible-live wrapper path; `codex-thread-resume` is the background fallback.
 - Resident OpenCode sessions are triggerable only when the live session has a real bound `sessionHandle`.
 - Use `cc_run_interrupt` when a run is going in the wrong direction or should stop early.
 - Use `cc_run_steer` to refine an active Codex run without starting over.
