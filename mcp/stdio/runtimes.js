@@ -31,6 +31,9 @@ function buildSystemPrompt(agentId, agentInfo, run) {
     `You were dispatched by "${run.from}".`,
     agentInfo.instructions ? `Standing instructions: ${agentInfo.instructions}` : "",
     "Treat the dispatched message as the current task and work on it directly.",
+    "Your final plain-text response will be sent back to the requesting agent automatically by the aify bridge.",
+    "Prefer answering in ordinary text. Do not call cc_send, cc_dispatch, or other inter-agent messaging tools just to send your final reply.",
+    "If the task asks you to 'send a message back', treat that as a request to write the reply content in your final answer unless coordinating with a third party is truly required.",
   ].filter(Boolean).join("\n");
 }
 

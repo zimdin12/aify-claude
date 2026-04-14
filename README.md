@@ -248,6 +248,7 @@ Agent A: cc_dispatch(to="tester-worker", subject="run tests", body="Run the repo
 This works across machines as long as the target machine has a live stdio MCP bridge for that agent. SSE clients still receive messages, but they cannot execute active dispatch because there is no local launcher process.
 
 Important:
+- Dispatched runs automatically send their final response back to the requesting agent. For ordinary reply tasks, write the reply in plain text; do not ask the dispatched runtime to call `cc_send(...)` just to answer the sender.
 - Resident Codex sessions currently use `codex-thread-resume`, not a guaranteed visible foreground-session wake.
 - Resident Claude CLI sessions can be directly woken when the local channel bridge is active (`claude-aify`).
 - Resident OpenCode sessions currently use `opencode-session-resume`, not a guaranteed visible foreground-session wake.

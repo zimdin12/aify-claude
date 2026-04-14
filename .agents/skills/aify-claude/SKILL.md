@@ -125,6 +125,7 @@ When you receive a notification or check your inbox:
 - Re-registering the same agent ID intentionally supersedes the older bridge instance for that agent on that machine.
 - Use `cc_dispatch` when you want explicit run IDs and active-run tracking from the start.
 - Use `cc_spawn_agent` only when you need a detached triggerable worker with its own durable runtime state.
+- For dispatched work, the bridge automatically sends the final plain-text result back to the requester. For normal reply tasks, ask for the reply content directly instead of instructing the target to call `cc_send(...)` back.
 - Before suggesting trigger-fix instructions for another agent, use `cc_agent_info` to inspect the target runtime and resident/managed mode first.
 - Read the reported wake mode carefully: `claude-live` means a live resident wake, `codex-thread-resume` means App Server is resuming the stored Codex thread, `opencode-session-resume` means the stored OpenCode session is being resumed, and `managed-worker` means detached execution.
 - For Codex and OpenCode resident sessions, that resume happens in a background worker. Do not assume the foreground TUI will visibly wake the way Claude does.

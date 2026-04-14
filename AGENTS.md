@@ -182,6 +182,8 @@ After every install/update/restart:
 
 Use `cc_send(trigger=true)` as the default "wake this agent now" path. Use `cc_spawn_agent(...)` only when you explicitly want a detached/background worker.
 
+When you dispatch a task, the target run's final plain-text answer is automatically sent back to you by the bridge. For simple reply/acknowledgement tasks, ask for the reply text directly instead of telling the target to call `cc_send(...)` back to you.
+
 If Codex auto-detection is wrong, pass `runtime="codex"` to `cc_register`.
 
 WSL note:
