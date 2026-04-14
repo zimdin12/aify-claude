@@ -431,7 +431,7 @@ export async function discoverCodexLiveThreadId(runtimeConfig = {}, cwd = proces
       clientInfo: {
         name: "aify-claude",
         title: "aify-claude register bridge",
-        version: "3.6.4",
+        version: "3.6.5",
       },
     });
     rpc.notify("initialized", {});
@@ -649,7 +649,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
         clientInfo: {
           name: "aify-claude",
           title: "aify-claude dispatch bridge",
-          version: "3.6.4",
+          version: "3.6.5",
         },
       });
       rpc.notify("initialized", {});

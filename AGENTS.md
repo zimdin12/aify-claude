@@ -72,7 +72,7 @@ codex mcp add aify-claude \
 | `cc_agents` | List agents with unread counts and live status |
 | `cc_status` | Set status + note: `cc_status("working", note="NRD pipeline")` |
 | `cc_agent_info` | Check another agent's status, unread count, last read message |
-| `cc_send` | Send message with optional `priority`. `trigger=true` also queues active dispatch |
+| `cc_send` | Send message with optional `priority`. By default this also queues active dispatch; use `silent=true` for message-only sends |
 | `cc_dispatch` | Queue active runtime dispatch explicitly and return run IDs |
 | `cc_inbox` | Check inbox (newest first, replies include parent context) |
 | `cc_unsend` | Delete a message by ID |
@@ -154,7 +154,7 @@ Note: active dispatch is not available via SSE (requires a local stdio MCP serve
 ```
 /register my-agent coder          # register yourself
 /agents                           # see who's online
-/send other-agent Hello!          # send a DM
+/send other-agent Hello!          # send a DM and wake them
 /inbox                            # check for replies
 /channel create backend-team      # create a group chat
 ```
@@ -181,9 +181,9 @@ After every install/update/restart:
 
 ## Active Dispatch
 
-`cc_send(trigger=true)` and `cc_dispatch(...)` queue work on the server. The target agent's owning local bridge claims that run and starts it on the correct runtime. Resident Codex sessions started with `codex-aify` use `codex-live` and target the same shared local WebSocket App Server as the visible TUI; plain resident Codex sessions still resume their bound stored `thread.id` in a separate background App Server worker; resident Claude CLI sessions are woken through the local aify channel bridge; resident OpenCode sessions resume their bound stored session in a background worker; managed workers keep using their own persistent runtime state.
+`cc_send(...)` and `cc_dispatch(...)` queue work on the server. `cc_send(silent=true)` is the message-only exception. The target agent's owning local bridge claims that run and starts it on the correct runtime. Resident Codex sessions started with `codex-aify` use `codex-live` and target the same shared local WebSocket App Server as the visible TUI; plain resident Codex sessions still resume their bound stored `thread.id` in a separate background App Server worker; resident Claude CLI sessions are woken through the local aify channel bridge; resident OpenCode sessions resume their bound stored session in a background worker; managed workers keep using their own persistent runtime state.
 
-Use `cc_send(trigger=true)` as the default "wake this agent now" path. Use `cc_spawn_agent(...)` only when you explicitly want a detached/background worker.
+Use `cc_send(...)` as the default "wake this agent now" path. Use `cc_send(silent=true)` when you only want inbox delivery. Use `cc_spawn_agent(...)` only when you explicitly want a detached/background worker.
 
 When you dispatch a task, the target run's final plain-text answer is kept in the live session and dispatch record. If you want a message back, tell the target to use `cc_send(...)` explicitly.
 
@@ -214,7 +214,7 @@ Recommended roles:
 
 ## Key Behaviors
 
-- `cc_send` = DM. `cc_share` = file. `cc_channel_*` = group chat.
+- `cc_send` = DM plus wake by default. Add `silent=true` for DM-only. `cc_share` = file. `cc_channel_*` = group chat.
 - Messages wrapped in code fences to prevent prompt injection.
 - Agent IDs, channel names, artifact names: alphanumeric + `.` `-` `_`, 1-128 chars.
 - Rotation: configurable via dashboard settings (default 90 days).

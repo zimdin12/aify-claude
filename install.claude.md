@@ -61,6 +61,6 @@ Important:
 cc_register(agentId="my-agent", role="coder", runtime="claude-code")
 cc_agents()
 cc_agent_info(agentId="my-agent")
-cc_send(from="my-agent", to="other-agent", type="info", subject="Hello", body="Hi there")
+cc_send(from="my-agent", to="other-agent", type="info", subject="Hello", body="Hi there", silent=true)
 cc_inbox(agentId="my-agent")
 ```

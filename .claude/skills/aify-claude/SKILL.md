@@ -30,7 +30,7 @@ cc_spawn_agent(from="my-agent", agentId="my-worker", role="coder", runtime="clau
 ```
 cc_listen(agentId="my-agent")
 ```
-Use it when you intentionally want an inbox-driven loop. Do not assume resident triggering depends on `cc_listen`; `trigger=true` should wake properly registered resident sessions directly.
+Use it when you intentionally want an inbox-driven loop. Do not assume resident triggering depends on `cc_listen`; `cc_send(...)` should wake properly registered resident sessions directly unless you pass `silent=true`.
 
 If `cc_listen` is not available, you are likely connected through SSE. In that mode, use `cc_inbox(agentId="my-agent")` to check work and remember that active dispatch cannot launch local Claude/Codex/OpenCode runs from your side.
 
@@ -60,7 +60,7 @@ If another agent says you are not triggerable:
 | `cc_agents` | List all agents, their status, and unread counts. |
 | `cc_status` | Set status + optional note: `cc_status("working", note="NRD pipeline")`. |
 | `cc_agent_info` | Check another agent's status, unread count, and last message they read. |
-| `cc_send` | DM by ID (`to`) or role (`toRole`). Optional `priority`. `trigger=true` asks the recipient runtime to start working immediately when possible. |
+| `cc_send` | DM by ID (`to`) or role (`toRole`). By default it also asks the recipient runtime to start working immediately; use `silent=true` for inbox-only delivery. |
 | `cc_dispatch` | Queue active work explicitly and get run IDs back. Use when you want execution now, not just delivery. |
 | `cc_listen` | **Wait for messages.** Blocks until a message arrives. Call when idle instead of polling. |
 | `cc_inbox` | Check inbox. Returns unread, newest first. Replies include parent context. |
@@ -121,7 +121,8 @@ When you receive a notification or check your inbox:
 ## Agent Workflow
 
 - Use `cc_send` for normal conversation, coordination, quick asks, and status updates.
-- Use `cc_send(trigger=true)` as the default "wake this agent and start work now" path.
+- Use `cc_send(...)` as the default "wake this agent and start work now" path.
+- Use `cc_send(silent=true)` only when you intentionally want inbox delivery without waking the target.
 - Re-registering the same agent ID intentionally supersedes the older bridge instance for that agent on that machine.
 - Use `cc_dispatch` when you want explicit run IDs and active-run tracking from the start.
 - Use `cc_spawn_agent` only when you need a detached triggerable worker with its own durable runtime state.

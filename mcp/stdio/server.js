@@ -504,7 +504,7 @@ async function processRunControls(agentId, activeRun) {
 
 const server = new McpServer({
   name: "claude-code-mcp",
-  version: "3.6.4",
+  version: "3.6.5",
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -902,7 +902,8 @@ server.tool(
 server.tool(
   "cc_send",
   "Send a message to an agent by ID, or to all agents with a given role. " +
-    "Set trigger=true to request active work on the target agent. Resident sessions trigger only when that exact runtime/session handle supports resident execution; managed workers remain the detached fallback.",
+    "By default this also requests active work on the target agent. Pass silent=true for a message-only send. " +
+    "Resident sessions trigger only when that exact runtime/session handle supports resident execution; managed workers remain the detached fallback.",
   {
     from: z.string().describe("Your agent ID"),
     to: z.string().optional().describe("Target agent ID"),
@@ -914,21 +915,23 @@ server.tool(
     body: z.string().describe("Message content"),
     priority: z.enum(["normal", "high", "urgent"]).optional().describe("Message priority (default: normal)"),
     inReplyTo: z.string().optional().describe("Message ID this replies to"),
-    trigger: z.boolean().optional().describe("Request active dispatch on the target agent's runtime"),
+    trigger: z.boolean().optional().describe("Legacy override for active dispatch behavior"),
+    silent: z.boolean().optional().describe("When true, send only a message and do not request active dispatch"),
   },
-  async ({ from, to, toRole, type, subject, body, priority, inReplyTo, trigger }) => {
+  async ({ from, to, toRole, type, subject, body, priority, inReplyTo, trigger, silent }) => {
     if (!to && !toRole) {
       return { content: [{ type: "text", text: "Error: need 'to' or 'toRole'" }], isError: true };
     }
+    const shouldTrigger = silent === true ? false : (trigger !== false);
 
     // -- Remote mode --
     if (IS_REMOTE) {
       const r = await httpCall("POST", "/messages/send", {
-        from_agent: from, to, toRole, type, subject, body, priority: priority || "normal", inReplyTo, trigger: !!trigger,
+        from_agent: from, to, toRole, type, subject, body, priority: priority || "normal", inReplyTo, trigger: shouldTrigger,
       });
       if (!r.ok) return { content: [{ type: "text", text: r.error || "No recipients found." }] };
 
-      if (trigger && r.recipients?.length > 0) {
+      if (shouldTrigger && r.recipients?.length > 0) {
         const queued = (r.dispatchRuns || []).map((x) => formatQueuedRun(x));
         const skipped = (r.notStarted || []).map((x) => `${x.targetAgentId}: ${x.reason}`);
         return {
@@ -976,7 +979,7 @@ server.tool(
 
     for (const r of uniqueRecipients) deliverMessage(r, message);
 
-    if (trigger && uniqueRecipients.length > 0) {
+    if (shouldTrigger && uniqueRecipients.length > 0) {
       const started = [];
       const skipped = [];
       for (const targetId of uniqueRecipients) {
@@ -1040,7 +1043,7 @@ server.tool(
 
     if (!IS_REMOTE) {
       return {
-        content: [{ type: "text", text: "cc_dispatch currently requires remote server mode. Use cc_send(trigger=true) in local mode." }],
+        content: [{ type: "text", text: "cc_dispatch currently requires remote server mode. Use cc_send(...) in local mode, or cc_send(silent=true) for message-only delivery." }],
         isError: true,
       };
     }

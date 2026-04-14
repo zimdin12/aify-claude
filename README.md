@@ -20,12 +20,13 @@ Built on [aify-container](https://github.com/zimdin12/aify-container).
    - Codex live wake: `codex-aify`
    - OpenCode: normal session today; live wake is not implemented yet
 4. Register the live session with `cc_register(...)`.
-5. Use `cc_send(trigger=true)` or `cc_dispatch(...)` to wake another agent.
+5. Use `cc_send(...)` or `cc_dispatch(...)` to wake another agent.
 
 Important mental model:
 - dispatch wakes the target and records run status on the server
 - dispatch does **not** automatically send a reply message back
 - if the target should answer you, it must explicitly use `cc_send(...)`
+- `cc_send(...)` wakes by default; use `silent=true` when you want a message without waking the target
 
 ## Setup
 
@@ -86,7 +87,7 @@ After install, the common flow is:
 
 ```text
 cc_register(agentId="my-agent", role="coder", runtime="claude-code")
-cc_send(from="my-agent", to="other-agent", type="request", subject="Need help", body="Please review the failing test", trigger=true)
+cc_send(from="my-agent", to="other-agent", type="request", subject="Need help", body="Please review the failing test")
 cc_run_status(runId="...")
 ```
 
@@ -100,6 +101,12 @@ If you only want the work to happen and be tracked, use dispatch without expecti
 
 ```text
 cc_dispatch(from="lead", to="tester-worker", type="request", subject="Run tests", body="Run the repo test suite and update the run summary with the result")
+```
+
+If you only want to send a note without waking the target, use:
+
+```text
+cc_send(from="my-agent", to="other-agent", type="info", subject="FYI", body="No need to act on this now", silent=true)
 ```
 
 ### Client — Claude Code install (manual)
@@ -218,7 +225,7 @@ Restart Claude Code. Try:
 ```
 cc_register(agentId="my-agent", role="coder")
 cc_agents()
-cc_send(from="my-agent", to="other-agent", type="info", subject="Hello", body="Hi there!")
+cc_send(from="my-agent", to="other-agent", type="info", subject="Hello", body="Hi there!", silent=true)
 cc_inbox(agentId="my-agent")
 ```
 
@@ -255,7 +262,7 @@ Claude Code (any machine)         Claude Code (any machine)
 | **cc_agents** | List agents with unread counts and live status |
 | **cc_status** | Set status + note: `cc_status("working", note="NRD pipeline")` |
 | **cc_agent_info** | Check another agent's status, unread count, last read message |
-| **cc_send** | Send message with optional `priority`. `trigger=true` also queues active dispatch |
+| **cc_send** | Send message with optional `priority`. By default this also queues active dispatch; use `silent=true` for message-only sends |
 | **cc_dispatch** | Queue active runtime dispatch explicitly and return run IDs |
 | **cc_inbox** | Check inbox (newest first, replies include parent context) |
 | **cc_unsend** | Delete a message by ID |
@@ -299,7 +306,7 @@ Claude Code (any machine)         Claude Code (any machine)
 
 ## Active Dispatch
 
-`cc_send(trigger=true)` and `cc_dispatch(...)` queue work in the service and let the target agent's local MCP server claim and execute it on the correct machine/runtime. If the target is a resident Codex session started through `codex-aify`, aify uses `codex-live` and talks to the same shared local WebSocket App Server as the visible TUI. If the target is a plain resident Codex session with a bound `thread.id`, aify still falls back to `codex-thread-resume` in a background App Server worker. If the target is a resident Claude CLI session started through `claude-aify`, the local channel bridge wakes that exact session live. If the target is a resident OpenCode session with a bound `sessionHandle`, aify resumes that stored session in a background worker. Otherwise the managed worker path is used:
+`cc_send(...)` and `cc_dispatch(...)` queue work in the service and let the target agent's local MCP server claim and execute it on the correct machine/runtime. `cc_send(silent=true)` is the message-only exception. If the target is a resident Codex session started through `codex-aify`, aify uses `codex-live` and talks to the same shared local WebSocket App Server as the visible TUI. If the target is a plain resident Codex session with a bound `thread.id`, aify still falls back to `codex-thread-resume` in a background App Server worker. If the target is a resident Claude CLI session started through `claude-aify`, the local channel bridge wakes that exact session live. If the target is a resident OpenCode session with a bound `sessionHandle`, aify resumes that stored session in a background worker. Otherwise the managed worker path is used:
 
 ```
 Agent A: cc_spawn_agent(from="lead", agentId="tester-worker", role="tester", runtime="codex")
@@ -328,7 +335,8 @@ Important:
 
 Practical rule:
 - use `cc_send(...)` for conversation
-- use `cc_send(trigger=true)` to wake another agent now
+- use `cc_send(...)` to wake another agent now
+- use `cc_send(silent=true)` for a message without waking the target
 - use `cc_dispatch(...)` when you want an explicit tracked run
 - use `cc_send(...)` again if you want an actual reply message back
 
