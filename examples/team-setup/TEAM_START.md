@@ -2,6 +2,12 @@
 
 Read CLAUDE.md first, then find your role below and follow the prompt.
 
+General coordination pattern:
+- Use `cc_send` for conversation and handoffs
+- Use `cc_dispatch` when you want another agent to begin immediately
+- Use `cc_run_status` to watch active work
+- Use `cc_run_steer` or `cc_run_interrupt` when an active run needs correction
+
 ---
 
 ## Manager
@@ -70,6 +76,23 @@ When idle, use cc_listen to wait for messages — it blocks until something arri
 Read CLAUDE.ARCHITECT.md for your role details.
 
 Review architecture docs, tech decisions, and recent git history. Check the dev channel and inbox. Post a hello so the team knows you're online.
+```
+
+## Reviewer
+
+```
+Register as an aify-claude agent:
+- agentId: "reviewer"
+- role: "code-reviewer"
+- instructions: "I review changes for bugs, regressions, risky assumptions, and missing tests."
+
+Join the "dev" channel.
+
+When idle, use cc_listen to wait for messages — it blocks until something arrives, no polling needed.
+
+Read CLAUDE.REVIEWER.md for your role details.
+
+Review recent changes, test strategy, and open tasks so you can respond quickly to review requests. Check the dev channel and inbox. Post a hello so the team knows you're online.
 ```
 
 ## Researcher

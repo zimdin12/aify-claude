@@ -2,10 +2,11 @@
 //
 // claude-code-mcp -- MCP server for inter-agent communication between Claude Code instances.
 //
-// 16 tools (all prefixed "cc_"):
-//   cc_register, cc_agents, cc_status, cc_send, cc_inbox, cc_search,
+// 23 tools (all prefixed "cc_"):
+//   cc_register, cc_agents, cc_status, cc_send, cc_dispatch, cc_inbox, cc_search,
 //   cc_share, cc_read, cc_files,
 //   cc_channel_create, cc_channel_join, cc_channel_send, cc_channel_read, cc_channel_list,
+//   cc_agent_info, cc_listen, cc_unsend, cc_run_status, cc_run_interrupt, cc_run_steer,
 //   cc_clear, cc_dashboard
 //
 // Modes:
@@ -19,9 +20,16 @@ import { z } from "zod";
 import { spawn } from "child_process";
 import { randomUUID } from "crypto";
 import fs from "fs";
-import os from "os";
 import path from "path";
 import { loadSettingsEnv } from "./load-env.js";
+import {
+  canLaunchRuntime,
+  defaultCapabilitiesForRuntime,
+  defaultMachineId,
+  detectRuntime,
+  launchRuntimeRun,
+  normalizeRuntime,
+} from "./runtimes.js";
 
 // Load env from settings.local.json (user-level + project-level merge)
 loadSettingsEnv();
@@ -32,6 +40,13 @@ const DEFAULT_CWD = process.cwd();
 const SERVER_URL = process.env.CLAUDE_MCP_SERVER_URL || process.env.AIFY_SERVER_URL || "";
 const IS_REMOTE = !!SERVER_URL;
 const API_KEY = process.env.CLAUDE_MCP_API_KEY || process.env.AIFY_API_KEY || "";
+const MACHINE_ID = defaultMachineId();
+const REMOTE_AGENT_STATE = new Map();
+const ACTIVE_RUNS = new Map();
+const LOCAL_RUNTIME_STATE = new Map();
+const DISPATCH_POLL_MS = Number(process.env.AIFY_DISPATCH_POLL_MS || 3000);
+let dispatchLoopTimer = null;
+let dispatchLoopBusy = false;
 
 // ── Local filesystem paths (used only in local mode) ─────────────────────────
 
@@ -77,6 +92,33 @@ async function httpCall(method, endpoint, body = null) {
     throw new Error(`HTTP ${res.status}: ${text}`);
   }
   return res.json();
+}
+
+function parseJson(value, fallback) {
+  if (value == null || value === "") return fallback;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function runtimeSummary(info = {}) {
+  const runtime = normalizeRuntime(info.runtime || "generic");
+  const machine = info.machineId || info.machine_id || MACHINE_ID;
+  return `${runtime} @ ${machine}`;
+}
+
+function dedupePreserveOrder(values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values || []) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
 }
 
 // ── Local filesystem helpers ─────────────────────────────────────────────────
@@ -154,45 +196,203 @@ function formatInboxMessage(m, registry) {
   );
 }
 
-// ── Claude CLI helper (used by trigger) ──────────────────────────────────────
+function ensureDispatchLoop() {
+  if (!IS_REMOTE || dispatchLoopTimer) return;
+  dispatchLoopTimer = setInterval(() => {
+    runDispatchLoop().catch((error) => console.error("[aify] dispatch loop error:", error));
+  }, DISPATCH_POLL_MS);
+}
 
-function runClaude(args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const timeout = options.timeout || 300_000;
-    const chunks = [];
-    const errChunks = [];
+async function runDispatchLoop() {
+  if (!IS_REMOTE || dispatchLoopBusy) return;
+  dispatchLoopBusy = true;
+  try {
+    for (const [agentId, state] of REMOTE_AGENT_STATE.entries()) {
+      if (!state?.info) continue;
 
-    const proc = spawn("claude", args, {
-      cwd: options.cwd || DEFAULT_CWD,
-      env: { ...process.env, ...(options.env || {}) },
-      shell: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+      const active = ACTIVE_RUNS.get(agentId);
+      if (active) {
+        await processRunControls(agentId, active).catch((error) => {
+          console.error("[aify] control processing error:", error);
+        });
+        continue;
+      }
 
-    if (options.stdin) proc.stdin.write(options.stdin);
-    proc.stdin.end();
-
-    proc.stdout.on("data", (d) => chunks.push(d));
-    proc.stderr.on("data", (d) => errChunks.push(d));
-
-    const timer = setTimeout(() => {
-      proc.kill("SIGTERM");
-      reject(new Error(`Timed out after ${timeout}ms`));
-    }, timeout);
-
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({
-        code,
-        stdout: Buffer.concat(chunks).toString("utf-8"),
-        stderr: Buffer.concat(errChunks).toString("utf-8"),
+      const claim = await httpCall("POST", "/dispatch/claim", {
+        agentId,
+        machineId: state.info.machineId || MACHINE_ID,
       });
-    });
-    proc.on("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
+      if (!claim?.run) continue;
+
+      const run = claim.run;
+      const runtime = normalizeRuntime(state.info.runtime || "generic");
+      if (run.requestedRuntime && normalizeRuntime(run.requestedRuntime) !== runtime) {
+        await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, {
+          status: run.mode === "require_start" ? "failed" : "cancelled",
+          error: `Requested runtime "${run.requestedRuntime}" does not match registered runtime "${runtime}"`,
+          agentStatus: "idle",
+          appendEvent: `Skipped: requested runtime "${run.requestedRuntime}" does not match "${runtime}"`,
+          eventType: "skipped",
+        });
+        continue;
+      }
+      if (!canLaunchRuntime(runtime)) {
+        await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, {
+          status: run.mode === "require_start" ? "failed" : "cancelled",
+          error: `Runtime "${runtime}" does not support active dispatch`,
+          agentStatus: "idle",
+          appendEvent: `Skipped: runtime "${runtime}" does not support active dispatch`,
+          eventType: "skipped",
+        });
+        continue;
+      }
+      const runtimeState = state.info.runtimeState || {};
+      await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, {
+        status: "running",
+        runtime,
+        agentStatus: "working",
+        appendEvent: `Starting ${runtime} run for "${run.subject}"`,
+        eventType: "runtime",
+      });
+
+      const controller = launchRuntimeRun({
+        agentId,
+        agentInfo: state.info,
+        run,
+        runtimeState,
+        callbacks: {
+          onEvent: async (eventType, text) => {
+            try {
+              await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, {
+                appendEvent: text,
+                eventType,
+              });
+            } catch {
+              // best effort
+            }
+          },
+          onRuntimeState: async (nextState) => {
+            try {
+              state.info.runtimeState = { ...(state.info.runtimeState || {}), ...nextState };
+              await httpCall("PATCH", `/agents/${encodeURIComponent(agentId)}/runtime-state`, {
+                runtimeState: state.info.runtimeState,
+              });
+            } catch {
+              // best effort
+            }
+          },
+          onRefs: async (refs) => {
+            try {
+              const body = {};
+              if (refs.threadId) body.externalThreadId = refs.threadId;
+              if (refs.turnId) body.externalTurnId = refs.turnId;
+              if (Object.keys(body).length > 0) {
+                await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, body);
+              }
+            } catch {
+              // best effort
+            }
+          },
+        },
+      });
+
+      ACTIVE_RUNS.set(agentId, { runId: run.id, controller });
+
+      controller.promise
+        .then(async (result) => {
+          const replyType =
+            result.status === "completed" ? "response" :
+            result.status === "cancelled" ? "info" :
+            "error";
+          const replySubject = `[${result.status?.toUpperCase() || "DONE"}] ${run.subject}`;
+          const replyBody = result.summary || "(no output)";
+          const sendResult = await httpCall("POST", "/messages/send", {
+            from_agent: agentId,
+            to: run.from,
+            type: replyType,
+            subject: replySubject,
+            body: replyBody,
+          });
+          await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, {
+            status: result.status === "cancelled" ? "cancelled" : "completed",
+            summary: replyBody,
+            resultMessageId: sendResult.messageId || "",
+            agentStatus: "idle",
+            appendEvent: result.status === "cancelled" ? "Run cancelled" : "Run completed successfully",
+            eventType: result.status === "cancelled" ? "cancelled" : "completed",
+          });
+          if (result.runtimeState) {
+            state.info.runtimeState = { ...(state.info.runtimeState || {}), ...result.runtimeState };
+            await httpCall("PATCH", `/agents/${encodeURIComponent(agentId)}/runtime-state`, {
+              runtimeState: state.info.runtimeState,
+            });
+          }
+        })
+        .catch(async (error) => {
+          const message = error?.message || String(error);
+          try {
+            const sendResult = await httpCall("POST", "/messages/send", {
+              from_agent: agentId,
+              to: run.from,
+              type: "error",
+              subject: `[FAILED] ${run.subject}`,
+              body: message,
+            });
+            await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, {
+              status: "failed",
+              error: message,
+              resultMessageId: sendResult.messageId || "",
+              agentStatus: "idle",
+              appendEvent: message,
+              eventType: "failed",
+            });
+          } catch (inner) {
+            console.error("[aify] failed to report dispatch failure:", inner);
+          }
+        })
+        .finally(() => {
+          ACTIVE_RUNS.delete(agentId);
+        });
+    }
+  } finally {
+    dispatchLoopBusy = false;
+  }
+}
+
+async function processRunControls(agentId, activeRun) {
+  if (!activeRun?.runId || !activeRun?.controller) return;
+  const claim = await httpCall("POST", "/dispatch/controls/claim", {
+    agentId,
+    runId: activeRun.runId,
+    machineId: MACHINE_ID,
   });
+  for (const control of claim.controls || []) {
+    try {
+      if (control.action === "interrupt") {
+        if (!activeRun.controller.capabilities?.interrupt || !activeRun.controller.interrupt) {
+          throw new Error("Interrupt is not supported by this runtime");
+        }
+        await activeRun.controller.interrupt();
+      } else if (control.action === "steer") {
+        if (!activeRun.controller.capabilities?.steer || !activeRun.controller.steer) {
+          throw new Error("Steer is not supported by this runtime");
+        }
+        await activeRun.controller.steer(control.body || "");
+      } else {
+        throw new Error(`Unknown control action "${control.action}"`);
+      }
+
+      await httpCall("PATCH", `/dispatch/controls/${encodeURIComponent(control.id)}`, {
+        status: "completed",
+        response: `${control.action} accepted`,
+      });
+    } catch (error) {
+      await httpCall("PATCH", `/dispatch/controls/${encodeURIComponent(control.id)}`, {
+        status: "failed",
+        response: error?.message || String(error),
+      });
+    }
+  }
 }
 
 // ── MCP Server ───────────────────────────────────────────────────────────────
@@ -208,8 +408,8 @@ const server = new McpServer({
 
 server.tool(
   "cc_register",
-  "Register this Claude Code instance as an agent. " +
-    "Set cwd/model/instructions so other agents can trigger you via cc_send.",
+  "Register this agent instance. " +
+    "Set cwd/model/instructions/runtime so other agents can message or dispatch work to you.",
   {
     agentId: z.string().describe("Unique ID (e.g. 'coder-1', 'tester')"),
     role: z.string().describe("Role: 'coder', 'tester', 'reviewer', 'architect', etc."),
@@ -217,9 +417,15 @@ server.tool(
     cwd: z.string().optional().describe("Working directory (used when triggered)"),
     model: z.string().optional().describe("Preferred model (e.g. 'sonnet', 'opus', 'haiku')"),
     instructions: z.string().optional().describe("Standing instructions for when triggered"),
+    runtime: z.string().optional().describe("Runtime type (e.g. 'claude-code', 'codex')"),
+    machineId: z.string().optional().describe("Stable machine identifier (auto-detected by default)"),
+    launchMode: z.string().optional().describe("Launch mode hint (default: detached)"),
   },
-  async ({ agentId, role, name, cwd, model, instructions }) => {
+  async ({ agentId, role, name, cwd, model, instructions, runtime, machineId, launchMode }) => {
     try { validateName(agentId, "agent ID"); } catch (e) { return { content: [{ type: "text", text: e.message }], isError: true }; }
+    const resolvedRuntime = detectRuntime(runtime);
+    const resolvedMachineId = machineId || MACHINE_ID;
+    const capabilities = defaultCapabilitiesForRuntime(resolvedRuntime);
 
     const agentData = {
       agentId,
@@ -228,6 +434,10 @@ server.tool(
       cwd: cwd || DEFAULT_CWD,
       model: model || "",
       instructions: instructions || "",
+      runtime: resolvedRuntime,
+      machineId: resolvedMachineId,
+      launchMode: launchMode || "detached",
+      capabilities,
     };
 
     // Write agent ID to temp so the notification hook can find it (session-specific)
@@ -241,7 +451,26 @@ server.tool(
 
     if (IS_REMOTE) {
       const r = await httpCall("POST", "/agents", agentData);
-      return { content: [{ type: "text", text: `Registered "${r.agentId}" (role: ${r.role}).` }] };
+      let runtimeState = {};
+      try {
+        const agentInfo = await httpCall("GET", `/agents/${encodeURIComponent(agentId)}`);
+        runtimeState = agentInfo.agent?.runtimeState || {};
+      } catch {
+        // best effort
+      }
+      REMOTE_AGENT_STATE.set(agentId, {
+        info: {
+          ...agentData,
+          runtimeState,
+        },
+      });
+      ensureDispatchLoop();
+      return {
+        content: [{
+          type: "text",
+          text: `Registered "${r.agentId}" (role: ${r.role}, runtime: ${resolvedRuntime}, machine: ${resolvedMachineId}).`,
+        }],
+      };
     }
 
     const registry = readAgents();
@@ -251,13 +480,21 @@ server.tool(
       cwd: agentCwd,
       model: model || "",
       instructions: instructions || "",
+      runtime: resolvedRuntime,
+      machineId: resolvedMachineId,
+      launchMode: launchMode || "detached",
+      capabilities,
+      runtimeState: registry.agents[agentId]?.runtimeState || {},
       registeredAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
     };
     writeAgents(registry);
     fs.mkdirSync(path.join(INBOX_DIR, agentId), { recursive: true });
     return {
-      content: [{ type: "text", text: `Registered "${agentId}" (role: ${role}, cwd: ${agentCwd}).` }],
+      content: [{
+        type: "text",
+        text: `Registered "${agentId}" (role: ${role}, cwd: ${agentCwd}, runtime: ${resolvedRuntime}).`,
+      }],
     };
   }
 );
@@ -277,7 +514,7 @@ server.tool(
       if (!entries.length) return { content: [{ type: "text", text: "No agents registered." }] };
       const lines = entries.map(([id, info]) => {
         const status = info.status ? ` [${info.status}]` : "";
-        return `- ${id} (${info.role})${status} -- "${info.name}" | unread: ${info.unread || 0} | last seen: ${info.lastSeen}`;
+        return `- ${id} (${info.role})${status} -- "${info.name}" | ${runtimeSummary(info)} | unread: ${info.unread || 0} | last seen: ${info.lastSeen}`;
       });
       return { content: [{ type: "text", text: lines.join("\n") }] };
     }
@@ -288,7 +525,7 @@ server.tool(
     const lines = entries.map(([id, info]) => {
       const unread = readInbox(id, "unread").length;
       const status = info.status ? ` [${info.status}]` : "";
-      return `- ${id} (${info.role})${status} -- "${info.name}" | unread: ${unread} | last seen: ${info.lastSeen}`;
+      return `- ${id} (${info.role})${status} -- "${info.name}" | ${runtimeSummary(info)} | unread: ${unread} | last seen: ${info.lastSeen}`;
     });
     return { content: [{ type: "text", text: lines.join("\n") }] };
   }
@@ -334,8 +571,7 @@ server.tool(
 server.tool(
   "cc_send",
   "Send a message to an agent by ID, or to all agents with a given role. " +
-    "Set trigger=true to spawn a local Claude Code instance that handles the message " +
-    "using the target's registered cwd/model/instructions. Results arrive in your inbox.",
+    "Set trigger=true to request active dispatch on the target agent's runtime. Results arrive in your inbox.",
   {
     from: z.string().describe("Your agent ID"),
     to: z.string().optional().describe("Target agent ID"),
@@ -347,7 +583,7 @@ server.tool(
     body: z.string().describe("Message content"),
     priority: z.enum(["normal", "high", "urgent"]).optional().describe("Message priority (default: normal)"),
     inReplyTo: z.string().optional().describe("Message ID this replies to"),
-    trigger: z.boolean().optional().describe("Spawn Claude Code to handle this message locally"),
+    trigger: z.boolean().optional().describe("Request active dispatch on the target agent's runtime"),
   },
   async ({ from, to, toRole, type, subject, body, priority, inReplyTo, trigger }) => {
     if (!to && !toRole) {
@@ -362,12 +598,15 @@ server.tool(
       if (!r.ok) return { content: [{ type: "text", text: r.error || "No recipients found." }] };
 
       if (trigger && r.recipients?.length > 0) {
-        const targetId = r.recipients[0];
-        let targetInfo = {};
-        try { targetInfo = await httpCall("GET", `/agents/${targetId}`); } catch { /* best effort */ }
-        spawnTriggeredAgent({ targetId, targetInfo, from, type, subject, body });
+        const queued = (r.dispatchRuns || []).map((x) => `${x.targetAgentId} (${x.runId})`);
+        const skipped = (r.notStarted || []).map((x) => `${x.targetAgentId}: ${x.reason}`);
         return {
-          content: [{ type: "text", text: `Sent + triggered "${targetId}" locally. Results will arrive in your inbox.` }],
+          content: [{
+            type: "text",
+            text:
+              `Sent + queued dispatch for ${queued.join(", ") || "no launchable recipients"}. Results will arrive in your inbox.` +
+              (skipped.length ? `\nNot started: ${skipped.join("; ")}` : ""),
+          }],
         };
       }
 
@@ -399,58 +638,220 @@ server.tool(
         if (info.role === toRole && id !== from) recipients.push(id);
       }
     }
-    if (!recipients.length) {
+    const uniqueRecipients = dedupePreserveOrder(recipients);
+    if (!uniqueRecipients.length) {
       return { content: [{ type: "text", text: "No recipients found. Target may not be registered." }] };
     }
 
-    for (const r of recipients) deliverMessage(r, message);
+    for (const r of uniqueRecipients) deliverMessage(r, message);
 
-    if (trigger && recipients.length > 0) {
-      const targetId = recipients[0];
-      const targetInfo = registry.agents[targetId] || {};
-      spawnTriggeredAgent({ targetId, targetInfo, from, type, subject, body });
+    if (trigger && uniqueRecipients.length > 0) {
+      const started = [];
+      const skipped = [];
+      for (const targetId of uniqueRecipients) {
+        const targetInfo = registry.agents[targetId] || {};
+        const runtime = normalizeRuntime(targetInfo.runtime || "generic");
+        if (!canLaunchRuntime(runtime)) {
+          skipped.push(`${targetId} (${runtime})`);
+          continue;
+        }
+        spawnTriggeredAgent({ targetId, targetInfo, from, type, subject, body });
+        started.push(`${targetId} (${runtime})`);
+      }
       return {
-        content: [{ type: "text", text: `Sent + triggered "${targetId}" locally. Results will arrive in your inbox.` }],
+        content: [{
+          type: "text",
+          text:
+            `Sent + triggered locally for ${started.join(", ") || "no launchable recipients"}. Results will arrive in your inbox.` +
+            (skipped.length ? `\nSkipped: ${skipped.join(", ")}` : ""),
+        }],
       };
     }
 
     return {
-      content: [{ type: "text", text: `Sent (${messageId}) to ${recipients.join(", ")}. Subject: ${subject}` }],
+      content: [{ type: "text", text: `Sent (${messageId}) to ${uniqueRecipients.join(", ")}. Subject: ${subject}` }],
     };
   }
 );
 
+server.tool(
+  "cc_dispatch",
+  "Send a task and queue active runtime dispatch for the target agent when possible.",
+  {
+    from: z.string().describe("Your agent ID"),
+    to: z.string().optional().describe("Target agent ID"),
+    toRole: z.string().optional().describe("Send to all agents with this role"),
+    type: z
+      .enum(["request", "response", "info", "error", "review", "approval"])
+      .describe("Message type"),
+    subject: z.string().describe("Short subject"),
+    body: z.string().describe("Task details"),
+    priority: z.enum(["normal", "high", "urgent"]).optional().describe("Message priority (default: normal)"),
+    inReplyTo: z.string().optional().describe("Message ID this replies to"),
+    mode: z.enum(["message_only", "start_if_possible", "require_start"]).optional().describe("Dispatch behavior"),
+  },
+  async ({ from, to, toRole, type, subject, body, priority, inReplyTo, mode }) => {
+    if (!to && !toRole) {
+      return { content: [{ type: "text", text: "Error: need 'to' or 'toRole'" }], isError: true };
+    }
+
+    if (!IS_REMOTE) {
+      return {
+        content: [{ type: "text", text: "cc_dispatch currently requires remote server mode. Use cc_send(trigger=true) in local mode." }],
+        isError: true,
+      };
+    }
+
+    const r = await httpCall("POST", "/dispatch", {
+      from_agent: from,
+      to,
+      toRole,
+      type,
+      subject,
+      body,
+      priority: priority || "normal",
+      inReplyTo,
+      mode: mode || "start_if_possible",
+      createMessage: true,
+    });
+
+    if (!r.ok) {
+      return { content: [{ type: "text", text: r.error || "Dispatch failed." }], isError: true };
+    }
+
+    const lines = (r.runs || []).map((run) => `- ${run.targetAgentId}: ${run.runId} [${run.status}]`);
+    const skipped = (r.notStarted || []).map((item) => `- ${item.targetAgentId}: ${item.reason}`);
+    return {
+      content: [{
+        type: "text",
+        text:
+          `Queued ${r.runs?.length || 0} dispatch run(s):\n${lines.join("\n") || "- none"}` +
+          (skipped.length ? `\n\nNot started:\n${skipped.join("\n")}` : "") +
+          `\n\nResults will arrive in your inbox.`,
+      }],
+    };
+  }
+);
+
+server.tool(
+  "cc_run_status",
+  "Check the status of a dispatched run.",
+  {
+    runId: z.string().describe("Dispatch run ID"),
+  },
+  async ({ runId }) => {
+    if (!IS_REMOTE) {
+      return { content: [{ type: "text", text: "Run status is only available in remote server mode." }], isError: true };
+    }
+
+    const r = await httpCall("GET", `/dispatch/runs/${encodeURIComponent(runId)}`);
+    const run = r.run;
+    const events = (run.events || []).slice(-10).map((event) => `- ${event.createdAt} [${event.type}] ${event.body || ""}`);
+    const controls = (run.controls || []).slice(-10).map((control) =>
+      `- ${control.requestedAt} [${control.action}/${control.status}] ${control.from || "unknown"}${control.response ? ` -> ${control.response}` : ""}`
+    );
+    return {
+      content: [{
+        type: "text",
+        text:
+          `${run.id} -> ${run.targetAgentId}\n` +
+          `Status: ${run.status}\n` +
+          `Runtime: ${run.runtime || "unknown"}\n` +
+          `Subject: ${run.subject}\n` +
+          `Requested: ${run.requestedAt}\n` +
+          (run.startedAt ? `Started: ${run.startedAt}\n` : "") +
+          (run.finishedAt ? `Finished: ${run.finishedAt}\n` : "") +
+          (run.externalThreadId ? `Thread: ${run.externalThreadId}\n` : "") +
+          (run.externalTurnId ? `Turn: ${run.externalTurnId}\n` : "") +
+          (run.summary ? `\nSummary:\n${run.summary}\n` : "") +
+          (run.error ? `\nError:\n${run.error}\n` : "") +
+          (events.length ? `\nRecent events:\n${events.join("\n")}` : "") +
+          (controls.length ? `\nRecent controls:\n${controls.join("\n")}` : ""),
+      }],
+    };
+  }
+);
+
+server.tool(
+  "cc_run_interrupt",
+  "Request interruption of an active dispatched run. Returns a control request ID.",
+  {
+    runId: z.string().describe("Dispatch run ID"),
+    from: z.string().optional().describe("Requesting agent ID"),
+  },
+  async ({ runId, from }) => {
+    if (!IS_REMOTE) {
+      return { content: [{ type: "text", text: "Run control is only available in remote server mode." }], isError: true };
+    }
+    try {
+      const r = await httpCall("POST", `/dispatch/runs/${encodeURIComponent(runId)}/control`, {
+        from_agent: from || "",
+        action: "interrupt",
+      });
+      return {
+        content: [{ type: "text", text: `Interrupt requested for ${runId}. Control ID: ${r.controlId}` }],
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: error.message }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  "cc_run_steer",
+  "Request additional guidance for an active dispatched run. The target runtime will apply it if steer is supported.",
+  {
+    runId: z.string().describe("Dispatch run ID"),
+    body: z.string().describe("Additional steering instructions"),
+    from: z.string().optional().describe("Requesting agent ID"),
+  },
+  async ({ runId, body, from }) => {
+    if (!IS_REMOTE) {
+      return { content: [{ type: "text", text: "Run control is only available in remote server mode." }], isError: true };
+    }
+    try {
+      const r = await httpCall("POST", `/dispatch/runs/${encodeURIComponent(runId)}/control`, {
+        from_agent: from || "",
+        action: "steer",
+        body,
+      });
+      return {
+        content: [{ type: "text", text: `Steer requested for ${runId}. Control ID: ${r.controlId}` }],
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: error.message }], isError: true };
+    }
+  }
+);
+
 /**
- * Spawn a local Claude Code instance to handle a triggered message.
+ * Spawn a local runtime instance to handle a triggered message.
  * Fire-and-forget: the result is delivered back to the sender's inbox.
  */
 function spawnTriggeredAgent({ targetId, targetInfo, from, type, subject, body }) {
-  const agentRole = targetInfo.role || "agent";
-  const agentCwd = targetInfo.cwd || DEFAULT_CWD;
-  const agentModel = targetInfo.model || undefined;
+  const runtime = normalizeRuntime(targetInfo.runtime || "generic");
+  if (!canLaunchRuntime(runtime)) {
+    deliverMessage(from, {
+      id: `${Date.now()}-${randomUUID().slice(0, 8)}`,
+      from: targetId,
+      type: "error",
+      subject: `[FAILED] ${subject}`,
+      body: `Runtime "${runtime}" does not support active dispatch`,
+    });
+    return;
+  }
 
-  const sysPrompt = [
-    `You are agent "${targetId}" with role "${agentRole}".`,
-    `Triggered by "${from}".`,
-    targetInfo.instructions ? `Instructions: ${targetInfo.instructions}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  const userPrompt = `Message (${type}): ${subject}\n\n${body}`;
-
-  // Write prompts to temp files to avoid shell escaping issues (Windows cmd.exe
-  // splits unquoted args at spaces). os.tmpdir() is used for space-free paths.
-  const tmpDir = path.join(os.tmpdir(), "aify-claude-triggers");
-  fs.mkdirSync(tmpDir, { recursive: true });
-  const sysFile = path.join(tmpDir, `sys-${Date.now()}.txt`);
-  const userFile = path.join(tmpDir, `user-${Date.now()}.txt`);
-  fs.writeFileSync(sysFile, sysPrompt);
-  fs.writeFileSync(userFile, userPrompt);
-
-  const args = ["--print", "--output-format", "text"];
-  if (agentModel) args.push("--model", agentModel);
-  args.push("--max-turns", "15", "--system-prompt-file", sysFile);
+  const run = {
+    id: `local-${Date.now()}-${randomUUID().slice(0, 8)}`,
+    from,
+    targetAgentId: targetId,
+    type,
+    subject,
+    body,
+    mode: "require_start",
+  };
+  const baseState = parseJson(targetInfo.runtimeState, {});
+  const runtimeState = { ...baseState, ...(LOCAL_RUNTIME_STATE.get(targetId) || {}) };
   const sendReply = (replyBody, replyType, replySubject) => {
     const reply = {
       id: `${Date.now()}-${randomUUID().slice(0, 8)}`,
@@ -466,24 +867,41 @@ function spawnTriggeredAgent({ targetId, targetInfo, from, type, subject, body }
       }).catch(() => {});
     } else {
       deliverMessage(from, reply);
-    }
-  };
+      }
+    };
 
-  const cleanup = () => {
-    try { fs.unlinkSync(sysFile); } catch { /* ignore */ }
-    try { fs.unlinkSync(userFile); } catch { /* ignore */ }
-  };
+  const controller = launchRuntimeRun({
+    agentId: targetId,
+    agentInfo: { ...targetInfo, runtime },
+    run,
+    runtimeState,
+    callbacks: {
+      onRuntimeState: (nextState) => {
+        const merged = { ...(LOCAL_RUNTIME_STATE.get(targetId) || {}), ...nextState };
+        LOCAL_RUNTIME_STATE.set(targetId, merged);
+        const registry = readAgents();
+        if (registry.agents[targetId]) {
+          registry.agents[targetId].runtimeState = merged;
+          writeAgents(registry);
+        }
+      },
+      onEvent: () => {},
+      onRefs: () => {},
+    },
+  });
 
-  runClaude(args, { cwd: agentCwd, timeout: 600_000, stdin: userPrompt })
+  controller.promise
     .then((result) => {
-      cleanup();
-      const output = result.stdout || result.stderr || "(no output)";
+      const output = result.summary || "(no output)";
       const truncated = output.length > 2000 ? output.slice(0, 2000) + "\n..." : output;
-      const tag = result.code === 0 ? "DONE" : "FAILED";
-      sendReply(truncated, "response", `[${tag}] ${subject}`);
+      const tag = result.status === "completed" ? "DONE" : (result.status || "FAILED").toUpperCase();
+      const replyType =
+        result.status === "completed" ? "response" :
+        result.status === "cancelled" ? "info" :
+        "error";
+      sendReply(truncated, replyType, `[${tag}] ${subject}`);
     })
     .catch((err) => {
-      cleanup();
       sendReply(err.message, "error", `[ERROR] ${subject}`);
     });
 }
@@ -679,6 +1097,7 @@ server.tool(
 
         return { content: [{ type: "text", text:
           `${agentId} (${info.role}) [${info.status}]\n` +
+          `  Runtime: ${runtimeSummary(info)}\n` +
           `  Unread: ${info.unread}\n` +
           `  Last seen: ${info.lastSeen}\n` +
           `  Last read: ${lastRead}`
@@ -695,6 +1114,7 @@ server.tool(
     const unread = readInbox(agentId, "unread").length;
     return { content: [{ type: "text", text:
       `${agentId} (${info.role}) [${info.status || "idle"}]\n` +
+      `  Runtime: ${runtimeSummary(info)}\n` +
       `  Unread: ${unread}\n` +
       `  Last seen: ${info.lastSeen}`
     }] };

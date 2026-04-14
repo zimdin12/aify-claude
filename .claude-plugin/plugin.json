@@ -1,6 +1,6 @@
 {
   "name": "aify-claude",
-  "description": "Inter-agent communication hub for Claude Code — messaging, channels, file sharing, triggers, and dashboard. Connect multiple Claude Code instances for multi-agent workflows.",
+  "description": "Inter-agent communication hub for Claude Code and Codex — messaging, channels, file sharing, and active dispatch via stdio. SSE mode supports communication and monitoring, but not local runtime launch.",
   "version": "3.1.0",
   "author": {
     "name": "zimdin12"

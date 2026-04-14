@@ -1,6 +1,6 @@
-# aify-claude v3
+# aify-Codex v3
 
-Inter-agent communication hub for Claude Code, Codex, and other MCP-connected coding agents. Messaging, channels (group chat), file sharing, active dispatch, and dashboard.
+Inter-agent communication hub for Codex, Claude Code, and other MCP-connected coding agents. Messaging, channels (group chat), file sharing, active dispatch, and dashboard.
 
 ## Setup
 
@@ -24,38 +24,38 @@ Fast install docs for agents:
 - Claude Code: [install.claude.md](/D:/Docker%20Storage/Images/aify-claude/install.claude.md)
 - Codex: [install.codex.md](/D:/Docker%20Storage/Images/aify-claude/install.codex.md)
 
-### Step 3: Register with Claude Code
+### Step 3: Register with Codex
 
 Replace `ABSOLUTE_PATH` with the full path to this repo.
-- **Windows**: `C:/Users/yourname/aify-claude` (use forward slashes)
-- **Linux/Mac**: `$HOME/aify-claude`
+- **Windows**: `C:/Users/yourname/aify-Codex` (use forward slashes)
+- **Linux/Mac**: `$HOME/aify-Codex`
 
 ```bash
 # Same machine as server:
-claude mcp add --scope user aify-claude \
+Codex mcp add --scope user aify-Codex \
   -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
   -- node "ABSOLUTE_PATH/mcp/stdio/server.js"
 
 # Remote server:
-claude mcp add --scope user aify-claude \
+Codex mcp add --scope user aify-Codex \
   -e CLAUDE_MCP_SERVER_URL=http://SERVER_IP:8800 \
   -- node "ABSOLUTE_PATH/mcp/stdio/server.js"
 
 # Local only (no Docker, single machine):
-claude mcp add --scope user aify-claude \
+Codex mcp add --scope user aify-Codex \
   -- node "ABSOLUTE_PATH/mcp/stdio/server.js"
 ```
 
-### Step 4: Restart Claude Code
+### Step 4: Restart Codex
 
-The 23 `cc_*` tools will appear automatically. The skill at `.claude/skills/aify-claude/SKILL.md` auto-activates when the tools are detected.
+The 23 `cc_*` tools will appear automatically. The skill at `.Codex/skills/aify-Codex/SKILL.md` auto-activates when the tools are detected.
 
 ### Optional: API key
 
 Set `API_KEY=your-secret` in `.env` before starting Docker. Add to MCP config:
 
 ```bash
-claude mcp add --scope user aify-claude \
+Codex mcp add --scope user aify-Codex \
   -e CLAUDE_MCP_SERVER_URL=http://localhost:8800 \
   -e CLAUDE_MCP_API_KEY=your-secret \
   -- node "ABSOLUTE_PATH/mcp/stdio/server.js"
@@ -106,18 +106,18 @@ claude mcp add --scope user aify-claude \
 Add a hook so agents get notified of new messages automatically after every tool call:
 
 ```bash
-claude settings set-hook PostToolUse \
+Codex settings set-hook PostToolUse \
   'node "ABSOLUTE_PATH/mcp/stdio/notify-check.js"'
 ```
 
-When a message arrives, the agent sees: `[aify-claude] 2 unread message(s)` in their session. Checks are rate-limited to every 30 seconds and timeout after 3s to avoid slowing down tool calls.
+When a message arrives, the agent sees: `[aify-Codex] 2 unread message(s)` in their session. Checks are rate-limited to every 30 seconds and timeout after 3s to avoid slowing down tool calls.
 
 ### Optional: SSE transport (remote users, no local files needed)
 
 Remote users can connect directly via SSE without cloning the repo:
 
 ```bash
-claude mcp add --scope user aify-claude --transport sse \
+Codex mcp add --scope user aify-Codex --transport sse \
   http://SERVER_IP:8800/mcp/sse
 ```
 
@@ -135,9 +135,13 @@ Note: active dispatch is not available via SSE (requires a local stdio MCP serve
 
 ## Active Dispatch
 
-`cc_send(trigger=true)` and `cc_dispatch(...)` queue work on the server. The target agent's own stdio MCP server claims that run and starts it locally on the correct runtime. Claude agents use `claude -p` with a persistent session id per agent.
+`cc_send(trigger=true)` and `cc_dispatch(...)` queue work on the server. The target agent's own stdio MCP server claims that run and starts it locally on the correct runtime. Codex agents use `codex app-server` with a persistent thread per agent.
 
-If Claude Code auto-detection is wrong, pass `runtime="claude-code"` to `cc_register`.
+If Codex auto-detection is wrong, pass `runtime="codex"` to `cc_register`.
+
+WSL note:
+- If your Codex CLI lives in WSL, prefer running the Codex-side MCP server from inside WSL so the registered `cwd` is already a Linux path.
+- When the bridge runs on Windows, it defaults to `wsl.exe -e codex app-server` for Codex launches.
 
 Current limits:
 - One active dispatched run per registered agent.

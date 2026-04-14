@@ -740,4 +740,7 @@ async def get_stats(request: Request):
 async def dashboard():
     """Serve the SPA dashboard. Data fetched client-side via API calls."""
     html_path = Path(__file__).parent.parent / "dashboard.html"
-    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    return HTMLResponse(
+        html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )

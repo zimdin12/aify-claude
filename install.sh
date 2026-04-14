@@ -1,103 +1,183 @@
 #!/bin/bash
-# aify-claude installer for Claude Code
+# Unified installer for aify-claude on Claude Code or Codex.
 #
 # Usage:
-#   bash install.sh                          # local server (localhost:8800)
-#   bash install.sh http://192.168.1.5:8800  # remote server
-#   bash install.sh --with-hook              # local + notification hook
-#   bash install.sh http://server:8800 --with-hook  # remote + hook
-#
-# What it does:
-#   1. Installs MCP dependencies (npm install)
-#   2. Registers the aify-claude MCP server with Claude Code
-#   3. Optionally installs the PostToolUse notification hook
+#   bash install.sh --client claude
+#   bash install.sh --client codex
+#   bash install.sh --client codex http://localhost:8800 --with-hook
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CLIENT="claude"
 SERVER_URL=""
 WITH_HOOK=false
 
-for arg in "$@"; do
-  case "$arg" in
-    --with-hook) WITH_HOOK=true ;;
-    http*) SERVER_URL="$arg" ;;
+usage() {
+  cat <<EOF
+Usage:
+  bash install.sh --client <claude|codex> [SERVER_URL] [--with-hook]
+
+Examples:
+  bash install.sh --client claude
+  bash install.sh --client claude http://localhost:8800 --with-hook
+  bash install.sh --client codex http://localhost:8800
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --client)
+      CLIENT="${2:-}"
+      shift 2
+      ;;
+    --with-hook)
+      WITH_HOOK=true
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    http*)
+      SERVER_URL="$1"
+      shift
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      usage
+      exit 1
+      ;;
   esac
 done
 
-echo "=== aify-claude installer ==="
-echo "Repo: $SCRIPT_DIR"
-echo "Server: ${SERVER_URL:-local mode (no server)}"
-echo ""
-
-# Step 1: npm install
-echo "[1/3] Installing MCP dependencies..."
-cd "$SCRIPT_DIR/mcp/stdio"
-npm install --silent 2>/dev/null
-cd "$SCRIPT_DIR"
-echo "  Done."
-
-# Step 2: Register MCP server
-echo "[2/3] Registering MCP server with Claude Code..."
-claude mcp remove aify-claude 2>/dev/null || true
-
-if [ -n "$SERVER_URL" ]; then
-  API_KEY_ENV=""
-  if [ -n "$CLAUDE_MCP_API_KEY" ]; then
-    API_KEY_ENV="-e CLAUDE_MCP_API_KEY=$CLAUDE_MCP_API_KEY"
-  fi
-  claude mcp add --scope user aify-claude \
-    -e CLAUDE_MCP_SERVER_URL="$SERVER_URL" \
-    $API_KEY_ENV \
-    -- node "$SCRIPT_DIR/mcp/stdio/server.js"
-else
-  claude mcp add --scope user aify-claude \
-    -- node "$SCRIPT_DIR/mcp/stdio/server.js"
+if [ "$CLIENT" != "claude" ] && [ "$CLIENT" != "codex" ]; then
+  echo "Unsupported client: $CLIENT"
+  usage
+  exit 1
 fi
-echo "  Done."
 
-# Step 3: Optional notification hook
-if [ "$WITH_HOOK" = true ]; then
-  echo "[3/3] Installing notification hook..."
-  SETTINGS_FILE="$HOME/.claude/settings.json"
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1"
+    exit 1
+  fi
+}
 
-  if [ ! -f "$SETTINGS_FILE" ]; then
-    echo '{}' > "$SETTINGS_FILE"
+copy_claude_assets() {
+  local skill_dst="$HOME/.claude/skills/aify-claude"
+  local commands_dst="$HOME/.claude/commands/aify-claude"
+  mkdir -p "$(dirname "$skill_dst")" "$commands_dst"
+  rm -rf "$skill_dst"
+  cp -R "$SCRIPT_DIR/.claude/skills/aify-claude" "$skill_dst"
+  cp -R "$SCRIPT_DIR/.claude/commands/." "$commands_dst/"
+}
+
+copy_codex_assets() {
+  local codex_home="${CODEX_HOME:-$HOME/.codex}"
+  local skill_dst="$codex_home/skills/aify-claude"
+  mkdir -p "$(dirname "$skill_dst")"
+  rm -rf "$skill_dst"
+  cp -R "$SCRIPT_DIR/.agents/skills/aify-claude" "$skill_dst"
+}
+
+install_claude_hook() {
+  local settings_file="$HOME/.claude/settings.json"
+  mkdir -p "$(dirname "$settings_file")"
+  if [ ! -f "$settings_file" ]; then
+    echo '{}' > "$settings_file"
   fi
 
-  # Add the notification hook to PostToolUse using node
   node -e "
     const fs = require('fs');
-    const settings = JSON.parse(fs.readFileSync('$SETTINGS_FILE', 'utf-8'));
+    const settings = JSON.parse(fs.readFileSync('$settings_file', 'utf-8'));
     if (!settings.hooks) settings.hooks = {};
     if (!settings.hooks.PostToolUse) settings.hooks.PostToolUse = [];
-
-    // Remove any existing aify-claude hooks
     settings.hooks.PostToolUse = settings.hooks.PostToolUse.filter(
       h => !JSON.stringify(h).includes('notify-check')
     );
-
-    // Add the notification hook (runs on all tool uses)
     settings.hooks.PostToolUse.push({
       hooks: [{
         type: 'command',
         command: 'node \"$SCRIPT_DIR/mcp/stdio/notify-check.js\"'
       }]
     });
-
-    fs.writeFileSync('$SETTINGS_FILE', JSON.stringify(settings, null, 2));
+    fs.writeFileSync('$settings_file', JSON.stringify(settings, null, 2));
   "
-  echo "  Done. Agents will see inbox notifications after each tool call."
+}
+
+register_stdio_server() {
+  local cli="$1"
+  local server_name="aify-claude"
+  local api_key="${CLAUDE_MCP_API_KEY:-${AIFY_API_KEY:-}}"
+
+  "$cli" mcp remove "$server_name" >/dev/null 2>&1 || true
+
+  if [ -n "$SERVER_URL" ] && [ -n "$api_key" ]; then
+    "$cli" mcp add --scope user "$server_name" \
+      -e CLAUDE_MCP_SERVER_URL="$SERVER_URL" \
+      -e CLAUDE_MCP_API_KEY="$api_key" \
+      -- node "$SCRIPT_DIR/mcp/stdio/server.js"
+  elif [ -n "$SERVER_URL" ]; then
+    "$cli" mcp add --scope user "$server_name" \
+      -e CLAUDE_MCP_SERVER_URL="$SERVER_URL" \
+      -- node "$SCRIPT_DIR/mcp/stdio/server.js"
+  else
+    "$cli" mcp add --scope user "$server_name" \
+      -- node "$SCRIPT_DIR/mcp/stdio/server.js"
+  fi
+}
+
+echo "=== aify-claude installer ==="
+echo "Repo: $SCRIPT_DIR"
+echo "Client: $CLIENT"
+echo "Server: ${SERVER_URL:-local mode (no shared server)}"
+echo ""
+
+require_cmd node
+require_cmd npm
+require_cmd "$CLIENT"
+
+echo "[1/4] Installing MCP dependencies..."
+cd "$SCRIPT_DIR/mcp/stdio"
+npm install --silent
+cd "$SCRIPT_DIR"
+echo "  Done."
+
+echo "[2/4] Installing agent guidance..."
+if [ "$CLIENT" = "claude" ]; then
+  copy_claude_assets
 else
-  echo "[3/3] Notification hook skipped (use --with-hook to enable)."
+  copy_codex_assets
+fi
+echo "  Done."
+
+echo "[3/4] Registering MCP server..."
+register_stdio_server "$CLIENT"
+echo "  Done."
+
+if [ "$WITH_HOOK" = true ]; then
+  echo "[4/4] Installing notification hook..."
+  if [ "$CLIENT" = "claude" ]; then
+    install_claude_hook
+  else
+    "$CLIENT" settings set-hook PostToolUse "node \"$SCRIPT_DIR/mcp/stdio/notify-check.js\""
+  fi
+  echo "  Done."
+else
+  echo "[4/4] Notification hook skipped (use --with-hook to enable)."
 fi
 
 echo ""
 echo "=== Installation complete ==="
-echo "Restart Claude Code for changes to take effect."
+if [ "$CLIENT" = "claude" ]; then
+  echo "Restart Claude Code for changes to take effect."
+else
+  echo "Restart Codex for changes to take effect."
+fi
 echo ""
 echo "Quick start:"
-echo "  /register my-agent coder"
-echo "  /agents"
-echo "  /send other-agent Hello!"
-echo "  /inbox"
+echo "  cc_register(agentId=\"my-agent\", role=\"coder\")"
+echo "  cc_agents()"
+echo "  cc_send(from=\"my-agent\", to=\"other-agent\", type=\"info\", subject=\"Hello\", body=\"Hi there\")"
+echo "  cc_inbox(agentId=\"my-agent\")"

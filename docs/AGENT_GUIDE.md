@@ -10,6 +10,17 @@ This template provides a FastAPI orchestrator that manages Docker sub-containers
 3. Register MCP tools so other AI agents can use the service
 4. Update integrations (Claude Code, OpenClaw, Open WebUI)
 
+## Platform Patterns
+
+When building on `aify-container`, prefer these patterns so services stay consistent across runtimes and transports:
+
+- Put orchestration state in the service, not in a specific client.
+- Keep stdio and SSE tool surfaces as aligned as practical.
+- Model runtime differences with capabilities, not with hidden special cases.
+- If a feature is unsupported for a runtime, return a clear capability error instead of silently falling back.
+- Separate message delivery from active execution. A message bus and a dispatch system are different layers.
+- Prefer one small installer or handoff doc per client runtime so another agent can install the service without reverse-engineering the repo.
+
 ## File Map: What to Modify
 
 | File | What Goes Here | Priority |
@@ -206,7 +217,19 @@ Clients (Claude Code, OpenClaw, Open WebUI, curl)
   | 0.2    | | 0.6     | | 0.5   |
   +--------+ +---------+ +-------+
    (always)   (on-demand)  (on-demand)
-```
+ ```
+
+## Agent-Team Pattern
+
+For services meant to be used by multiple coding agents, the strongest reusable shape is:
+
+- `message` tools for conversation and handoffs
+- `channel` tools for shared team threads
+- `artifact` tools for shared outputs
+- `dispatch` tools for active execution requests
+- `run` tools for status and control of active work
+
+That pattern scales better than overloading one tool to do everything, and it keeps marketplace installs easier to explain.
 
 ## Checklist
 

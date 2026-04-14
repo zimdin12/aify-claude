@@ -9,7 +9,8 @@ Example CLAUDE.md files for a 5-agent development team using aify-claude for coo
 | Manager | `CLAUDE.MANAGER.md` | Task assignment, progress tracking, push approval |
 | Coder | `CLAUDE.CODER.md` | Implementation, commits (no push until verified) |
 | Tester | `CLAUDE.TESTER.md` | Verification, testing, bug reporting |
-| Architect | `CLAUDE.ARCHITECT.md` | System design, code review, architecture enforcement |
+| Reviewer | `CLAUDE.REVIEWER.md` | Code review, regression spotting, test-gap detection |
+| Architect | `CLAUDE.ARCHITECT.md` | System design, architecture enforcement |
 | Researcher | `CLAUDE.RESEARCHER.md` | Research, state-of-the-art analysis |
 
 ## How to use
@@ -25,6 +26,8 @@ Example CLAUDE.md files for a 5-agent development team using aify-claude for coo
 - **Communication**: `game-dev` channel for team updates, DMs for direct collaboration
 - **Status awareness**: Agents use `cc_agent_info` to check before messaging
 - **File sharing**: `cc_share` for handoffs (logs, screenshots, test results)
+- **Active starts**: use `cc_dispatch` when another agent should begin now instead of waiting on inbox polling alone
+- **Run correction**: use `cc_run_steer` or `cc_run_interrupt` when active work needs intervention
 - **Brief acks**: "on it" instead of paragraphs — reduce noise
 
 ## Customization

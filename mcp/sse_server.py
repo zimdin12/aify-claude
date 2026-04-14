@@ -259,6 +259,106 @@ async def cc_send(
 
 
 @mcp_server.tool()
+async def cc_dispatch(
+    from_agent: str,
+    type: str,
+    subject: str,
+    body: str,
+    to: str = "",
+    toRole: str = "",
+    inReplyTo: str = "",
+    mode: str = "start_if_possible",
+) -> str:
+    """Queue active work for another agent. SSE clients can request dispatch, but cannot execute dispatch runs themselves."""
+    if not to and not toRole:
+        return "Error: need 'to' or 'toRole'"
+    data = {
+        "from_agent": from_agent,
+        "type": type,
+        "subject": subject,
+        "body": body,
+        "mode": mode,
+        "createMessage": True,
+    }
+    if to:
+        data["to"] = to
+    if toRole:
+        data["toRole"] = toRole
+    if inReplyTo:
+        data["inReplyTo"] = inReplyTo
+    r = await _api("POST", "/dispatch", data)
+    if not r.get("ok"):
+        return r.get("error", "Dispatch failed.")
+    runs = r.get("runs", [])
+    not_started = r.get("notStarted", [])
+    lines = [f"- {run['targetAgentId']}: {run['runId']} [{run['status']}]" for run in runs]
+    if not_started:
+        lines.append("Not started:")
+        lines.extend([f"- {item['targetAgentId']}: {item['reason']}" for item in not_started])
+    return "\n".join(lines) if lines else "No dispatch runs were created."
+
+
+@mcp_server.tool()
+async def cc_run_status(runId: str) -> str:
+    """Inspect a dispatched run, including recent events and control requests."""
+    r = await _api("GET", f"/dispatch/runs/{runId}")
+    run = r.get("run")
+    if not run:
+        return f"Run not found: {runId}"
+    lines = [
+        f"{run['id']} -> {run['targetAgentId']}",
+        f"Status: {run['status']}",
+        f"Runtime: {run.get('runtime') or 'unknown'}",
+        f"Subject: {run.get('subject', '')}",
+        f"Requested: {run.get('requestedAt', '')}",
+    ]
+    if run.get("summary"):
+        lines.extend(["", "Summary:", run["summary"]])
+    if run.get("error"):
+        lines.extend(["", "Error:", run["error"]])
+    events = run.get("events", [])[-10:]
+    if events:
+        lines.append("")
+        lines.append("Recent events:")
+        lines.extend([f"- {event['createdAt']} [{event['type']}] {event.get('body', '')}" for event in events])
+    controls = run.get("controls", [])[-10:]
+    if controls:
+        lines.append("")
+        lines.append("Recent controls:")
+        lines.extend([
+            f"- {control['requestedAt']} [{control['action']}/{control['status']}] {control.get('from') or 'unknown'}"
+            + (f" -> {control['response']}" if control.get("response") else "")
+            for control in controls
+        ])
+    return "\n".join(lines)
+
+
+@mcp_server.tool()
+async def cc_run_interrupt(runId: str, from_agent: str = "") -> str:
+    """Request interruption of an active dispatched run."""
+    r = await _api("POST", f"/dispatch/runs/{runId}/control", {
+        "from_agent": from_agent,
+        "action": "interrupt",
+    })
+    if not r.get("ok"):
+        return r.get("detail", "Interrupt request failed.")
+    return f"Interrupt requested for {runId}. Control ID: {r['controlId']}"
+
+
+@mcp_server.tool()
+async def cc_run_steer(runId: str, body: str, from_agent: str = "") -> str:
+    """Request additional guidance for an active dispatched run."""
+    r = await _api("POST", f"/dispatch/runs/{runId}/control", {
+        "from_agent": from_agent,
+        "action": "steer",
+        "body": body,
+    })
+    if not r.get("ok"):
+        return r.get("detail", "Steer request failed.")
+    return f"Steer requested for {runId}. Control ID: {r['controlId']}"
+
+
+@mcp_server.tool()
 async def cc_inbox(
     agentId: str,
     filter: str = "unread",

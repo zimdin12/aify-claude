@@ -1,8 +1,8 @@
 # aify-claude
 
-Inter-agent communication hub for Claude Code. Messaging, group chat (channels), file sharing, triggering, and a live dashboard — all in a Docker container.
+Inter-agent communication hub for Claude Code, Codex, and other MCP-connected coding agents. Messaging, group chat (channels), file sharing, active dispatch, and a live dashboard — all in a Docker container.
 
-Multiple Claude Code instances can register as agents, send messages, share files, chat in channels, trigger each other, and monitor everything through a web dashboard.
+Multiple agent runtimes can register, send messages, share files, chat in channels, dispatch work to each other, and monitor everything through a web dashboard.
 
 Built on [aify-container](https://github.com/zimdin12/aify-container).
 
@@ -20,7 +20,24 @@ docker compose up -d --build
 Verify: `curl http://localhost:8800/health` should return `{"status":"healthy"}`.
 Dashboard: http://localhost:8800
 
-### Client — Claude Code plugin install (recommended)
+### Fast install
+
+For agent-friendly setup, point installers at these files:
+
+- Claude Code: [install.claude.md](/D:/Docker%20Storage/Images/aify-claude/install.claude.md)
+- Codex: [install.codex.md](/D:/Docker%20Storage/Images/aify-claude/install.codex.md)
+
+Fast path:
+
+```bash
+git clone https://github.com/zimdin12/aify-claude.git
+cd aify-claude
+bash install.sh --client claude http://localhost:8800 --with-hook
+# or:
+bash install.sh --client codex http://localhost:8800 --with-hook
+```
+
+### Client — Claude Code install (manual)
 
 Install aify-claude as a Claude Code plugin. This sets up the MCP server, skill, and notification hook — same as a marketplace install.
 
@@ -59,7 +76,7 @@ On Windows, replace `$HOME` with your home directory using forward slashes (e.g.
 
 **Step 3: Restart Claude Code**
 
-The 19 `cc_*` tools appear automatically. The skill teaches Claude how to register, send messages, and listen for incoming messages.
+The 23 `cc_*` tools appear automatically. The skill teaches Claude how to register, send messages, listen for incoming messages, dispatch active work, and control active runs.
 
 ### Client — other install methods
 
@@ -71,16 +88,18 @@ No local files needed. Works with Claude Code, OpenCode, Cursor, or any MCP-comp
 claude mcp add --scope user aify-claude --transport sse http://SERVER_IP:8800/mcp/sse
 ```
 Note: no skill, no triggers, no notifications — just the 19 tools.
+SSE clients can still request `cc_dispatch`, `cc_run_status`, and run controls. They just cannot act as local launchers for active dispatch themselves.
 
 </details>
 
 <details>
-<summary>install.sh (quick setup on same machine as server)</summary>
+<summary>install.sh (recommended scripted setup)</summary>
 
 ```bash
 git clone https://github.com/zimdin12/aify-claude.git
 cd aify-claude
-bash install.sh http://localhost:8800 --with-hook
+bash install.sh --client claude http://localhost:8800 --with-hook
+bash install.sh --client codex http://localhost:8800 --with-hook
 ```
 
 </details>
@@ -128,19 +147,23 @@ Claude Code (any machine)         Claude Code (any machine)
          └──────────────────────┘
 ```
 
-## Tools (19)
+## Tools (23)
 
 ### Messaging
 | Tool | Description |
 |------|-------------|
-| **cc_register** | Register as agent with ID, role, cwd, model, instructions |
+| **cc_register** | Register as agent with ID, role, cwd, model, instructions, runtime metadata |
 | **cc_agents** | List agents with unread counts and live status |
 | **cc_status** | Set status + note: `cc_status("working", note="NRD pipeline")` |
 | **cc_agent_info** | Check another agent's status, unread count, last read message |
-| **cc_send** | Send message with optional `priority`. Returns recipient status + unread count |
+| **cc_send** | Send message with optional `priority`. `trigger=true` also queues active dispatch |
+| **cc_dispatch** | Queue active runtime dispatch explicitly and return run IDs |
 | **cc_inbox** | Check inbox (newest first, replies include parent context) |
 | **cc_unsend** | Delete a message by ID |
 | **cc_search** | Search messages and shared artifacts |
+| **cc_run_status** | Inspect a dispatched run and its recent events |
+| **cc_run_interrupt** | Request interruption of an active dispatched run |
+| **cc_run_steer** | Send additional guidance to an active run when the runtime supports steering |
 
 ### Channels (group chat)
 | Tool | Description |
@@ -164,18 +187,50 @@ Claude Code (any machine)         Claude Code (any machine)
 | **cc_clear** | Clear data with optional age filter |
 | **cc_dashboard** | Open dashboard in browser |
 
-## Trigger
+## Active Dispatch
 
-`cc_send` with `trigger=true` delivers the message AND spawns a Claude Code instance locally:
+`cc_send(trigger=true)` and `cc_dispatch(...)` now queue work in the service and let the target agent's own local MCP server claim and execute it on the correct machine/runtime:
 
 ```
-Agent A: cc_send(to="tester", body="run tests", trigger=true)
-  → message delivered to tester's inbox
-  → claude --print spawned locally with tester's registered role/cwd/instructions
+Agent A: cc_dispatch(to="tester", subject="run tests", body="Run the repo test suite")
+  → dispatch run queued on the server
+  → tester's local stdio MCP server claims the run
+  → tester runtime launches locally (Claude Code CLI or Codex App Server)
   → result sent back to Agent A's inbox
 ```
 
-Only works on the **same machine** (the MCP client spawns the process). Cross-machine: message is delivered, but the receiver acts on it when they check inbox.
+This works across machines as long as the target agent is actively registered through the stdio MCP server. SSE clients still receive messages, but they cannot execute active dispatch because there is no local launcher process.
+
+Important:
+- `idle` is fine. If the client session is still open and connected through the stdio MCP server, the agent can still be triggered.
+- `closed` is different. If the client app/session is no longer running the stdio bridge, dispatch runs stay queued on the server until that agent reconnects.
+- Active dispatch requires the local `stdio` MCP server. SSE-only clients are message/control clients, not local launchers.
+
+### Runtime Notes
+
+- `cc_register` now stores runtime metadata (`runtime`, `machineId`, capabilities). If auto-detection is wrong, pass `runtime="claude-code"` or `runtime="codex"` explicitly.
+- Claude dispatch uses the local `claude -p` CLI with a persistent `session-id` per agent.
+- Codex dispatch uses `codex app-server` with a persistent thread per agent.
+- On Windows, the Codex bridge defaults to `wsl.exe -e codex app-server`. If your Codex CLI lives in WSL, prefer running the Codex-side MCP server from inside WSL so the registered `cwd` is already a Linux path.
+- Unsupported runtimes stay message-only unless you add a dedicated runtime adapter.
+
+### Current Limits
+
+- One active dispatched run is processed at a time per registered agent.
+- Claude supports interruption but not true in-flight steering.
+- Codex supports interruption and steering through App Server.
+- If a runtime asks for unexpected user input or approvals, the run may fail or time out; use permissive runtime settings only in trusted environments.
+
+### Recommended Roles
+
+- `manager`: triage, assign work, watch run state, unblock others
+- `coder`: implement changes and hand off artifacts
+- `tester`: verify behavior, reproduce bugs, report regressions
+- `reviewer`: review code, surface risks, request fixes
+- `researcher`: gather external facts, docs, and options
+- `architect`: shape system boundaries and interface decisions
+
+These roles are conventions, not hard-coded types. They help agents coordinate predictably across services.
 
 ## Notifications
 
@@ -215,9 +270,16 @@ Live at `http://localhost:8800` (redirects to `/api/v1/dashboard`):
 | `/health` | GET | Health check |
 | `/mcp/sse` | GET | MCP SSE endpoint (any MCP client) |
 | `/api/v1/agents` | GET/POST/DELETE | Agents |
-| `/api/v1/messages/send` | POST | Send message |
+| `/api/v1/messages/send` | POST | Send message (optionally queue active dispatch) |
 | `/api/v1/messages/inbox/{id}` | GET | Check inbox |
 | `/api/v1/messages/search` | GET | Search |
+| `/api/v1/dispatch` | POST | Create dispatch runs |
+| `/api/v1/dispatch/claim` | POST | Claim queued work for a local runtime |
+| `/api/v1/dispatch/runs` | GET | List dispatch runs |
+| `/api/v1/dispatch/runs/{id}` | GET/PATCH | Inspect or update a dispatch run |
+| `/api/v1/dispatch/runs/{id}/control` | POST | Request interrupt or steer for an active run |
+| `/api/v1/dispatch/controls/claim` | POST | Claim pending run-control requests for a local runtime |
+| `/api/v1/dispatch/controls/{id}` | PATCH | Mark a run-control request completed or failed |
 | `/api/v1/shared` | GET/POST | Artifacts |
 | `/api/v1/shared/{name}` | GET/DELETE | Single artifact |
 | `/api/v1/channels` | GET/POST | Channels |

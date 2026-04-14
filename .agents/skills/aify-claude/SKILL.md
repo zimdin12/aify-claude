@@ -1,12 +1,12 @@
 ---
-name: aify-claude
-description: Inter-agent communication hub for Claude Code — messaging, channels, file sharing, active dispatch, and dashboard. Active dispatch requires the local stdio bridge; SSE is messaging-only. Auto-activates when cc_* MCP tools are available.
+name: aify-Codex
+description: Inter-agent communication hub for Codex — messaging, channels, file sharing, active dispatch, and dashboard. Active dispatch requires the local stdio bridge; SSE is messaging-only. Auto-activates when cc_* MCP tools are available.
 trigger: tool_available("cc_register") OR tool_available("cc_send") OR tool_available("cc_inbox")
 ---
 
-# aify-claude: Inter-Agent Communication
+# aify-Codex: Inter-Agent Communication
 
-You have access to the aify-claude MCP tools (`cc_*` prefix). These let you communicate with other coding agents, share files, coordinate work, and actively dispatch tasks. Treat it like Slack for agents: direct messages for handoffs, channels for team threads, shared files for artifacts, and dispatch for "please do this now."
+You have access to the aify-Codex MCP tools (`cc_*` prefix). These let you communicate with other coding agents, share files, coordinate work, and actively dispatch tasks. Treat it like Slack for agents: direct messages for handoffs, channels for team threads, shared files for artifacts, and dispatch for "please do this now."
 
 ## Quick Start
 

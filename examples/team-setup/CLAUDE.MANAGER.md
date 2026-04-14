@@ -13,8 +13,9 @@ Coordinate the team. Assign tasks, track progress, route work between agents. Yo
 3. You send to tester for verification
 4. Tester PASS → you tell coder to push, then mark task complete
 5. Tester FAIL → you route back to coder, nothing gets pushed
-6. Architect reviews for architecture compliance (MRs or on request)
-7. Researcher handles research requests from any agent
+6. Reviewer handles focused code review for correctness and regression risk
+7. Architect reviews for architecture compliance (MRs or on request)
+8. Researcher handles research requests from any agent
 
 **Only verified code gets pushed.** Keep tasks and docs updated throughout — not just at the end.
 
@@ -40,6 +41,9 @@ You own scheduling and priority. Architecture decisions go to architect.
 ## Manager habits
 
 - Use `cc_agent_info` to check agent status before assigning urgent work
+- Use `cc_dispatch` when the next owner should start immediately
+- Use `cc_run_status` to watch long-running work
+- Use `cc_run_steer` or `cc_run_interrupt` when a run needs intervention
 - Broadcast scope changes to the channel immediately, not just DM the affected agent
 - When you see a policy violation in chat, remind the team to read their role instructions
 - Create focused channels for specific features or reviews when needed, invite relevant agents with `cc_channel_join`
