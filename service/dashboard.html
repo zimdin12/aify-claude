@@ -117,7 +117,7 @@ tr:hover{background:#1c2128}
 <div class="sidebar" id="sidebar">
   <button class="toggle-btn" onclick="document.getElementById('sidebar').classList.toggle('collapsed')">&laquo;</button>
   <h1>aify-claude</h1>
-  <div class="ver">v3.3.0</div>
+  <div class="ver">v3.4.0</div>
   <div class="nav">
     <a onclick="showPage('dashboard')" id="nav-dashboard" class="active">Dashboard</a>
     <a onclick="showPage('channels')" id="nav-channels">Channels</a>
@@ -240,7 +240,8 @@ bash install.sh --client claude http://localhost:8800 --with-hook</pre>
 cd ~/aify-claude
 bash install.sh --client codex http://localhost:8800 --with-hook</pre>
       <p>Restart the client after install. Active triggering works through the local <code>stdio</code> MCP bridge on the target machine. SSE clients can use the shared service but cannot launch local Claude/Codex work themselves.</p>
-      <p><b>Resident vs managed:</b> <code>cc_register</code> binds the exact live session you have open. Resident Codex sessions become directly triggerable when aify captures a real <code>thread.id</code> and can resume it through <code>codex app-server</code>. <code>cc_spawn_agent</code> creates a managed worker owned by that machine/bridge for detached/background execution. Resident Claude sessions are still primarily for messaging, inbox, channels, and presence until the Claude live-session trigger path is enabled. On Windows, desktop Codex and WSL Codex use different thread stores, so resident triggering only works when the bridge talks to the same store that created the session.</p>
+      <p>Claude CLI note: resident wakeups require starting Claude through the installed <code>claude-aify</code> wrapper so the local aify channel bridge is allowed to load during the current research-preview channels phase.</p>
+      <p><b>Resident vs managed:</b> <code>cc_register</code> binds the exact live session you have open. Resident Codex sessions become directly triggerable when aify captures a real <code>thread.id</code> and can resume it through <code>codex app-server</code>. Resident Claude sessions become wakeable through the local <code>aify-claude-channel</code> bridge when Claude is started with <code>claude-aify</code>. <code>cc_spawn_agent</code> creates a managed worker owned by that machine/bridge for detached/background execution. On Windows, desktop Codex and WSL Codex use different thread stores, so resident triggering only works when the bridge talks to the same store that created the session.</p>
 
       <h3>Tools (24 stdio / 19 SSE)</h3>
       <ul>

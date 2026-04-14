@@ -92,6 +92,10 @@ function canUseDefaultResidentCodexBridge() {
   return process.env.AIFY_CODEX_ALLOW_DESKTOP_RESIDENT === "1";
 }
 
+function canUseResidentClaudeChannel() {
+  return process.env.AIFY_CLAUDE_CHANNEL_ENABLED === "1";
+}
+
 function getRuntimeConfig(agentInfo) {
   return agentInfo.runtimeConfig || {};
 }
@@ -542,6 +546,9 @@ export function defaultCapabilitiesForRuntime(runtime, sessionMode = "resident",
     case "codex":
       if (!canUseDefaultResidentCodexBridge()) return [];
       return ["resident-run", "resume", "interrupt", "steer"];
+    case "claude-code":
+      if (!canUseResidentClaudeChannel()) return [];
+      return ["resident-run", "interrupt"];
     default:
       return [];
   }

@@ -139,13 +139,13 @@ Note: active dispatch is not available via SSE (requires a local stdio MCP serve
 - `cc_register(...)` registers a resident session: the exact live Claude/Codex session you currently have open.
 - `cc_spawn_agent(...)` creates a managed worker: a triggerable logical agent hosted by the local stdio bridge on that machine.
 - Resident Codex sessions become directly triggerable when aify captures a real `thread.id` and can resume that thread through `codex app-server`.
+- Resident Claude CLI sessions become wakeable when Claude is started through `claude-aify`, which loads the local aify channel bridge.
 - Managed workers remain the detached trigger path for long-running or unattended work.
-- Resident Claude sessions are still primarily for presence, inbox, channels, and manual work until the Claude live-session channel path is wired in.
 - Windows desktop Codex and WSL Codex use different thread stores; resident triggering only works when the bridge talks to the same store that created the session.
 
 ## Active Dispatch
 
-`cc_send(trigger=true)` and `cc_dispatch(...)` queue work on the server. The target agent's owning stdio MCP server claims that run and starts it locally on the correct runtime. Resident Codex sessions resume their bound `thread.id`; Claude managed workers keep using `claude -p` with a persistent session id per worker.
+`cc_send(trigger=true)` and `cc_dispatch(...)` queue work on the server. The target agent's owning local bridge claims that run and starts it locally on the correct runtime. Resident Codex sessions resume their bound `thread.id`; resident Claude CLI sessions are woken through the local aify channel bridge; Claude managed workers keep using `claude -p` with a persistent session id per worker.
 
 If Claude Code auto-detection is wrong, pass `runtime="claude-code"` to `cc_register`.
 
@@ -153,6 +153,7 @@ Current limits:
 - One active dispatched run per registered agent/worker.
 - Claude supports interruption but not in-flight steering.
 - Codex supports both interruption and steering.
+- Resident Claude wakeups currently depend on the Claude Channels research-preview flow, so you must start Claude with `claude-aify`.
 - Resident Codex triggering only works when the bridge talks to the same Codex installation/thread store that created the live session.
 - Unexpected permission prompts or user-input requests can still fail a dispatched run.
 - Unsupported runtimes stay message-only unless a dedicated runtime adapter is added.

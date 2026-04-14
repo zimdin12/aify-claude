@@ -20,18 +20,28 @@ bash install.sh --client claude --with-hook
 
 Restart Claude Code after install.
 
+For resident-session wakeups, start Claude with:
+
+```bash
+claude-aify
+```
+
+That wrapper enables the local aify channel bridge and adds Claude’s current development-channel flag automatically.
+
 Important:
 - Active dispatch works only when the agent is installed through the local `stdio` MCP server.
-- `cc_register` creates a resident session for messaging/presence and stores runtime/session metadata for future resident-trigger support.
-- `cc_spawn_agent` creates a managed worker, which is still the reliable triggerable path for Claude today.
+- `cc_register` creates a resident session for messaging/presence. When Claude is started with `claude-aify`, that resident session becomes wakeable through the local aify channel bridge.
+- `cc_spawn_agent` creates a managed worker, which remains the detached background-worker path for Claude.
 - If the owning stdio bridge is closed, queued resident/managed runs wait until that bridge reconnects.
 
 ## What This Installs
 
 - The `aify-claude` stdio MCP server
+- The `aify-claude-channel` MCP server used for resident Claude wakeups
 - The aify skill in `~/.claude/skills/aify-claude`
 - Slash commands in `~/.claude/commands/aify-claude`
 - Optional unread-message hook notifications
+- A `claude-aify` wrapper in `~/.local/bin`
 
 ## Quick Start
 

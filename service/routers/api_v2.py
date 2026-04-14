@@ -120,10 +120,12 @@ def _default_capabilities_for(runtime: str, session_mode: str, session_handle: s
         if normalized_runtime == "claude-code":
             return ["managed-run", "resume", "interrupt", "spawn"]
         return []
-    if not session_handle:
-        return []
     if normalized_runtime == "codex":
+        if not session_handle:
+            return []
         return ["resident-run", "resume", "interrupt", "steer"]
+    if normalized_runtime == "claude-code":
+        return ["resident-run", "interrupt"]
     return []
 
 
@@ -156,13 +158,13 @@ def _agent_execution_mode(row, requested_runtime: Optional[str] = None) -> tuple
         if capabilities and "managed-run" not in capabilities:
             return None, 'agent capabilities do not include "managed-run"'
         return "managed", None
-    if not session_handle:
-        return None, (
-            f'agent "{row["id"]}" is a resident session without a bound session handle. '
-            "Re-register that live session or provide sessionHandle explicitly."
-        )
     if capabilities and "resident-run" not in capabilities:
         return None, 'agent capabilities do not include "resident-run"'
+    if runtime == "codex" and not session_handle:
+        return None, (
+            f'agent "{row["id"]}" is a resident Codex session without a bound session handle. '
+            "Re-register that live session or provide sessionHandle explicitly."
+        )
     if (row["launch_mode"] or "detached") == "none":
         return None, "launch mode is disabled"
     return "resident", None
@@ -304,7 +306,7 @@ async def _create_dispatch_runs(
 async def root():
     return {
         "service": "aify-claude",
-        "version": "3.3.0",
+        "version": "3.4.0",
         "storage": "sqlite",
         "endpoints": {
             "agents": "/api/v1/agents",
@@ -594,6 +596,45 @@ async def send_message(req: MessageSend, request: Request):
                 (f"{msg_id}-{r}" if len(recipients) > 1 else msg_id,
                  req.from_agent, r, "direct", req.type, req.subject, req.body, req.priority, req.inReplyTo, ts)
             )
+
+        if req.inReplyTo:
+            run_cursor = await db.execute(
+                """
+                SELECT * FROM dispatch_runs
+                WHERE target_agent = ? AND message_id = ? AND execution_mode = 'resident' AND status IN ('claimed', 'running')
+                ORDER BY requested_at DESC
+                LIMIT 1
+                """,
+                (req.from_agent, req.inReplyTo)
+            )
+            replied_run = await run_cursor.fetchone()
+            if replied_run:
+                run_status = "failed" if req.type == "error" else "completed"
+                await db.execute(
+                    """
+                    UPDATE dispatch_runs
+                    SET status = ?, summary = ?, error_text = ?, result_message_id = ?, finished_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        run_status,
+                        req.body if run_status == "completed" else replied_run["summary"],
+                        req.body if run_status == "failed" else "",
+                        msg_id if len(recipients) == 1 else f"{msg_id}-{recipients[0]}",
+                        _now(),
+                        replied_run["id"],
+                    )
+                )
+                await _append_dispatch_event(
+                    db,
+                    replied_run["id"],
+                    "completed" if run_status == "completed" else "failed",
+                    f"Resident reply from {req.from_agent}",
+                )
+                await db.execute(
+                    "UPDATE agents SET status = 'idle', last_seen = ? WHERE id = ?",
+                    (_now(), req.from_agent)
+                )
 
         dispatch_runs = []
         not_started = []
@@ -1054,7 +1095,11 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
         )
         runs = await run_cursor.fetchall()
         selected_run = None
+        supported_modes = {str(mode or "").strip().lower() for mode in (req.executionModes or []) if str(mode or "").strip()}
         for run in runs:
+            run_execution_mode = (run["execution_mode"] or "managed").strip().lower()
+            if supported_modes and run_execution_mode not in supported_modes:
+                continue
             if run["dispatch_mode"] == "message_only":
                 await db.execute(
                     "UPDATE dispatch_runs SET status = 'cancelled', finished_at = ? WHERE id = ?",

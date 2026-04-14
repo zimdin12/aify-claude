@@ -193,12 +193,12 @@ Claude Code (any machine)         Claude Code (any machine)
 - `cc_register(...)` registers a resident session: the exact live Claude/Codex session that is currently open.
 - `cc_spawn_agent(...)` creates a managed worker: a triggerable logical agent hosted by the local stdio bridge on that machine.
 - Resident Codex sessions become directly triggerable when `cc_register` captures a real `thread.id` and the bridge can resume that thread through `codex app-server`.
+- Resident Claude CLI sessions become wakeable when Claude is started through the installed `claude-aify` wrapper, which loads the local aify channel bridge.
 - Managed workers remain the detached cross-machine execution path for long-running/background work.
-- Resident Claude sessions are still primarily for presence, inbox, channels, and manual work until the Claude channel/live-session trigger path is wired in.
 
 ## Active Dispatch
 
-`cc_send(trigger=true)` and `cc_dispatch(...)` queue work in the service and let the target agent's local MCP server claim and execute it on the correct machine/runtime. If the target is a resident Codex session with a bound `thread.id`, aify resumes that exact thread. Otherwise the managed worker path is used:
+`cc_send(trigger=true)` and `cc_dispatch(...)` queue work in the service and let the target agent's local MCP server claim and execute it on the correct machine/runtime. If the target is a resident Codex session with a bound `thread.id`, aify resumes that exact thread. If the target is a resident Claude CLI session started through `claude-aify`, the local channel bridge wakes that exact session. Otherwise the managed worker path is used:
 
 ```
 Agent A: cc_spawn_agent(from="lead", agentId="tester-worker", role="tester", runtime="codex")
@@ -213,7 +213,7 @@ This works across machines as long as the target machine has a live stdio MCP br
 
 Important:
 - Resident Codex sessions can be directly triggered when a live `thread.id` is bound.
-- Resident Claude sessions do not advertise direct triggering by default yet.
+- Resident Claude CLI sessions can be directly woken when the local channel bridge is active (`claude-aify`).
 - Managed workers are best for triggerable execution, long-lived runtime state, and unattended background work.
 - If the owning stdio bridge is closed, queued resident/managed runs stay on the server until that bridge reconnects.
 - Active dispatch requires the local `stdio` MCP server. SSE-only clients are message/control clients, not local launchers.
@@ -225,7 +225,7 @@ Important:
 - Claude managed workers use the local `claude -p` CLI with a persistent `session-id` per worker.
 - Codex managed workers use `codex app-server` with a persistent thread per worker.
 - Codex resident sessions use the `CODEX_THREAD_ID` exposed by the live session and resume that thread through App Server instead of creating a fresh detached thread.
-- Claude resident-session triggering is reserved for a future channel/live-session path; today, direct resident triggering is intentionally disabled by default.
+- Claude resident wakeups use the local `aify-claude-channel` server plus Claude Channels. The installer adds the server and a `claude-aify` wrapper that starts Claude with the required development-channel flag.
 - On Windows, the Codex bridge defaults to `wsl.exe -e codex app-server`. If your Codex CLI lives in WSL, prefer running the Codex-side MCP server from inside WSL so the registered `cwd` is already a Linux path.
 - For resident Codex triggering, the bridge must talk to the same Codex thread store that created the session. A Windows desktop session and a WSL CLI session are different stores.
 - Because of that store mismatch, Windows desktop Codex does not auto-advertise resident triggering by default when the bridge is using WSL Codex.
@@ -236,6 +236,7 @@ Important:
 - One active dispatched run is processed at a time per registered agent/worker.
 - Claude supports interruption but not true in-flight steering.
 - Codex supports interruption and steering through App Server.
+- Claude resident wakeups currently rely on the Channels research-preview flow, so custom local channels still require the `--dangerously-load-development-channels` startup flag. The `claude-aify` wrapper adds it for you.
 - Resident Codex triggering is proven for CLI/WSL threads that App Server can list and resume. Desktop/WSL mixed environments still need the bridge to point at the same Codex installation that owns the thread.
 - If a runtime asks for unexpected user input or approvals, the run may fail or time out; use permissive runtime settings only in trusted environments.
 

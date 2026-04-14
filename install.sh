@@ -73,6 +73,19 @@ copy_claude_assets() {
   cp -R "$SCRIPT_DIR/.claude/commands/." "$commands_dst/"
 }
 
+install_claude_wrapper() {
+  local wrapper_dir="$HOME/.local/bin"
+  local wrapper_path="$wrapper_dir/claude-aify"
+  mkdir -p "$wrapper_dir"
+  cat > "$wrapper_path" <<EOF
+#!/bin/bash
+set -euo pipefail
+export AIFY_CLAUDE_CHANNEL_ENABLED=1
+exec claude --dangerously-load-development-channels server:aify-claude-channel "\$@"
+EOF
+  chmod +x "$wrapper_path"
+}
+
 copy_codex_assets() {
   local codex_home="${CODEX_HOME:-$HOME/.codex}"
   local skill_dst="$codex_home/skills/aify-claude"
@@ -209,6 +222,28 @@ register_stdio_server() {
   fi
 }
 
+register_claude_channel_server() {
+  local cli="$1"
+  local server_name="aify-claude-channel"
+  local api_key="${CLAUDE_MCP_API_KEY:-${AIFY_API_KEY:-}}"
+
+  "$cli" mcp remove "$server_name" >/dev/null 2>&1 || true
+
+  if [ -n "$SERVER_URL" ] && [ -n "$api_key" ]; then
+    "$cli" mcp add "$server_name" \
+      --env CLAUDE_MCP_SERVER_URL="$SERVER_URL" \
+      --env CLAUDE_MCP_API_KEY="$api_key" \
+      -- node "$SCRIPT_DIR/mcp/stdio/claude-channel.js"
+  elif [ -n "$SERVER_URL" ]; then
+    "$cli" mcp add "$server_name" \
+      --env CLAUDE_MCP_SERVER_URL="$SERVER_URL" \
+      -- node "$SCRIPT_DIR/mcp/stdio/claude-channel.js"
+  else
+    "$cli" mcp remove "$server_name" >/dev/null 2>&1 || true
+    return
+  fi
+}
+
 echo "=== aify-claude installer ==="
 echo "Repo: $SCRIPT_DIR"
 echo "Client: $CLIENT"
@@ -235,6 +270,9 @@ echo "  Done."
 
 echo "[3/4] Registering MCP server..."
 register_stdio_server "$CLIENT"
+if [ "$CLIENT" = "claude" ]; then
+  register_claude_channel_server "$CLIENT"
+fi
 echo "  Done."
 
 if [ "$WITH_HOOK" = true ]; then
@@ -249,10 +287,16 @@ else
   echo "[4/4] Notification hook skipped (use --with-hook to enable)."
 fi
 
+if [ "$CLIENT" = "claude" ]; then
+  install_claude_wrapper
+fi
+
 echo ""
 echo "=== Installation complete ==="
 if [ "$CLIENT" = "claude" ]; then
   echo "Restart Claude Code for changes to take effect."
+  echo "For resident-session wakeups, start Claude with: claude-aify"
+  echo "  (wrapper installed at ~/.local/bin/claude-aify)"
 else
   echo "Restart Codex for changes to take effect."
 fi

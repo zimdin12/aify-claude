@@ -128,6 +128,20 @@ function normalizeSessionMode(mode) {
   return value === "managed" ? "managed" : "resident";
 }
 
+function supportedExecutionModes(info = {}) {
+  const sessionMode = normalizeSessionMode(info.sessionMode);
+  const runtime = normalizeRuntime(info.runtime || "generic");
+  const capabilities = Array.isArray(info.capabilities) ? info.capabilities : [];
+  const modes = [];
+  if (sessionMode === "managed" && capabilities.includes("managed-run")) {
+    modes.push("managed");
+  }
+  if (sessionMode === "resident" && capabilities.includes("resident-run")) {
+    if (runtime === "codex") modes.push("resident");
+  }
+  return modes;
+}
+
 // ── Local filesystem helpers ─────────────────────────────────────────────────
 
 function readAgents() {
@@ -225,9 +239,13 @@ async function runDispatchLoop() {
         continue;
       }
 
+      const executionModes = supportedExecutionModes(state.info);
+      if (!executionModes.length) continue;
+
       const claim = await httpCall("POST", "/dispatch/claim", {
         agentId,
         machineId: state.info.machineId || MACHINE_ID,
+        executionModes,
       });
       if (!claim?.run) continue;
 
@@ -406,7 +424,7 @@ async function processRunControls(agentId, activeRun) {
 
 const server = new McpServer({
   name: "claude-code-mcp",
-  version: "3.3.0",
+  version: "3.4.0",
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1029,7 +1047,11 @@ function spawnTriggeredAgent({ targetId, targetInfo, from, type, subject, body }
   const sessionMode = normalizeSessionMode(targetInfo.sessionMode);
   const runtime = normalizeRuntime(targetInfo.runtime || "generic");
   const capabilities = Array.isArray(targetInfo.capabilities) ? targetInfo.capabilities : [];
-  const residentRunnable = sessionMode === "resident" && capabilities.includes("resident-run") && targetInfo.sessionHandle;
+  const residentRunnable =
+    sessionMode === "resident" &&
+    runtime === "codex" &&
+    capabilities.includes("resident-run") &&
+    targetInfo.sessionHandle;
   const managedRunnable = sessionMode === "managed" && capabilities.includes("managed-run");
   if (!residentRunnable && !managedRunnable) {
     const reason =
