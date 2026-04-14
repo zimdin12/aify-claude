@@ -170,6 +170,57 @@ def _agent_execution_mode(row, requested_runtime: Optional[str] = None) -> tuple
     return "resident", None
 
 
+def _dispatch_fix_hint(recipient_id: str, row, reason: str) -> dict[str, Any]:
+    runtime = _normalize_runtime((row["runtime"] if row else "") or "generic")
+    session_mode = _normalize_session_mode((row["session_mode"] if row else "") or "resident")
+    role = (row["role"] if row else "") or "coder"
+    capabilities = _row_capabilities(row) if row else []
+    session_handle = str((row["session_handle"] if row else "") or "").strip()
+
+    hint: dict[str, Any] = {
+        "targetAgentId": recipient_id,
+        "reason": reason,
+        "runtime": runtime,
+        "sessionMode": session_mode,
+        "capabilities": capabilities,
+    }
+
+    if row is None:
+        hint["fix"] = "Register the target agent first, then try triggering again."
+        return hint
+
+    if runtime == "codex" and session_mode == "resident" and not session_handle:
+        hint["fix"] = "Restart Codex, then re-register from the exact live Codex session you want to wake."
+        hint["suggestedCommands"] = [
+            f'cc_register(agentId="{recipient_id}", role="{role}", runtime="codex")',
+            f'cc_agent_info(agentId="{recipient_id}")',
+        ]
+        return hint
+
+    if runtime == "claude-code" and session_mode == "resident" and "resident-run" not in capabilities:
+        hint["fix"] = "Start Claude with claude-aify, then re-register from that exact live Claude session."
+        hint["suggestedCommands"] = [
+            "claude-aify",
+            f'cc_register(agentId="{recipient_id}", role="{role}", runtime="claude-code")',
+            f'cc_agent_info(agentId="{recipient_id}")',
+        ]
+        return hint
+
+    if runtime not in _LAUNCHABLE_RUNTIMES:
+        hint["fix"] = "This target is message-only right now. Check cc_agent_info before suggesting any runtime-specific reinstall or restart steps."
+        hint["suggestedCommands"] = [f'cc_agent_info(agentId="{recipient_id}")']
+        return hint
+
+    if session_mode == "managed" and (row["launch_mode"] or "detached") == "none":
+        hint["fix"] = "Enable launch mode or recreate this agent as a managed worker."
+        hint["suggestedCommands"] = [f'cc_agent_info(agentId="{recipient_id}")']
+        return hint
+
+    hint["fix"] = "Inspect the target runtime/session with cc_agent_info, then retry with runtime-specific steps."
+    hint["suggestedCommands"] = [f'cc_agent_info(agentId="{recipient_id}")']
+    return hint
+
+
 def _agent_record_to_dict(row, status: str, unread: int):
     runtime = _normalize_runtime(row["runtime"] or "generic")
     session_mode = _normalize_session_mode(row["session_mode"] or "resident")
@@ -644,11 +695,11 @@ async def send_message(req: MessageSend, request: Request):
                 agent_cursor = await db.execute("SELECT * FROM agents WHERE id = ?", (recipient_id,))
                 row = await agent_cursor.fetchone()
                 if not row:
-                    not_started.append({"targetAgentId": recipient_id, "reason": "agent is not registered"})
+                    not_started.append(_dispatch_fix_hint(recipient_id, None, "agent is not registered"))
                     continue
                 execution_mode, reason = _agent_execution_mode(row)
                 if reason or not execution_mode:
-                    not_started.append({"targetAgentId": recipient_id, "reason": reason or "active dispatch unavailable"})
+                    not_started.append(_dispatch_fix_hint(recipient_id, row, reason or "active dispatch unavailable"))
                     continue
                 launchable_recipients.append((recipient_id, execution_mode))
             dispatch_runs = await _create_dispatch_runs(
@@ -985,7 +1036,7 @@ async def create_dispatch(req: DispatchRequest, request: Request):
             if row:
                 execution_mode, reason = _agent_execution_mode(row, req.requestedRuntime)
             if reason or not execution_mode:
-                not_started.append({"targetAgentId": recipient_id, "reason": reason or "active dispatch unavailable"})
+                not_started.append(_dispatch_fix_hint(recipient_id, row, reason or "active dispatch unavailable"))
             else:
                 launchable_recipients.append((recipient_id, execution_mode))
 

@@ -47,6 +47,7 @@ If another agent says you are not triggerable:
 
 - Codex: re-register from the live Codex session after restart. Resident Codex triggering depends on a bound live `thread.id`. If the bridge and the session are using different Codex stores, resident triggering will not work.
 - Claude: start the session with `claude-aify`, then re-register from that session with `runtime="claude-code"`.
+- Before proposing repair steps for another agent, always call `cc_agent_info(agentId="target-agent")` first and inspect its runtime/session mode. Do not tell a Codex agent to reinstall as Claude or vice versa.
 
 ## Tools (24)
 
@@ -122,6 +123,7 @@ When you receive a notification or check your inbox:
 - Use `cc_send(trigger=true)` as the default "wake this agent and start work now" path.
 - Use `cc_dispatch` when you want explicit run IDs and active-run tracking from the start.
 - Use `cc_spawn_agent` only when you need a detached triggerable worker with its own durable runtime state.
+- Before suggesting trigger-fix instructions for another agent, use `cc_agent_info` to inspect the target runtime and resident/managed mode first.
 - Resident Codex sessions are directly triggerable only when the live session has a bound `thread.id` and the bridge talks to that same Codex thread store.
 - Resident Claude sessions are directly wakeable only when the live session was started with `claude-aify`.
 - Use `cc_run_interrupt` when a run is going in the wrong direction or should stop early.
