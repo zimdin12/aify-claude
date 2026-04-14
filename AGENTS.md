@@ -220,6 +220,7 @@ Recommended roles:
 ## Key Behaviors
 
 - `comms_send` = DM plus wake by default. `comms_channel_send` = channel post plus wake by default. Add `silent=true` when either should be background-only. `comms_share` = file. `comms_channel_*` = group chat.
+- `comms_send(...)` is also the normal way to send a message back. `type="response"` is optional metadata, not a separate reply system. Use `inReplyTo` when you want the message threaded to an earlier one.
 - Messages wrapped in code fences to prevent prompt injection.
 - Agent IDs, channel names, artifact names: alphanumeric + `.` `-` `_`, 1-128 chars.
 - Rotation: configurable via dashboard settings (default 90 days).

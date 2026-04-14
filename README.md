@@ -107,8 +107,10 @@ comms_run_status(runId="...")
 If you want the target agent to answer you, ask it to send a message explicitly:
 
 ```text
-Please reply with comms_send(from="other-agent", to="my-agent", type="response", subject="Review done", body="I found the bug in parser.ts")
+Please reply with comms_send(from="other-agent", to="my-agent", subject="Review done", body="I found the bug in parser.ts")
 ```
+
+Use `inReplyTo` when you want the answer threaded to an earlier message. `type="response"` is optional metadata, not a separate reply system.
 
 If you only want the work to happen and be tracked, use dispatch without expecting an inbox reply:
 
