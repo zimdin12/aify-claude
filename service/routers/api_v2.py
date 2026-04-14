@@ -333,6 +333,19 @@ async def _bridge_is_superseded(db, bridge_id: str, agent_id: str) -> bool:
     return bool((row["superseded_by"] or "").strip())
 
 
+async def _bridge_registered_at(db, bridge_id: str, agent_id: str) -> str:
+    if not bridge_id:
+        return ""
+    cursor = await db.execute(
+        "SELECT registered_at FROM bridge_instances WHERE id = ? AND agent_id = ?",
+        (bridge_id, agent_id)
+    )
+    row = await cursor.fetchone()
+    if not row:
+        return ""
+    return row["registered_at"] or ""
+
+
 def _agent_record_to_dict(row, status: str, unread: int, dispatch_state: Optional[dict[str, Any]] = None):
     runtime = _normalize_runtime(row["runtime"] or "generic")
     session_mode = _normalize_session_mode(row["session_mode"] or "resident")
@@ -1321,6 +1334,32 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
                         active_run["runId"],
                         "failed",
                         f'Superseded bridge recovery: {active_run["claimBridgeId"]} -> {req.bridgeId}',
+                    )
+                    active_run = None
+                else:
+                    await db.commit()
+                    return {"ok": True, "run": None, "blockedBy": active_run}
+            elif req.bridgeId and not active_run.get("claimBridgeId"):
+                bridge_registered_at = await _bridge_registered_at(db, req.bridgeId, req.agentId)
+                active_started_at = active_run.get("startedAt") or active_run.get("requestedAt") or ""
+                if bridge_registered_at and active_started_at and active_started_at < bridge_registered_at:
+                    await db.execute(
+                        """
+                        UPDATE dispatch_runs
+                        SET status = 'failed', error_text = ?, finished_at = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            f'Legacy active run without bridge ownership was superseded by bridge "{req.bridgeId}" registered at {bridge_registered_at}',
+                            _now(),
+                            active_run["runId"],
+                        )
+                    )
+                    await _append_dispatch_event(
+                        db,
+                        active_run["runId"],
+                        "failed",
+                        f'Legacy bridge recovery: unowned run superseded by {req.bridgeId}',
                     )
                     active_run = None
                 else:
