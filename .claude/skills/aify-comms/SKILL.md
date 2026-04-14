@@ -149,7 +149,7 @@ When you receive a notification or check your inbox:
 
 - `stdio` install: full experience, including active dispatch and local runtime launch.
 - `SSE` install: messaging, channels, shared files, and run inspection, but not local process launch. SSE clients can request dispatch, but they cannot be the local executor and cannot host triggerable resident sessions or managed workers.
-- Resident Codex sessions are best when you want aify to resume the existing stored Codex thread by `thread.id`.
+- Resident Codex sessions started through `codex-aify` are best when you want visible live wakeups; plain resident Codex sessions are still useful when background `thread.id` resume is acceptable.
 - Resident Claude sessions become wakeable when the session was started with `claude-aify`, which loads the local aify channel bridge.
 - Resident OpenCode sessions are best when you already have a stable `sessionHandle`; otherwise prefer a managed worker.
 - Managed workers are best for active execution, unattended work, and cross-machine triggering.

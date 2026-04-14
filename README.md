@@ -20,7 +20,7 @@ Built on [aify-container](https://github.com/zimdin12/aify-container).
    - Codex live wake: `codex-aify`
    - OpenCode: normal session today; live wake is not implemented yet
 4. Register the live session with `comms_register(...)`.
-5. Use `comms_send(...)` or `comms_dispatch(...)` to wake another agent.
+5. Use `comms_send(...)`, `comms_channel_send(...)`, or `comms_dispatch(...)` to wake the right agent or channel.
 
 Important mental model:
 - dispatch wakes the target and records run status on the server
