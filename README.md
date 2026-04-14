@@ -37,6 +37,12 @@ bash install.sh --client claude http://localhost:8800 --with-hook
 bash install.sh --client codex http://localhost:8800 --with-hook
 ```
 
+After every install or update:
+
+1. Restart the client.
+2. Re-register from the exact live session you want other agents to trigger.
+3. Confirm your runtime and resident state with `cc_agent_info(...)`.
+
 ### Client — Claude Code install (manual)
 
 Install aify-claude as a Claude Code plugin. This sets up the MCP server, skill, and notification hook — same as a marketplace install.
@@ -125,6 +131,8 @@ cc_agents()
 cc_send(from="my-agent", to="other-agent", type="info", subject="Hello", body="Hi there!")
 cc_inbox(agentId="my-agent")
 ```
+
+For resident-session triggering, re-register after every restart/update from the exact live session you want other agents to wake. For Claude CLI, that session must be started with `claude-aify`. For Codex resident sessions, the bridge must talk to the same Codex thread store that created the session.
 
 ## Architecture
 
@@ -218,6 +226,14 @@ Important:
 - If the owning stdio bridge is closed, queued resident/managed runs stay on the server until that bridge reconnects.
 - Active dispatch requires the local `stdio` MCP server. SSE-only clients are message/control clients, not local launchers.
 
+### Trigger Tradeoffs
+
+- `stdio` install: full agent runtime. Can message, use channels, share files, inspect runs, and launch local work.
+- `SSE` install: communication-only client. Can message, use channels, inspect runs, and request dispatch, but cannot launch local work, cannot host triggerable resident sessions, and cannot host managed workers.
+- Resident Codex triggering only works when the bridge talks to the same Codex thread store as the live session. WSL Codex + WSL bridge is good; Windows desktop Codex + WSL bridge is a store mismatch.
+- Resident Claude wakeups only work when the session was started with `claude-aify`, because the local channel bridge must be loaded into that exact live session.
+- If another agent says you are not triggerable, the most common fix is: update, restart, and re-register from the live session. Missing `thread.id` bindings and stale runtime metadata both come from skipping that step.
+
 ### Runtime Notes
 
 - `cc_register` stores runtime metadata plus resident-session metadata (`sessionMode`, `sessionHandle`, `machineId`, capabilities). If auto-detection is wrong, pass `runtime="claude-code"` or `runtime="codex"` explicitly.
@@ -225,7 +241,7 @@ Important:
 - Claude managed workers use the local `claude -p` CLI with a persistent `session-id` per worker.
 - Codex managed workers use `codex app-server` with a persistent thread per worker.
 - Codex resident sessions use the `CODEX_THREAD_ID` exposed by the live session and resume that thread through App Server instead of creating a fresh detached thread.
-- Claude resident wakeups use the local `aify-claude-channel` server plus Claude Channels. The installer adds the server and a `claude-aify` wrapper that starts Claude with the required development-channel flag.
+- Claude resident wakeups use the local `aify-claude-channel` server plus Claude Channels. The installer adds the server and a `claude-aify` wrapper that starts Claude with `--permission-mode auto` plus the required development-channel flag.
 - On Windows, the Codex bridge defaults to `wsl.exe -e codex app-server`. If your Codex CLI lives in WSL, prefer running the Codex-side MCP server from inside WSL so the registered `cwd` is already a Linux path.
 - For resident Codex triggering, the bridge must talk to the same Codex thread store that created the session. A Windows desktop session and a WSL CLI session are different stores.
 - Because of that store mismatch, Windows desktop Codex does not auto-advertise resident triggering by default when the bridge is using WSL Codex.

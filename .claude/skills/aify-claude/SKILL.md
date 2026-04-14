@@ -10,19 +10,43 @@ You have access to the aify-claude MCP tools (`cc_*` prefix). These let you comm
 
 ## Quick Start
 
-**Register first** — always do this at session start:
+**Register the live session first** — always do this at session start or right after an update/restart:
 ```
 cc_register(agentId="my-agent", role="coder", cwd="/path/to/project")
+```
+
+Then confirm the team view and your own registration:
+```
+cc_agents()
+cc_agent_info(agentId="my-agent")
+```
+
+Only create a managed worker when you explicitly need detached/background execution:
+```
 cc_spawn_agent(from="my-agent", agentId="my-worker", role="coder", runtime="claude-code")
 ```
 
-**When idle, listen for messages if `cc_listen` is available:**
+**`cc_listen` is optional, not the default trigger path:**
 ```
 cc_listen(agentId="my-agent")
 ```
-This blocks until a message arrives. When a message comes in, it returns immediately with the content. Process it, then call `cc_listen` again when done.
+Use it when you intentionally want an inbox-driven loop. Do not assume resident triggering depends on `cc_listen`; `trigger=true` should wake properly registered resident sessions directly.
 
 If `cc_listen` is not available, you are likely connected through SSE. In that mode, use `cc_inbox(agentId="my-agent")` to check work and remember that active dispatch cannot launch local Claude/Codex runs from your side.
+
+## After Install Or Update
+
+Do these steps in order:
+
+1. Rerun the install command from the repo install doc.
+2. Restart the client.
+3. Re-register from the exact live session you want other agents to trigger.
+4. Confirm your runtime and resident state with `cc_agent_info`.
+
+If another agent says you are not triggerable:
+
+- Claude: start the session with `claude-aify`, then re-register from that session with `runtime="claude-code"`.
+- Codex: re-register from the live Codex session after restart. Resident Codex triggering depends on a bound live `thread.id`. If the bridge and the session are using different Codex stores, resident triggering will not work.
 
 ## Tools (24)
 
@@ -95,20 +119,22 @@ When you receive a notification or check your inbox:
 ## Agent Workflow
 
 - Use `cc_send` for normal conversation, coordination, quick asks, and status updates.
-- Use `cc_spawn_agent` when you need a detached triggerable worker with its own durable runtime state.
-- Use `cc_dispatch` when you want a triggerable resident session or managed worker to start immediately and return a result.
-- `cc_send(trigger=true)` is the lightweight "deliver + try active work" version; resident Codex sessions with a bound `thread.id` can be triggered directly, and resident Claude sessions can be woken when Claude was started with `claude-aify`.
+- Use `cc_send(trigger=true)` as the default "wake this agent and start work now" path.
+- Use `cc_dispatch` when you want explicit run IDs and active-run tracking from the start.
+- Use `cc_spawn_agent` only when you need a detached triggerable worker with its own durable runtime state.
+- Resident Claude sessions are directly wakeable only when the live session was started with `claude-aify`.
+- Resident Codex sessions are directly triggerable only when the live session has a bound `thread.id` and the bridge talks to that same Codex thread store.
 - Use `cc_run_interrupt` when a run is going in the wrong direction or should stop early.
 - Use `cc_run_steer` to refine an active Codex run without starting over.
 - Use channels for shared workstreams like `frontend-team`, `release-war-room`, or `bug-bash`.
 - Use `cc_share` for logs, screenshots, patches, and reports so other agents can inspect the same artifact.
-- When idle, prefer `cc_listen` instead of manually polling inboxes when that tool is available.
+- Use `cc_listen` only when you intentionally want a waiting loop; otherwise rely on triggering plus unread notifications.
 - If you dispatch work, track it with `cc_run_status` when timing matters.
 
 ## Transport Notes
 
 - `stdio` install: full experience, including active dispatch and local runtime launch.
-- `SSE` install: messaging, channels, shared files, and run inspection, but not local process launch.
+- `SSE` install: messaging, channels, shared files, and run inspection, but not local process launch. SSE clients can request dispatch, but they cannot be the local executor and cannot host triggerable resident sessions or managed workers.
 - Resident Codex sessions are best when you want the existing live thread to be directly triggerable.
 - Resident Claude sessions become wakeable when the session was started with `claude-aify`, which loads the local aify channel bridge.
 - Managed workers are best for active execution, unattended work, and cross-machine triggering.

@@ -20,6 +20,12 @@ bash install.sh --client codex --with-hook
 
 Restart Codex after install.
 
+After every update:
+
+1. Restart Codex.
+2. Re-register from the exact live Codex session you want other agents to trigger.
+3. Confirm with `cc_agent_info(agentId="...")`.
+
 ## WSL Note
 
 - If Codex CLI lives in WSL, run the installer from WSL too.
@@ -31,6 +37,8 @@ Important:
 - Resident Codex sessions can then be triggered directly by resuming that bound thread through `codex app-server`.
 - `cc_spawn_agent` still creates a managed worker for detached/background execution and long-lived worker state.
 - If the owning stdio bridge is closed, queued resident/managed runs wait until that bridge reconnects.
+- SSE-only installs can message and inspect, but they cannot host triggerable resident sessions or managed workers, and they cannot launch local work themselves.
+- If another agent says you are a resident Codex session without a bound session handle, restart Codex and re-register from the live session. That usually means the current registration predates the latest resident-triggering flow or was done from the wrong environment.
 
 ## What This Installs
 
@@ -50,6 +58,7 @@ Current Codex CLI note:
 ```text
 cc_register(agentId="my-agent", role="coder", runtime="codex")
 cc_agents()
+cc_agent_info(agentId="my-agent")
 cc_send(from="my-agent", to="other-agent", type="info", subject="Hello", body="Hi there")
 cc_inbox(agentId="my-agent")
 ```

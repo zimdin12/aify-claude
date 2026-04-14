@@ -139,13 +139,20 @@ Note: active dispatch is not available via SSE (requires a local stdio MCP serve
 - `cc_register(...)` registers a resident session: the exact live Claude/Codex session you currently have open.
 - `cc_spawn_agent(...)` creates a managed worker: a triggerable logical agent hosted by the local stdio bridge on that machine.
 - Resident Codex sessions become directly triggerable when aify captures a real `thread.id` and can resume that thread through `codex app-server`.
-- Resident Claude CLI sessions become wakeable when Claude is started through `claude-aify`, which loads the local aify channel bridge.
+- Resident Claude CLI sessions become wakeable when Claude is started through `claude-aify`, which loads the local aify channel bridge and starts Claude in `--permission-mode auto`.
 - Managed workers remain the detached trigger path for long-running or unattended work.
 - Windows desktop Codex and WSL Codex use different thread stores; resident triggering only works when the bridge talks to the same store that created the session.
+
+After every install/update/restart:
+- Re-register from the exact live session you want other agents to trigger.
+- Confirm with `cc_agent_info(...)`.
+- If another agent says you are not triggerable, assume your runtime metadata is stale before assuming the server is broken.
 
 ## Active Dispatch
 
 `cc_send(trigger=true)` and `cc_dispatch(...)` queue work on the server. The target agent's owning local bridge claims that run and starts it locally on the correct runtime. Resident Codex sessions resume their bound `thread.id`; resident Claude CLI sessions are woken through the local aify channel bridge; Claude managed workers keep using `claude -p` with a persistent session id per worker.
+
+Use `cc_send(trigger=true)` as the default "wake this agent now" path. Use `cc_spawn_agent(...)` only when you explicitly want a detached/background worker.
 
 If Claude Code auto-detection is wrong, pass `runtime="claude-code"` to `cc_register`.
 
@@ -157,6 +164,7 @@ Current limits:
 - Resident Codex triggering only works when the bridge talks to the same Codex installation/thread store that created the live session.
 - Unexpected permission prompts or user-input requests can still fail a dispatched run.
 - Unsupported runtimes stay message-only unless a dedicated runtime adapter is added.
+- SSE-only installs can still message, join channels, inspect runs, and request dispatch, but they cannot host a triggerable resident session, cannot host a managed worker, and cannot launch local work themselves.
 
 Recommended roles:
 - `manager`, `coder`, `tester`, `reviewer`, `researcher`, `architect`
