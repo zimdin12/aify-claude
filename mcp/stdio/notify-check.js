@@ -71,11 +71,11 @@ if (fs.existsSync(SESSION_FILE)) {
 }
 if (!agentId) process.exit(0);
 
-// Rate limit: only check every 30 seconds
+// Rate limit: only check every 10 seconds
 const RATE_FILE = path.join(process.env.TEMP || "/tmp", `aify-notify-${agentId}.ts`);
 try {
   const lastCheck = parseInt(fs.readFileSync(RATE_FILE, "utf-8"), 10);
-  if (Date.now() - lastCheck < 30_000) process.exit(0);
+  if (Date.now() - lastCheck < 10_000) process.exit(0);
 } catch { /* first check */ }
 fs.writeFileSync(RATE_FILE, String(Date.now()));
 

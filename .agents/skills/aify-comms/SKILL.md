@@ -156,6 +156,15 @@ When you receive a notification or check your inbox:
 - If a trigger does not appear to "arrive", check `comms_agent_info` for an active run first. Later work queues behind the currently running run for that agent.
 - If an agent was restarted or re-registered on the same machine, the newer bridge now supersedes older bridge-owned active runs for that same agent immediately.
 
+## Communication Protocol
+
+- Keep messages short by default: one clear ask, one clear result, or one clear status update.
+- Use the subject line to summarize the purpose in a few words.
+- If you receive an unread notice, call `comms_inbox(...)` promptly instead of waiting for a later reminder.
+- When you finish a long task, send a short summary first, then only the most important findings. If the full detail is large, prefer `comms_share(...)` plus a short message pointing to it.
+- Use `silent=true` only when the message is genuinely background information. If the recipient should notice and act, let the default wake behavior happen.
+- Use `priority="high"` or `priority="urgent"` sparingly for time-sensitive coordination, blockers, or production-impacting issues.
+
 ## Transport Notes
 
 - `stdio` install: full experience, including active dispatch and local runtime launch.

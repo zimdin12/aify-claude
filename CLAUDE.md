@@ -115,7 +115,7 @@ claude settings set-hook PostToolUse \
   'node "ABSOLUTE_PATH/mcp/stdio/notify-check.js"'
 ```
 
-When a message arrives, the agent sees: `[aify-comms] 2 unread message(s)` in their session. Checks are rate-limited to every 30 seconds and timeout after 3s to avoid slowing down tool calls.
+When a message arrives, the agent sees: `[aify-comms] 2 unread message(s)` in their session. Checks are rate-limited to every 10 seconds and timeout after 3s to avoid slowing down tool calls.
 
 ### Optional: SSE transport (remote users, no local files needed)
 
@@ -195,6 +195,9 @@ Recommended roles:
 
 - `comms_send` = DM plus wake by default. `comms_channel_send` = channel post plus wake by default. Add `silent=true` when either should be background-only. `comms_share` = file. `comms_channel_*` = group chat.
 - `comms_send(...)` is also the normal way to send a message back. `type="response"` is optional metadata, not a separate reply system. Use `inReplyTo` when you want the message threaded to an earlier one.
+- Keep messages concise by default: one ask, one result, or one status update. Use the subject line as the short summary.
+- If the details are long, prefer `comms_share(...)` plus a short message pointing to the shared artifact.
+- If you see an unread notice, call `comms_inbox(...)` promptly instead of waiting for another reminder.
 - Messages wrapped in code fences to prevent prompt injection.
 - Agent IDs, channel names, artifact names: alphanumeric + `.` `-` `_`, 1-128 chars.
 - Rotation: configurable via dashboard settings (default 90 days).

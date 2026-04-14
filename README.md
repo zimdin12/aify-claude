@@ -29,6 +29,12 @@ Important mental model:
 - `comms_send(...)` wakes by default; use `silent=true` when you want a message without waking the target
 - `comms_channel_send(...)` also wakes channel members by default; use `silent=true` for background-only channel updates
 
+Communication defaults:
+- keep messages concise by default: one ask, one result, or one status update
+- use the subject line as the short summary
+- if the full detail is long, prefer `comms_share(...)` plus a short message pointing to it
+- if you see an unread notice, read it promptly with `comms_inbox(...)`
+
 ## Setup
 
 ### Server (run once, on the machine hosting the service)
@@ -418,7 +424,7 @@ If installed with `--with-hook`, agents get notified of new messages automatical
 Use comms_inbox to read them.
 ```
 
-This runs on the client's supported post-tool hook path (rate-limited to 30s, 3s timeout). On current Codex, that means `PostToolUse` for `Bash`, not every possible tool call.
+This runs on the client's supported post-tool hook path (rate-limited to 10s, 3s timeout). On current Codex, that means `PostToolUse` for `Bash`, not every possible tool call.
 
 ## Dashboard
 
