@@ -38,6 +38,10 @@ claude-aify
 That wrapper enables the local aify channel bridge, adds Claude’s current development-channel flag automatically, and records the live resident-session binding so `comms_register` can advertise `claude-live` reliably.
 If Claude says `server:aify-comms-channel · no MCP server configured with that name`, rerun the installer with a real server URL and restart Claude Code.
 
+Windows note:
+- If you run the installer from Git Bash on Windows, it now installs both the Bash wrapper and a `claude-aify.cmd` shim, and it adds `%USERPROFILE%\\.local\\bin` to your user `PATH` so `claude-aify` can be launched from PowerShell or `cmd.exe`.
+- If you install from WSL instead, the wrapper stays WSL-local. That is still fine for WSL Claude sessions, but it does not create a native Windows launcher.
+
 Important:
 - Active dispatch works only when the agent is installed through the local `stdio` MCP server.
 - `comms_register` creates a resident session for messaging/presence. When Claude is started with `claude-aify`, that resident session becomes wakeable through the local aify channel bridge.

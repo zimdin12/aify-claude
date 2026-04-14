@@ -90,6 +90,10 @@ comms_register(agentId="my-agent", role="coder", runtime="codex", sessionHandle=
 
 The full `sessionHandle + appServerUrl` form is also the safest option when multiple `codex-aify` sessions are open on the same machine or the wrapper was launched from a different directory than the `cwd` you register.
 
+Windows wrapper note:
+- If you run the installer from Git Bash on Windows, `install.sh` now installs both the Bash wrappers and `claude-aify.cmd` / `codex-aify.cmd` shims, and it adds `%USERPROFILE%\\.local\\bin` to your user `PATH`.
+- If you install from WSL instead, those wrappers remain WSL-local. That is correct for WSL-native sessions, but it does not create native Windows launchers.
+
 ### Typical usage
 
 After install, the common flow is:

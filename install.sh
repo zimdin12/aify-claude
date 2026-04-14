@@ -94,6 +94,7 @@ STATUS=\$?
 exit "\$STATUS"
 EOF
   chmod +x "$wrapper_path"
+  install_windows_cmd_shim "claude-aify" "$wrapper_dir"
 }
 
 remove_claude_wrapper() {
@@ -184,6 +185,56 @@ EOF
   sed -i.bak "s|__SCRIPT_DIR__|$SCRIPT_DIR|g" "$wrapper_path"
   rm -f "$wrapper_path.bak"
   chmod +x "$wrapper_path"
+  install_windows_cmd_shim "codex-aify" "$wrapper_dir"
+}
+
+is_git_bash_windows() {
+  case "$(uname -s 2>/dev/null || echo '')" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+install_windows_cmd_shim() {
+  local wrapper_name="$1"
+  local wrapper_dir="$2"
+  local wrapper_path="$wrapper_dir/$wrapper_name"
+  local shim_path="$wrapper_dir/$wrapper_name.cmd"
+  local bash_path=""
+  local windows_wrapper_path=""
+  local windows_wrapper_dir=""
+
+  if ! is_git_bash_windows; then
+    return 0
+  fi
+  if ! command -v cygpath >/dev/null 2>&1; then
+    return 0
+  fi
+
+  bash_path="$(cygpath -w "$(command -v bash)")"
+  windows_wrapper_path="$(cygpath -w "$wrapper_path")"
+  windows_wrapper_dir="$(cygpath -w "$wrapper_dir")"
+
+  cat > "$shim_path" <<EOF
+@echo off
+setlocal
+"$bash_path" "$windows_wrapper_path" %*
+endlocal
+EOF
+
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '
+      param([string]$dir)
+      $current = [Environment]::GetEnvironmentVariable("Path", "User")
+      $parts = @()
+      if ($current) { $parts = $current -split ";" }
+      $normalized = $dir.Trim().ToLowerInvariant()
+      if (-not ($parts | Where-Object { $_.Trim().ToLowerInvariant() -eq $normalized })) {
+        $updated = if ([string]::IsNullOrWhiteSpace($current)) { $dir } else { $current.TrimEnd(";") + ";" + $dir }
+        [Environment]::SetEnvironmentVariable("Path", $updated, "User")
+      }
+    ' "$windows_wrapper_dir" >/dev/null 2>&1 || true
+  fi
 }
 
 copy_codex_assets() {
@@ -461,6 +512,9 @@ if [ "$CLIENT" = "claude" ]; then
   if [ -n "$SERVER_URL" ]; then
     echo "For resident-session wakeups, start Claude with: claude-aify"
     echo "  (wrapper installed at ~/.local/bin/claude-aify)"
+    if is_git_bash_windows; then
+      echo "  Windows shim installed at %USERPROFILE%\\.local\\bin\\claude-aify.cmd"
+    fi
   else
     echo "Local-only install: resident Claude wakeups are disabled because no shared server URL was provided."
     echo "No claude-aify wrapper was installed."
@@ -469,6 +523,9 @@ elif [ "$CLIENT" = "codex" ]; then
   echo "Restart Codex for changes to take effect."
   echo "For live resident wakeups, start Codex with: codex-aify"
   echo "  (wrapper installed at ~/.local/bin/codex-aify)"
+  if is_git_bash_windows; then
+    echo "  Windows shim installed at %USERPROFILE%\\.local\\bin\\codex-aify.cmd"
+  fi
 else
   echo "Restart OpenCode for changes to take effect."
 fi

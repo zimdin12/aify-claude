@@ -35,6 +35,10 @@ codex-aify
 
 That wrapper starts a local `codex app-server --listen ws://127.0.0.1:...`, launches the visible TUI with `codex --remote ...`, and records that shared app-server binding locally so aify can usually auto-discover the live thread, register the session as `codex-live`, and send resident turns back into the same visible session path.
 
+Windows note:
+- If you run the installer from Git Bash on Windows, it now installs both the Bash wrapper and a `codex-aify.cmd` shim, and it adds `%USERPROFILE%\\.local\\bin` to your user `PATH` so `codex-aify` can be launched from PowerShell or `cmd.exe`.
+- If you install from WSL instead, the wrapper stays WSL-local. That is still the right setup for WSL Codex, but it does not create a native Windows launcher.
+
 Recommended registration from inside `codex-aify`:
 
 ```text
