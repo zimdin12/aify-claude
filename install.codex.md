@@ -62,6 +62,49 @@ cwd="C:\\Users\\you\\project"  # triggers the trap
 
 The stdio bridge now normalizes `\` → `/` automatically at dispatch time, but you must **restart `codex-aify` after updating aify-comms** to load the fix. If you still see the error, the bridge is running stale code.
 
+### Hard reset when AbsolutePathBuf keeps appearing
+
+If dispatches to Codex agents keep failing with `Invalid request: AbsolutePathBuf deserialized without a base path` **after you've updated aify-comms and restarted codex-aify**, the errors are almost certainly coming from **stale background `codex-aify` processes** that are still polling the dispatch queue. Closing one Codex tab does not guarantee the bridge + app-server children exit — and an old bridge with pre-update code will keep claiming fresh dispatches and failing them.
+
+The server now rejects claims from bridges that have been superseded by a newer registration, but only after that new registration has landed. Use this reset sequence to make sure nothing stale remains:
+
+1. **Kill every `codex-aify` and `codex app-server` process on the machine.** On Windows PowerShell:
+   ```powershell
+   Get-Process node, codex -ErrorAction SilentlyContinue | Where-Object {
+     $_.Path -match 'aify-comms|codex'
+   } | Stop-Process -Force
+   ```
+   On Linux/Mac:
+   ```bash
+   pkill -f codex-aify; pkill -f 'codex app-server'
+   ```
+2. **Delete stale Codex runtime markers** so the bridge cannot rebind to a dead app-server URL:
+   ```powershell
+   Remove-Item "$HOME\.local\state\aify-comms\runtime-markers\codex-*.json" -Force -ErrorAction SilentlyContinue
+   ```
+   ```bash
+   rm -f ~/.local/state/aify-comms/runtime-markers/codex-*.json
+   ```
+3. **Launch a fresh `codex-aify` from the actual project directory** you want the session bound to.
+4. **Re-register from that exact live session** with explicit cwd + live env vars:
+   ```text
+   comms_register(
+     agentId="coder",
+     role="coder",
+     runtime="codex",
+     cwd="C:/Users/you/project",
+     sessionHandle="$CODEX_THREAD_ID",
+     appServerUrl="$AIFY_CODEX_APP_SERVER_URL"
+   )
+   ```
+5. **Verify immediately** before dispatching any work:
+   ```text
+   comms_agent_info(agentId="coder")
+   ```
+   Confirm `wakeMode: codex-live`, a non-empty `sessionHandle`, and the correct `machineId`. If any of those are wrong, the session is still bound to stale state.
+
+Repeat for every Codex agent. If a completely fresh run after this sequence still produces `AbsolutePathBuf`, capture the run ID from `/api/v1/dispatch/runs` — that's a fresh repro against current code, not stale state.
+
 ### Orphaned runs
 
 If a dispatched run is stuck in `running` and the owning bridge has died (e.g. `codex-aify` crashed), `comms_run_interrupt` cannot reach it because the bridge is no longer polling for controls. Clear it manually:

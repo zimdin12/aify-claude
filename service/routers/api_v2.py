@@ -1792,6 +1792,26 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
             await db.rollback()
             return {"ok": True, "run": None}
 
+        # Reject claims from bridges that have been superseded by a newer
+        # register from the same agent. Without this check, a stale codex-aify
+        # (or any old bridge) process keeps polling, grabs queued runs, and
+        # tries to resume pre-update thread bindings — which is how
+        # "AbsolutePathBuf deserialized without a base path" errors keep
+        # surfacing even after the code on disk has been patched. The fresh
+        # bridge should be the only one claiming work once it has registered.
+        if req.bridgeId and await _bridge_is_superseded(db, req.bridgeId, req.agentId):
+            await db.commit()
+            return {
+                "ok": True,
+                "run": None,
+                "blockedBy": {
+                    "reason": "bridge_superseded",
+                    "bridgeId": req.bridgeId,
+                    "agentId": req.agentId,
+                    "hint": "This bridge has been replaced by a newer registration. Shut it down.",
+                },
+            }
+
         agent_runtime = _normalize_runtime(agent["runtime"] or "generic")
         active_state = await _get_dispatch_state_for_agent(db, req.agentId)
         active_run = active_state.get("activeRun")
