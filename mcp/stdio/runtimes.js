@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { spawn } from "child_process";
+import os from "os";
 import readline from "readline";
 import { createOpencode } from "@opencode-ai/sdk";
 import WebSocket from "ws";
@@ -123,7 +124,12 @@ function toWslPath(inputPath) {
 }
 
 function codexWorkingPath(launcher, cwd) {
-  if (!isWslCodexLauncher(launcher)) return cwd;
+  if (!isWslCodexLauncher(launcher)) {
+    // Codex's Rust path deserializer rejects Windows-style backslash paths
+    // ("AbsolutePathBuf deserialized without a base path"). Normalize to
+    // forward slashes, which Codex accepts on both Windows and Linux.
+    return String(cwd || "").replace(/\\/g, "/");
+  }
   return toWslPath(cwd);
 }
 
@@ -590,7 +596,7 @@ function createClaudeController({ agentId, agentInfo, run, runtimeState, callbac
       ? residentSessionId
       : (runtimeState?.sessionId || residentSessionId || randomUUID());
   const maxTurns = String(config.maxTurns || 15);
-  const timeoutMs = Number(config.timeoutMs || 15 * 60 * 1000);
+  const timeoutMs = Number(config.timeoutMs || 2 * 60 * 60 * 1000);
   if (executionMode === "resident" && !sessionId) {
     throw new Error(
       `Resident Claude session "${agentId}" has no bound session ID. Re-register from the live Claude session or provide sessionHandle explicitly.`,
@@ -676,7 +682,7 @@ function createClaudeController({ agentId, agentInfo, run, runtimeState, callbac
 function createCodexController({ agentId, agentInfo, run, runtimeState, callbacks }) {
   const config = getRuntimeConfig(agentInfo);
   const launcher = defaultCodexCommand();
-  const timeoutMs = Number(config.timeoutMs || 20 * 60 * 1000);
+  const timeoutMs = Number(config.timeoutMs || 2 * 60 * 60 * 1000);
   const hostCwd = agentInfo.cwd || process.cwd();
   const cwd = codexWorkingPath(launcher, hostCwd);
   const spawnCwd = codexSpawnCwd(launcher, hostCwd);
@@ -971,7 +977,7 @@ function createOpenCodeController({ agentId, agentInfo, run, runtimeState, callb
   const executionMode = String(run.executionMode || agentInfo.sessionMode || "managed").trim().toLowerCase();
   const residentSessionId = String(agentInfo.sessionHandle || "").trim();
   const cwd = agentInfo.cwd || process.cwd();
-  const timeoutMs = Number(config.timeoutMs || 20 * 60 * 1000);
+  const timeoutMs = Number(config.timeoutMs || 2 * 60 * 60 * 1000);
   const model = splitProviderModel(agentInfo.model || config.model || "");
   const permission = opencodePermissionConfig(config);
   const selectedAgent = String(config.agent || "").trim() || undefined;
@@ -1148,7 +1154,19 @@ export function defaultCapabilitiesForRuntime(runtime, sessionMode = "resident",
 }
 
 export function defaultMachineId() {
-  const host = process.env.AIFY_MACHINE_ID || process.env.COMPUTERNAME || process.env.HOSTNAME || "unknown-host";
+  let host =
+    process.env.AIFY_MACHINE_ID ||
+    process.env.COMPUTERNAME ||
+    process.env.HOSTNAME ||
+    "";
+  if (!host) {
+    try {
+      host = os.hostname() || "";
+    } catch {
+      // ignore and fall through to unknown-host
+    }
+  }
+  host = host || "unknown-host";
   const wsl = process.env.WSL_DISTRO_NAME ? `wsl-${process.env.WSL_DISTRO_NAME}` : process.platform;
   return `${wsl}:${host}`;
 }

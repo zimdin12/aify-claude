@@ -46,9 +46,21 @@ Important:
 - Active dispatch works only when the agent is installed through the local `stdio` MCP server.
 - `comms_register` creates a resident session for messaging/presence. When Claude is started with `claude-aify`, that resident session becomes wakeable through the local aify channel bridge.
 - `comms_spawn_agent` creates a managed worker, which remains the detached background-worker path for Claude.
-- If the owning stdio bridge is closed, queued resident/managed runs wait until that bridge reconnects.
+- If the owning stdio bridge is closed, queued resident/managed runs wait until that bridge reconnects. If the bridge crashes mid-run, see "Orphaned runs" below.
 - SSE-only installs can message and inspect, but they cannot host triggerable resident sessions or managed workers, and they cannot launch local work themselves.
+- Default dispatch timeout is **2 hours** (per-agent override via `runtimeConfig.timeoutMs`).
 - If another agent says you are not wakeable, the usual fix is: restart with `claude-aify`, then re-register from that exact live session with `runtime="claude-code"`.
+- On Windows, always register with forward-slash `cwd` (`C:/path/to/project`). The stdio bridge normalizes automatically, but you must restart `claude-aify` after updating aify-comms for the fix to load.
+
+### Orphaned runs
+
+If a dispatched run is stuck in `running` and the owning bridge has died, `comms_run_interrupt` cannot reach it because the bridge is no longer polling for controls. Clear it manually:
+
+```bash
+curl -X PATCH http://localhost:8800/api/v1/dispatch/runs/<run_id> \
+  -H "Content-Type: application/json" \
+  -d '{"status":"cancelled","error":"Bridge died, orphaned run"}'
+```
 
 ## What This Installs
 

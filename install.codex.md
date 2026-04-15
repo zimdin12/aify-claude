@@ -42,22 +42,35 @@ Windows note:
 Recommended registration from inside `codex-aify`:
 
 ```text
-comms_register(agentId="my-agent", role="coder", runtime="codex", sessionHandle="$CODEX_THREAD_ID", appServerUrl="$AIFY_CODEX_APP_SERVER_URL")
+comms_register(agentId="my-agent", role="coder", runtime="codex", cwd="C:/path/to/project", sessionHandle="$CODEX_THREAD_ID", appServerUrl="$AIFY_CODEX_APP_SERVER_URL")
 ```
 
-If those live env vars are unavailable in that session, fall back to:
+Fallback order if that does not flip to `codex-live`:
+
+1. Drop `sessionHandle` + `appServerUrl`: `comms_register(..., runtime="codex")`.
+2. Re-add `sessionHandle="$CODEX_THREAD_ID"` from the same session.
+3. Add back `appServerUrl` when multiple `codex-aify` sessions run on the same machine or the wrapper was launched from a different directory than the `cwd` you registered.
+
+### Windows `cwd` trap
+
+Codex CLI is Rust-based and its path deserializer rejects Windows backslash paths with `Invalid request: AbsolutePathBuf deserialized without a base path`, which kills every dispatched run instantly. Always register with forward slashes:
 
 ```text
-comms_register(agentId="my-agent", role="coder", runtime="codex")
+cwd="C:/Users/you/project"     # correct
+cwd="C:\\Users\\you\\project"  # triggers the trap
 ```
 
-If bare registration still does not flip to `codex-live`, use the deterministic fallback from that same session:
+The stdio bridge now normalizes `\` → `/` automatically at dispatch time, but you must **restart `codex-aify` after updating aify-comms** to load the fix. If you still see the error, the bridge is running stale code.
 
-```text
-comms_register(agentId="my-agent", role="coder", runtime="codex", sessionHandle="$CODEX_THREAD_ID")
+### Orphaned runs
+
+If a dispatched run is stuck in `running` and the owning bridge has died (e.g. `codex-aify` crashed), `comms_run_interrupt` cannot reach it because the bridge is no longer polling for controls. Clear it manually:
+
+```bash
+curl -X PATCH http://localhost:8800/api/v1/dispatch/runs/<run_id> \
+  -H "Content-Type: application/json" \
+  -d '{"status":"cancelled","error":"Bridge died, orphaned run"}'
 ```
-
-The full `sessionHandle + appServerUrl` form is the safest option when multiple `codex-aify` sessions are open on the same machine or the wrapper was launched from a different directory than the `cwd` you register.
 
 ## WSL Note
 
@@ -67,16 +80,14 @@ The full `sessionHandle + appServerUrl` form is the safest option when multiple 
 Important:
 - Active dispatch works only when the agent is installed through the local `stdio` MCP server.
 - `comms_register` creates a resident session for messaging/presence and, for Codex, captures the live `thread.id` when available.
-- If the session was started with `codex-aify`, resident Codex wakeups use the same WebSocket app-server as the visible TUI and show up as `codex-live`.
-- In `codex-live`, the injected task and the final answer will appear in the visible Codex session. That is expected. Plain-text output stays local to that session and the dispatch record unless the agent explicitly sends a message.
-- If `codex-aify` is running, prefer the exact live registration from that same session: `comms_register(..., runtime="codex", sessionHandle="$CODEX_THREAD_ID", appServerUrl="$AIFY_CODEX_APP_SERVER_URL")`.
-- If those live env vars are unavailable, try `comms_register(..., runtime="codex")`.
-- If bare registration still does not show `codex-live`, re-register with `sessionHandle="$CODEX_THREAD_ID"` from that same session.
-- If the session was started with plain `codex`, resident Codex still falls back to `codex-thread-resume`, which resumes the stored thread through a separate hidden app-server.
-- `comms_spawn_agent` still creates a managed worker for detached/background execution and long-lived worker state.
-- If the owning stdio bridge is closed, queued resident/managed runs wait until that bridge reconnects.
-- SSE-only installs can message and inspect, but they cannot host triggerable resident sessions or managed workers, and they cannot launch local work themselves.
-- If another agent says you are a resident Codex session without a bound session handle, restart Codex and re-register from the live session. That usually means the current registration predates the latest resident-triggering flow or was done from the wrong environment.
+- If started with `codex-aify`, resident wakeups use the same WebSocket app-server as the visible TUI and show up as `codex-live`. The injected task and final answer both appear in the visible TUI — expected.
+- Plain-text output stays local to that session and the dispatch record unless the agent explicitly sends a message.
+- Plain `codex` (not `codex-aify`) falls back to `codex-thread-resume`, which resumes the stored thread through a separate hidden app-server.
+- `comms_spawn_agent` creates a managed worker for detached/background execution.
+- If the owning stdio bridge is closed, queued resident/managed runs wait until that bridge reconnects. If the bridge crashes, see "Orphaned runs" above.
+- SSE-only installs can message and inspect, but they cannot host triggerable resident sessions or managed workers.
+- Default dispatch timeout is **2 hours** (per-agent override via `runtimeConfig.timeoutMs`).
+- If another agent says you are a resident Codex session without a bound session handle, restart Codex and re-register from the live session.
 
 ## What This Installs
 
