@@ -8,7 +8,8 @@
     "aify-comms-mcp": "./server.js"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node tests/codex-resume-failure.test.js && node tests/cwd-normalization.test.js && node tests/msys-pid-bug.test.js"
   },
   "keywords": [
     "mcp",

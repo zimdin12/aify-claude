@@ -5,6 +5,7 @@ import readline from "readline";
 import { createOpencode } from "@opencode-ai/sdk";
 import WebSocket from "ws";
 import { listRuntimeMarkers } from "./runtime-markers.js";
+import { detectCodexResumeFailure } from "./codex-errors.js";
 
 const RUNTIME_ALIASES = new Map([
   ["claude", "claude-code"],
@@ -835,18 +836,10 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
           }, 60000);
           activeThreadId = resumed.thread?.id || activeThreadId;
         } catch (error) {
-          const message = error?.message || "";
-          const noRollout = message.includes("no rollout found for thread id");
-          // "AbsolutePathBuf deserialized without a base path" is Codex's way
-          // of saying its stored rollout file for this thread has a path
-          // field it cannot load — typically a backslash Windows cwd that
-          // was captured before the wrapper's cwd normalization landed.
-          // The failure happens inside Codex's app-server when it loads the
-          // on-disk rollout, so nothing we send can fix it.
-          const corruptRollout =
-            message.includes("AbsolutePathBuf deserialized") ||
-            message.includes("AbsolutePathBufGuard");
-          if (!noRollout && !corruptRollout) {
+          // Classification lives in detectCodexResumeFailure so it can be
+          // unit-tested without a live Codex.
+          const failure = detectCodexResumeFailure(error);
+          if (!failure.shouldHeal) {
             throw error;
           }
           // Auto-heal for both managed and resident modes. Resident mode
@@ -859,8 +852,9 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
           // the caller via onSessionHandleChange so the backend's stored
           // sessionHandle is updated, and continue.
           const previousThreadId = activeThreadId;
-          const reasonLabel = corruptRollout
-            ? `Rollout for thread ${previousThreadId} is corrupt (${message.trim()})`
+          const message = String(error?.message || "").trim();
+          const reasonLabel = failure.corruptRollout
+            ? `Rollout for thread ${previousThreadId} is corrupt (${message})`
             : `Thread ${previousThreadId} has no rollout`;
           const modeLabel = executionMode === "resident"
             ? "; healing resident session with a fresh thread (visibility in the live TUI is lost until the user relaunches codex-aify from a clean environment)"
@@ -875,7 +869,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
             try {
               await callbacks.onSessionHandleChange?.(activeThreadId, {
                 previous: previousThreadId,
-                reason: corruptRollout ? "corrupt_rollout" : "no_rollout",
+                reason: failure.healReason,
               });
             } catch (cbError) {
               console.error(
