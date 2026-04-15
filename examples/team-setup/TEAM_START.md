@@ -9,7 +9,8 @@ General coordination pattern:
 - Use `comms_send(silent=true)` or `comms_channel_send(silent=true)` when you want background delivery without waking the target
 - Use `comms_dispatch` when you want explicit run tracking from the start
 - Use `comms_spawn_agent` only when you need a detached managed worker
-- If an agent is already working, later dispatches from the same sender are buffered into one pending run that starts after the current run finishes instead of piling up as many separate queued runs
+- If an agent is already working, later dispatches from the same sender are buffered into one pending run (cap: 10 items) that starts after the current run finishes instead of piling up as many separate queued runs. Past the cap you get `reason: "buffer_full"` in `notStarted`; wait, `comms_run_interrupt`, or `comms_agent_info` before retrying
+- Use `comms_describe(...)` to set a short team-facing description of what you're working on — visible to teammates in `comms_agents`
 - Use `comms_run_status` to watch active work
 - Use `comms_run_steer` or `comms_run_interrupt` when an active run needs correction
 - Keep messages short by default: one ask, one result, or one status update
@@ -28,6 +29,7 @@ General coordination pattern:
 Register as an aify-comms agent:
 - agentId: "manager"
 - role: "project-manager"
+- description: "Project manager for <this project>. Owns routing, prioritization, unblocking. Ping me for work assignment or status questions."
 - instructions: "I coordinate the development team. I assign tasks, track progress, and ensure the project stays on schedule."
 
 Join the "dev" channel. If it doesn't exist, create it with description "Team coordination".
@@ -45,6 +47,7 @@ Review the project roadmap and task tracker for current priorities. Check the de
 Register as an aify-comms agent:
 - agentId: "coder"
 - role: "developer"
+- description: "Developer on <this project>. Replace with your current focus — e.g. 'NRD ingest pipeline, Postgres migrations, dbt models'."
 - instructions: "I implement features, write code, fix bugs, and submit work for review."
 
 Join the "dev" channel.
@@ -62,6 +65,7 @@ Familiarize yourself with the codebase — explore the project structure, recent
 Register as an aify-comms agent:
 - agentId: "tester"
 - role: "qa-tester"
+- description: "QA tester on <this project>. Replace with your current focus — e.g. 'regression suite, integration tests, reproducing bugs from prod'."
 - instructions: "I test features, write and run tests, report bugs, and verify fixes."
 
 Join the "dev" channel.
@@ -79,6 +83,7 @@ Familiarize yourself with the test infrastructure and try building the project t
 Register as an aify-comms agent:
 - agentId: "architect"
 - role: "software-architect"
+- description: "Architect on <this project>. Replace with your current focus — e.g. 'service boundaries, data model, auth/permissions'."
 - instructions: "I design the technical architecture, review code for structural quality, and guard architectural decisions."
 
 Join the "dev" channel.
@@ -96,6 +101,7 @@ Review architecture docs, tech decisions, and recent git history. Check the dev 
 Register as an aify-comms agent:
 - agentId: "reviewer"
 - role: "code-reviewer"
+- description: "Code reviewer on <this project>. Replace with your current focus — e.g. 'security-sensitive paths, migrations, concurrency'."
 - instructions: "I review changes for bugs, regressions, risky assumptions, and missing tests."
 
 Join the "dev" channel.
@@ -113,6 +119,7 @@ Review recent changes, test strategy, and open tasks so you can respond quickly 
 Register as an aify-comms agent:
 - agentId: "researcher"
 - role: "research-analyst"
+- description: "Researcher on <this project>. Replace with your current focus — e.g. 'benchmarking vector DBs, evaluating auth providers'."
 - instructions: "I research technical solutions, design patterns, and provide findings to the team."
 
 Join the "dev" channel.
