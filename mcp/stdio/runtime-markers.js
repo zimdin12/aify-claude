@@ -24,13 +24,22 @@ function markerBaseDir() {
   return path.join(stateRoot(), "aify-comms", "runtime-markers");
 }
 
+function normalizeCwdForKey(cwd) {
+  // Normalize slashes so that a Windows backslash path and a forward-slash
+  // path hash to the same marker key. Without this, a wrapper that wrote its
+  // marker from "C:\\Users\\..." and a registration that looks it up as
+  // "C:/Users/..." produce different sha256 values and the server falls
+  // back to message-only because it cannot find the live marker.
+  return String(cwd || "").trim().replace(/\\/g, "/");
+}
+
 function markerHash(cwd) {
-  return createHash("sha256").update(String(cwd || "").trim()).digest("hex");
+  return createHash("sha256").update(normalizeCwdForKey(cwd)).digest("hex");
 }
 
 function markerPrefix(runtime, cwd) {
   const normalizedRuntime = normalizeRuntime(runtime);
-  const resolvedCwd = String(cwd || "").trim() || process.cwd();
+  const resolvedCwd = normalizeCwdForKey(cwd) || process.cwd();
   return `${normalizedRuntime}-${markerHash(resolvedCwd)}`;
 }
 
@@ -103,11 +112,12 @@ export function listRuntimeMarkers(runtime, cwd = "") {
 }
 
 export function writeRuntimeMarker(runtime, cwd, data = {}) {
-  const file = markerFilePath(runtime, cwd, data?.markerId || process.pid);
+  const normalizedCwd = normalizeCwdForKey(cwd) || process.cwd();
+  const file = markerFilePath(runtime, normalizedCwd, data?.markerId || process.pid);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const payload = {
     runtime: normalizeRuntime(runtime),
-    cwd: String(cwd || "").trim() || process.cwd(),
+    cwd: normalizedCwd,
     markerId: normalizeMarkerId(data?.markerId || process.pid),
     pid: process.pid,
     createdAt: new Date().toISOString(),

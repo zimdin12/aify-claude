@@ -15,13 +15,14 @@ Before digging in, always call `comms_agent_info(agentId="target")` on the agent
 **Symptom.** Dispatches to a Codex agent fail instantly with this Rust error from Codex CLI.
 
 **Causes (in order of likelihood):**
-1. The `cwd` registered for the agent is a Windows backslash path like `C:\Users\you\project`. Codex's Rust path deserializer rejects those.
-2. A stale pre-update `codex-aify` process is still running on the machine and polling the dispatch queue. Closing one Codex tab doesn't guarantee the background bridge + app-server children exit. The old bridge keeps claiming fresh dispatches and failing them with its cached (pre-fix) thread binding.
-3. A Codex thread created *before* the cwd-normalization fix still has a backslash `cwd` inside Codex's own local thread store, so `thread/resume` fails even after you update aify-comms.
+1. A stale pre-update `codex-aify` bridge is still running in memory. The code on disk has the fix, but the running Node process loaded the pre-fix module and doesn't hot-reload. Closing one Codex tab doesn't guarantee the background bridge + app-server children exit.
+2. A Codex thread that was *created* before the cwd-normalization fix still has a backslash `cwd` inside Codex's own local thread store, so `thread/resume` fails even after everything aify-comms-side is fixed.
+3. A manual `comms_register` passed a raw Windows backslash `cwd` like `C:\Users\you\project`. The current build normalizes this at registration time, at marker-lookup time, and at dispatch time — but if you're running an older bridge (see cause 1), only the dispatch-time layer is active.
 
 **Fix.**
-1. Re-register with forward slashes: `cwd="C:/Users/you/project"`. The bridge auto-normalizes new dispatches, but it cannot rewrite Codex's stored thread state.
-2. If you've already updated aify-comms and re-registered and it still fails, a stale bridge is the cause. Run the **Hard reset** below.
+1. **Restart `codex-aify` first** — this reloads the bridge with current code. Until the running process restarts, nothing else matters.
+2. Re-register with forward slashes regardless: `cwd="C:/Users/you/project"`. The bridge normalizes anything you pass, but explicit forward slashes are the least ambiguous.
+3. If it still fails after the restart + re-register, the *stored Codex thread* itself is the problem — see the Hard reset below, which forces a fresh thread.
 
 ## Hard reset: Codex dispatches keep failing after update
 

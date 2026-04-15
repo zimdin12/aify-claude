@@ -158,9 +158,26 @@ function normalizeSessionMode(mode) {
   return value === "managed" ? "managed" : "resident";
 }
 
-function resolvedRuntimeMarker(runtime, cwd) {
+function normalizeRegistrationCwd(runtime, cwd) {
+  // Normalize Windows backslash cwds to forward slashes for Codex (and
+  // Claude Code) at registration/marker-lookup time. Codex's path
+  // deserializer on the Rust side rejects mixed/backslash paths, and the
+  // runtime marker key is sha256(cwd) — so a caller that passes "C:\\foo"
+  // must produce the same marker hash as a wrapper that wrote "C:/foo".
+  // runtime-markers.js also normalizes internally, but we normalize here
+  // too so the stored backend agent record matches what the bridge sends
+  // to Codex at dispatch time.
   const normalizedRuntime = normalizeRuntime(runtime || "generic");
   const resolvedCwd = String(cwd || DEFAULT_CWD || process.cwd()).trim() || process.cwd();
+  if (process.platform === "win32" && (normalizedRuntime === "codex" || normalizedRuntime === "claude-code")) {
+    return resolvedCwd.replace(/\\/g, "/");
+  }
+  return resolvedCwd;
+}
+
+function resolvedRuntimeMarker(runtime, cwd) {
+  const normalizedRuntime = normalizeRuntime(runtime || "generic");
+  const resolvedCwd = normalizeRegistrationCwd(normalizedRuntime, cwd);
   if (normalizedRuntime === "codex") {
     const liveMarkers = listRuntimeMarkers(normalizedRuntime, resolvedCwd);
     if (liveMarkers.length > 1) return null;
@@ -568,7 +585,7 @@ server.tool(
     const resolvedMachineId = machineId || MACHINE_ID;
     const resolvedSessionMode = normalizeSessionMode(sessionMode);
     const previousInfo = REMOTE_AGENT_STATE.get(agentId)?.info;
-    const resolvedCwd = cwd || DEFAULT_CWD;
+    const resolvedCwd = normalizeRegistrationCwd(resolvedRuntime, cwd || DEFAULT_CWD);
     const initialSessionHandle =
       sessionHandle ||
       defaultSessionHandleForRuntime(resolvedRuntime) ||
@@ -779,7 +796,7 @@ server.tool(
     try { validateName(agentId, "agent ID"); } catch (e) { return { content: [{ type: "text", text: e.message }], isError: true }; }
 
     const resolvedRuntime = normalizeRuntime(runtime || "generic");
-    const resolvedCwd = cwd || DEFAULT_CWD;
+    const resolvedCwd = normalizeRegistrationCwd(resolvedRuntime, cwd || DEFAULT_CWD);
     const machineId = MACHINE_ID;
     const capabilities = defaultCapabilitiesForRuntime(resolvedRuntime, "managed");
     const agentData = {
