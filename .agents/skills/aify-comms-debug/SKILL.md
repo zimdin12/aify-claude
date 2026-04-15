@@ -12,17 +12,28 @@ Before digging in, always call `comms_agent_info(agentId="target")` on the agent
 
 ## Codex: `Invalid request: AbsolutePathBuf deserialized without a base path`
 
-**Symptom.** Dispatches to a Codex agent fail instantly with this Rust error from Codex CLI.
+**Symptom.** Dispatches to a Codex agent fail with this Rust error. Dashboard may also show `Codex WebSocket app-server connection closed (1006)`. On a current bridge you will also see a clearer wrapping error that names the specific thread ID and tells you which rollout file to move aside — if you only see the raw Rust line, your bridge is still running pre-fix code and needs to be relaunched.
 
-**Causes (in order of likelihood):**
-1. A stale pre-update `codex-aify` bridge is still running in memory. The code on disk has the fix, but the running Node process loaded the pre-fix module and doesn't hot-reload. Closing one Codex tab doesn't guarantee the background bridge + app-server children exit.
-2. A Codex thread that was *created* before the cwd-normalization fix still has a backslash `cwd` inside Codex's own local thread store, so `thread/resume` fails even after everything aify-comms-side is fixed.
-3. A manual `comms_register` passed a raw Windows backslash `cwd` like `C:\Users\you\project`. The current build normalizes this at registration time, at marker-lookup time, and at dispatch time — but if you're running an older bridge (see cause 1), only the dispatch-time layer is active.
+**Causes (in order of likelihood, once the bridge is current):**
+1. **Corrupt on-disk Codex rollout.** The `thread/resume` call loads the thread's stored state from `~/.codex/sessions/...`. If that file has a path field Codex's deserializer cannot load — typically a backslash Windows cwd captured before the wrapper's cwd normalization landed — `thread/resume` crashes before the bridge can send anything else. The key tell is that the failed run has an empty `externalThreadId`: the bridge never got past `thread/resume`. Nothing aify-comms does at dispatch time can fix this; the rollout file has to go.
+2. **Stale pre-update `codex-aify` bridge still running in memory.** The code on disk has the fix, but the running Node process loaded the pre-fix module. Node does not hot-reload; the bridge must be killed and relaunched.
+3. **A manual `comms_register` passed a raw Windows backslash `cwd`** like `C:\Users\you\project`. The current build normalizes this at registration time, at marker-lookup time, and at dispatch time — but only if the bridge was started from current code.
 
-**Fix.**
-1. **Restart `codex-aify` first** — this reloads the bridge with current code. Until the running process restarts, nothing else matters.
-2. Re-register with forward slashes regardless: `cwd="C:/Users/you/project"`. The bridge normalizes anything you pass, but explicit forward slashes are the least ambiguous.
-3. If it still fails after the restart + re-register, the *stored Codex thread* itself is the problem — see the Hard reset below, which forces a fresh thread.
+**Auto-recovery (managed workers only).** Current bridge code catches this error during `thread/resume` for managed workers and falls back to starting a fresh Codex thread automatically. Resident sessions get a clearer actionable error instead, because silently creating a new thread would break the visible-TUI wake guarantee.
+
+**Fix (resident Codex sessions).**
+1. Kill every `codex-aify` and `codex app-server` process on the machine (the Hard Reset commands below).
+2. Move the poisoned rollout aside so Codex cannot re-offer it:
+   ```powershell
+   Get-ChildItem "$HOME\.codex\sessions" -Recurse -Filter "*<bad-thread-uuid>*" |
+     ForEach-Object { Rename-Item $_.FullName "$($_.FullName).poisoned" }
+   ```
+3. Delete the stale runtime markers.
+4. `cd` into the target project directory.
+5. Launch a fresh `codex-aify` from there.
+6. Re-register with the **new** `$CODEX_THREAD_ID` from the fresh session — verify it is a different UUID than the one that failed.
+
+The full Hard Reset commands are right below.
 
 ## Hard reset: Codex dispatches keep failing after update
 

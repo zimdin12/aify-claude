@@ -836,16 +836,47 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
           activeThreadId = resumed.thread?.id || activeThreadId;
         } catch (error) {
           const message = error?.message || "";
-          if (!message.includes("no rollout found for thread id")) {
+          const noRollout = message.includes("no rollout found for thread id");
+          // "AbsolutePathBuf deserialized without a base path" is Codex's way
+          // of saying its stored rollout file for this thread has a path
+          // field it cannot load — typically a backslash Windows cwd that
+          // was captured before the wrapper's cwd normalization landed.
+          // The failure happens inside Codex's app-server when it loads the
+          // on-disk rollout, so nothing we send can fix it. Treat it the
+          // same as a missing rollout: managed workers auto-recover by
+          // starting a fresh thread; resident sessions get an actionable
+          // error telling the user exactly what to nuke.
+          const corruptRollout =
+            message.includes("AbsolutePathBuf deserialized") ||
+            message.includes("AbsolutePathBufGuard");
+          if (!noRollout && !corruptRollout) {
             throw error;
           }
           if (executionMode === "resident") {
+            if (corruptRollout) {
+              throw new Error(
+                `Resident Codex thread "${activeThreadId}" has a corrupt on-disk rollout. ` +
+                `Codex app-server reported: ${message.trim()}. ` +
+                `This usually means the thread was created by a codex-aify wrapper ` +
+                `launched from a directory whose path was later captured in a form ` +
+                `Codex's deserializer rejects (common on Windows with backslash cwds ` +
+                `created before the cwd-normalization fix landed). To recover: ` +
+                `(1) kill every codex-aify and codex app-server process, ` +
+                `(2) move or delete the rollout file matching "${activeThreadId}" under ~/.codex/sessions/, ` +
+                `(3) relaunch codex-aify from the target project directory, ` +
+                `(4) re-register this agent with the NEW $CODEX_THREAD_ID from the fresh session. ` +
+                `See the aify-comms-debug skill for the full hard-reset sequence.`,
+              );
+            }
             throw new Error(
               `Resident Codex thread "${activeThreadId}" could not be resumed. ` +
               "Re-register the live session so aify captures the current thread ID.",
             );
           }
-          callbacks.onEvent?.("thread", `Discarding stale thread ${activeThreadId}`);
+          const reason = corruptRollout
+            ? `Rollout for thread ${activeThreadId} is corrupt (${message.trim()}); starting a fresh thread`
+            : `Discarding stale thread ${activeThreadId}`;
+          callbacks.onEvent?.("thread", reason);
           activeThreadId = await startThread();
         }
       }
