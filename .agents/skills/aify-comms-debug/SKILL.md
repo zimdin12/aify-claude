@@ -12,28 +12,38 @@ Before digging in, always call `comms_agent_info(agentId="target")` on the agent
 
 ## Codex: `Invalid request: AbsolutePathBuf deserialized without a base path`
 
-**Symptom.** Dispatches to a Codex agent fail with this Rust error. Dashboard may also show `Codex WebSocket app-server connection closed (1006)`. On a current bridge you will also see a clearer wrapping error that names the specific thread ID and tells you which rollout file to move aside — if you only see the raw Rust line, your bridge is still running pre-fix code and needs to be relaunched.
+**Symptom.** Dispatches to a Codex agent fail with this Rust error. Dashboard may also show `Codex WebSocket app-server connection closed (1006)`.
 
-**Causes (in order of likelihood, once the bridge is current):**
-1. **Corrupt on-disk Codex rollout.** The `thread/resume` call loads the thread's stored state from `~/.codex/sessions/...`. If that file has a path field Codex's deserializer cannot load — typically a backslash Windows cwd captured before the wrapper's cwd normalization landed — `thread/resume` crashes before the bridge can send anything else. The key tell is that the failed run has an empty `externalThreadId`: the bridge never got past `thread/resume`. Nothing aify-comms does at dispatch time can fix this; the rollout file has to go.
-2. **Stale pre-update `codex-aify` bridge still running in memory.** The code on disk has the fix, but the running Node process loaded the pre-fix module. Node does not hot-reload; the bridge must be killed and relaunched.
-3. **A manual `comms_register` passed a raw Windows backslash `cwd`** like `C:\Users\you\project`. The current build normalizes this at registration time, at marker-lookup time, and at dispatch time — but only if the bridge was started from current code.
+**Cause.** Codex's `thread/resume` loads the thread's stored rollout from `~/.codex/sessions/...`. If a path field in that file cannot be deserialized — typically a backslash Windows `cwd` captured before the wrapper's cwd normalization landed — the call crashes before the bridge can send anything else. The tell is that the failed run has an **empty `externalThreadId`**: the bridge never got past `thread/resume`. Nothing we send at dispatch time can fix this; the rollout file on Codex's side is the blocker.
 
-**Auto-recovery (managed workers only).** Current bridge code catches this error during `thread/resume` for managed workers and falls back to starting a fresh Codex thread automatically. Resident sessions get a clearer actionable error instead, because silently creating a new thread would break the visible-TUI wake guarantee.
+**Auto-recovery (shipped).** On current bridge code, **both managed and resident** sessions auto-heal this case. When `thread/resume` fails with `AbsolutePathBuf deserialized`, `AbsolutePathBufGuard`, or `no rollout found for thread id`, the bridge:
 
-**Fix (resident Codex sessions).**
-1. Kill every `codex-aify` and `codex app-server` process on the machine (the Hard Reset commands below).
-2. Move the poisoned rollout aside so Codex cannot re-offer it:
-   ```powershell
-   Get-ChildItem "$HOME\.codex\sessions" -Recurse -Filter "*<bad-thread-uuid>*" |
-     ForEach-Object { Rename-Item $_.FullName "$($_.FullName).poisoned" }
-   ```
+1. Calls `thread/start` to create a brand-new Codex thread.
+2. Fires `onSessionHandleChange(newHandle)`, which updates the cached agent state and POSTs `/agents` so the backend's stored `sessionHandle` points at the healed thread.
+3. Continues the current dispatch against the new thread.
+
+You'll see a line in the Codex session's stderr like:
+
+```
+[aify] healed sessionHandle for "graph-senior-dev" → <new-uuid> (reason: corrupt_rollout, previous: <old-uuid>)
+```
+
+**Trade-off for resident sessions.** The healed thread is *not* the one attached to the visible Codex TUI — it's a fresh background thread the Codex app-server knows about but your interactive session cannot see. Dispatched work runs successfully but you lose TUI visibility for that dispatch. The old behavior was "dispatch fails forever with a cryptic error", which is strictly worse. To restore full TUI visibility for future work, do the hard-reset sequence below.
+
+**Check that auto-heal actually ran.** If you still see the raw `Invalid request: AbsolutePathBuf deserialized without a base path` in a dispatched run's error field (without a wrapping `healed sessionHandle` stderr line), then one of these is true:
+- The bridge process is still running pre-fix code in memory. Relaunch `codex-aify`.
+- The bridge's install dir hasn't been pulled yet. `cd` into it and `git pull`; run `npm test` from `mcp/stdio/` to confirm the classifier matches current error shapes.
+- Both sides of the bridge were restarted but the classifier missed a new Codex error string. Send the run ID and I'll extend `detectCodexResumeFailure` in `codex-errors.js`.
+
+**Hard reset (only needed to restore TUI visibility for the affected session).**
+1. Kill every `codex-aify` and `codex app-server` process on the machine.
+2. Move the poisoned rollout aside so Codex cannot re-offer it.
 3. Delete the stale runtime markers.
 4. `cd` into the target project directory.
 5. Launch a fresh `codex-aify` from there.
-6. Re-register with the **new** `$CODEX_THREAD_ID` from the fresh session — verify it is a different UUID than the one that failed.
+6. Re-register with the new `$CODEX_THREAD_ID` from the fresh session.
 
-The full Hard Reset commands are right below.
+The full commands are right below.
 
 ## Hard reset: Codex dispatches keep failing after update
 

@@ -59,6 +59,16 @@ Every agent registration resolves to one of these wake modes. `comms_agent_info`
 
 **Practical consequence.** In multi-tab Claude setups on the same machine, everything Just Works. In multi-tab Codex setups, you need to register each tab with explicit `sessionHandle="$CODEX_THREAD_ID"` and `appServerUrl="$AIFY_CODEX_APP_SERVER_URL"` from inside that tab.
 
+## Corrupt Codex rollouts auto-heal instead of failing forever
+
+**Decision.** When the Codex controller's `thread/resume` call fails with `AbsolutePathBuf deserialized without a base path`, `AbsolutePathBufGuard`, or `no rollout found for thread id`, the bridge automatically calls `thread/start` to create a brand-new Codex thread, fires `onSessionHandleChange(newHandle)` to update the cached agent state and the backend's stored `sessionHandle`, and continues the current dispatch against the new thread. This applies to both managed workers and resident sessions. Classification lives in `mcp/stdio/codex-errors.js` (`detectCodexResumeFailure`) so it can be unit-tested without a live Codex.
+
+**Why.** The failure happens inside Codex's app-server while loading the thread's on-disk rollout file; no amount of payload normalization on our side can make Codex accept a rollout it can't deserialize. Before this fix, resident mode threw an actionable error and gave up. In practice the user's Codex process usually kept the poisoned thread ID cached in memory and re-exported it to any child process's `$CODEX_THREAD_ID`, so the next "fresh" re-register passed the same poisoned UUID and the dispatch failed again. The cycle only broke when the user fully killed Codex AND moved the rollout file aside AND relaunched from the right directory AND passed a genuinely new thread ID on re-register — a four-step recipe that rarely landed on the first try.
+
+**Trade-off for resident sessions.** The healed thread is a fresh Codex thread that is *not* the one attached to the user's visible TUI. Dispatched work runs in the background and completes successfully, but the user sees no activity in their interactive Codex session. The alternative — the prior behavior — was that dispatches failed forever with `AbsolutePathBuf` until the user executed the hard-reset sequence perfectly. "Work happens invisibly but reliably" is strictly better than "work fails visibly and reliably", and the user can still run the hard-reset sequence on their own schedule to restore full TUI visibility.
+
+**Regression coverage.** `mcp/stdio/tests/codex-resume-failure.test.js` locks down classification against every error string we have observed from Codex, plus a handful of unrelated errors that must NOT trigger the heal. `npm test` from `mcp/stdio/` runs it along with the other two bridge tests.
+
 ## Runtime markers are written by the bridge, not the wrapper
 
 **Decision.** The `claude-code` and `codex` runtime markers under `~/.local/state/aify-comms/runtime-markers/` are written by the long-lived MCP bridge processes (`claude-channel.js` for Claude, `server.js` for Codex when `AIFY_CODEX_APP_SERVER_URL` is set), not by the `claude-aify` / `codex-aify` bash wrappers. The bash wrappers no longer touch markers at all.
