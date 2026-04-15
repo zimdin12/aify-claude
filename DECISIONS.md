@@ -59,6 +59,14 @@ Every agent registration resolves to one of these wake modes. `comms_agent_info`
 
 **Practical consequence.** In multi-tab Claude setups on the same machine, everything Just Works. In multi-tab Codex setups, you need to register each tab with explicit `sessionHandle="$CODEX_THREAD_ID"` and `appServerUrl="$AIFY_CODEX_APP_SERVER_URL"` from inside that tab.
 
+## Bridges self-heal on persistent failures
+
+**Decision.** The stdio bridge retries transient HTTP errors up to 3 times with exponential backoff (250ms → 500ms → 1s), and auto-re-registers an agent from its cached state when either (a) the server returns `404` on `/agents/{id}` or `/dispatch/claim` for that agent, or (b) 4 consecutive claim attempts fail for any reason.
+
+**Why.** The most common "stale bridge needs manual re-registration" symptom has two root causes: a transient network blip that the old code didn't retry, and the server legitimately forgetting about the agent (via `comms_clear`, an operator DELETE, or a DB rotation) with no way for the bridge to notice. The first is handled by retries. The second is handled by treating a 404 as "re-register from what I remember" rather than silently polling a dead `agentId`. Both paths use the `REMOTE_AGENT_STATE` cache that already existed — no new state introduced.
+
+**Limits.** Auto-re-register only works if the bridge has a cached registration for the agent (i.e. it was registered at least once in this process). If the bridge starts up cold against a server that doesn't know about the agent, there's nothing to re-register from — the caller still has to do the first registration manually. Auto-re-register also cannot recover agents that failed their *first* registration attempt, since no cache entry exists yet.
+
 ## Superseded bridges are blocked at claim time
 
 **Decision.** When an agent re-registers, the server marks the old bridge instance as `superseded_by: <new bridge id>`. The `/dispatch/claim` endpoint rejects claims from any superseded bridge with `blockedBy: {reason: "bridge_superseded"}`.

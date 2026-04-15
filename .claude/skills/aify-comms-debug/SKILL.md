@@ -161,6 +161,29 @@ If only the thread ID is available, pass `sessionHandle` without `appServerUrl`.
 
 **Fix.** Shut the superseded bridge down. This is not an error — it's the server protecting the queue. The fresh bridge is the one that should be claiming runs.
 
+## Bridge "lost" the agent / has to be re-registered manually
+
+**Symptom.** An agent that used to work stops claiming dispatches. Messages still arrive in its inbox but nothing launches. Manually re-registering the agent makes it work again.
+
+**Cause.** The server forgot about the agent (cleared via `comms_clear`, deleted by an operator, or the DB was rotated) but the bridge's local cache still thinks it's registered and keeps polling with a dead `agentId`. Alternatively, several consecutive dispatch-claim HTTP calls failed — server restart, network blip, sleep/wake — and the bridge hasn't recovered its state.
+
+**Auto-recovery (current build).** The bridge now:
+- Retries transient HTTP errors up to 3 times with exponential backoff (250ms / 500ms / 1000ms) before giving up on any single call.
+- Watches for `404` responses on `/agents/{id}` and `/dispatch/claim`. A 404 means the agent is unknown to the server, so the bridge automatically re-registers from its cached agent data.
+- Counts consecutive claim failures per agent. After 4 in a row, the bridge tries an auto-re-register from cache as a last-resort self-heal.
+
+Look for these lines on stderr:
+
+```
+[aify] agent "foo" missing from server; auto-re-registering
+[aify] auto-re-registered "foo" from cached state
+[aify] 4 consecutive dispatch/claim failures for "foo"; attempting auto-re-register
+```
+
+**Fix when auto-recovery fails.** If you see the auto-re-register log followed by `auto-re-register failed for "foo"`, the server itself is unreachable or rejecting the payload. Check:
+1. `curl http://localhost:8800/health` — is the server even up?
+2. The bridge's cached state may be missing a required field (role, runtime) if the agent was never fully registered in the first place. Manual `comms_register(...)` with complete fields is the definitive recovery.
+
 ## Re-register seemingly "not taking effect"
 
 **Symptom.** You re-register with new values but `comms_agent_info` still reflects the old ones.

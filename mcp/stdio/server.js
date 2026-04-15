@@ -53,6 +53,8 @@ const LOCAL_RUNTIME_STATE = new Map();
 const DISPATCH_POLL_MS = Number(process.env.AIFY_DISPATCH_POLL_MS || 3000);
 let dispatchLoopTimer = null;
 let dispatchLoopBusy = false;
+const CONSECUTIVE_FAILURES = new Map();
+const AUTO_REREGISTER_AFTER_FAILURES = 4;
 
 // ── Local filesystem paths (used only in local mode) ─────────────────────────
 
@@ -84,6 +86,21 @@ if (!IS_REMOTE) {
 
 // ── HTTP helper (remote mode) ────────────────────────────────────────────────
 
+const HTTP_RETRY_ATTEMPTS = 3;
+const HTTP_RETRY_BASE_MS = 250;
+
+function isTransientHttpError(error) {
+  if (!error) return false;
+  const name = String(error.name || "");
+  const code = String(error.code || "");
+  const message = String(error.message || "");
+  if (name === "AbortError" || name === "TimeoutError") return true;
+  if (/ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|EPIPE|socket hang up|fetch failed|network/i.test(code + " " + message)) {
+    return true;
+  }
+  return false;
+}
+
 async function httpCall(method, endpoint, body = null) {
   const url = `${SERVER_URL}/api/v1${endpoint}`;
   const options = { method, headers: {} };
@@ -92,12 +109,32 @@ async function httpCall(method, endpoint, body = null) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
   }
-  const res = await fetch(url, options);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`HTTP ${res.status}: ${text}`);
+  let lastError;
+  for (let attempt = 1; attempt <= HTTP_RETRY_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if (!res.ok) {
+        const text = await res.text();
+        const err = new Error(`HTTP ${res.status}: ${text}`);
+        err.status = res.status;
+        // 5xx is retriable as a transient server blip; 4xx is a real error.
+        if (res.status >= 500 && res.status < 600 && attempt < HTTP_RETRY_ATTEMPTS) {
+          lastError = err;
+          await new Promise((r) => setTimeout(r, HTTP_RETRY_BASE_MS * 2 ** (attempt - 1)));
+          continue;
+        }
+        throw err;
+      }
+      return res.json();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= HTTP_RETRY_ATTEMPTS || !isTransientHttpError(error)) {
+        throw error;
+      }
+      await new Promise((r) => setTimeout(r, HTTP_RETRY_BASE_MS * 2 ** (attempt - 1)));
+    }
   }
-  return res.json();
+  throw lastError || new Error("httpCall exhausted retries without error");
 }
 
 function parseJson(value, fallback) {
@@ -345,6 +382,37 @@ function formatInboxMessage(m, registry) {
   );
 }
 
+async function reregisterAgentFromState(agentId, state) {
+  if (!state?.info) return false;
+  const info = state.info;
+  const payload = {
+    agentId,
+    role: info.role || "generic",
+    name: info.name || agentId,
+    cwd: info.cwd || "",
+    model: info.model || "",
+    description: info.description || "",
+    instructions: info.instructions || "",
+    runtime: info.runtime || "generic",
+    machineId: info.machineId || MACHINE_ID,
+    bridgeId: BRIDGE_INSTANCE_ID,
+    launchMode: info.launchMode || "detached",
+    sessionMode: info.sessionMode || "resident",
+    sessionHandle: info.sessionHandle || "",
+    managedBy: info.managedBy || "",
+    capabilities: info.capabilities || [],
+    runtimeConfig: info.runtimeConfig || {},
+  };
+  try {
+    await httpCall("POST", "/agents", payload);
+    console.error(`[aify] auto-re-registered "${agentId}" from cached state`);
+    return true;
+  } catch (error) {
+    console.error(`[aify] auto-re-register failed for "${agentId}": ${error?.message || error}`);
+    return false;
+  }
+}
+
 function ensureDispatchLoop() {
   if (!IS_REMOTE || dispatchLoopTimer) return;
   dispatchLoopTimer = setInterval(() => {
@@ -377,19 +445,52 @@ async function runDispatchLoop() {
             runtimeState: liveAgent.runtimeState || state.info.runtimeState || {},
           };
         }
-      } catch {
-        // best effort
+      } catch (error) {
+        // If the server forgot about this agent (404), auto-re-register from
+        // cached state instead of silently polling a dead agentId forever.
+        // This is the common "re-registration fixes it" symptom.
+        if (error?.status === 404) {
+          console.error(`[aify] agent "${agentId}" missing from server; auto-re-registering`);
+          await reregisterAgentFromState(agentId, state);
+          CONSECUTIVE_FAILURES.set(agentId, 0);
+          continue;
+        }
+        // Other errors: log only, keep going.
       }
 
       const executionModes = supportedExecutionModes(state.info);
       if (!executionModes.length) continue;
 
-      const claim = await httpCall("POST", "/dispatch/claim", {
-        agentId,
-        machineId: state.info.machineId || MACHINE_ID,
-        bridgeId: BRIDGE_INSTANCE_ID,
-        executionModes,
-      });
+      let claim;
+      try {
+        claim = await httpCall("POST", "/dispatch/claim", {
+          agentId,
+          machineId: state.info.machineId || MACHINE_ID,
+          bridgeId: BRIDGE_INSTANCE_ID,
+          executionModes,
+        });
+        CONSECUTIVE_FAILURES.set(agentId, 0);
+      } catch (error) {
+        // Auto-recover from persistent failures. 404 means the agent was
+        // removed from the server (e.g. via comms_clear or a DELETE) —
+        // re-register immediately. For other errors, count consecutive
+        // failures and re-register after a threshold so transient network
+        // blips don't trigger unnecessary churn.
+        if (error?.status === 404) {
+          console.error(`[aify] dispatch/claim 404 for "${agentId}"; auto-re-registering`);
+          await reregisterAgentFromState(agentId, state);
+          CONSECUTIVE_FAILURES.set(agentId, 0);
+          continue;
+        }
+        const count = (CONSECUTIVE_FAILURES.get(agentId) || 0) + 1;
+        CONSECUTIVE_FAILURES.set(agentId, count);
+        if (count >= AUTO_REREGISTER_AFTER_FAILURES) {
+          console.error(`[aify] ${count} consecutive dispatch/claim failures for "${agentId}" (last: ${error?.message || error}); attempting auto-re-register`);
+          await reregisterAgentFromState(agentId, state);
+          CONSECUTIVE_FAILURES.set(agentId, 0);
+        }
+        continue;
+      }
       if (!claim?.run) continue;
 
       const run = claim.run;
