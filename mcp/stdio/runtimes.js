@@ -475,7 +475,7 @@ async function inspectCodexLiveMarker(marker, cwd = process.cwd()) {
       clientInfo: {
         name: "aify-comms",
         title: "aify-comms marker inspector",
-        version: "3.6.6",
+        version: "3.7.0",
       },
     });
     rpc.notify("initialized", {});
@@ -516,7 +516,7 @@ export async function discoverCodexLiveThreadId(runtimeConfig = {}, cwd = proces
       clientInfo: {
         name: "aify-comms",
         title: "aify-comms register bridge",
-        version: "3.6.6",
+        version: "3.7.0",
       },
     });
     rpc.notify("initialized", {});
@@ -797,7 +797,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
         clientInfo: {
           name: "aify-comms",
           title: "aify-comms dispatch bridge",
-        version: "3.6.6",
+        version: "3.7.0",
         },
       });
       rpc.notify("initialized", {});

@@ -70,17 +70,18 @@ if (AIFY_CODEX_APP_SERVER_URL) {
   }
 }
 
-function removeOwnCodexMarker() {
-  if (!codexMarkerCwd) return;
-  try {
-    removeRuntimeMarker("codex", codexMarkerCwd);
-  } catch {
-    // best effort
+function cleanupOnExit() {
+  // Remove codex runtime marker
+  if (codexMarkerCwd) {
+    try { removeRuntimeMarker("codex", codexMarkerCwd); } catch { /* best effort */ }
   }
+  // Remove agent binding temp file
+  const bindingFile = path.join(process.env.TEMP || process.env.TMP || "/tmp", `aify-agent-${process.ppid || process.pid}`);
+  try { fs.unlinkSync(bindingFile); } catch { /* best effort */ }
 }
-process.on("exit", removeOwnCodexMarker);
-process.on("SIGINT", () => { removeOwnCodexMarker(); process.exit(130); });
-process.on("SIGTERM", () => { removeOwnCodexMarker(); process.exit(143); });
+process.on("exit", cleanupOnExit);
+process.on("SIGINT", () => { cleanupOnExit(); process.exit(130); });
+process.on("SIGTERM", () => { cleanupOnExit(); process.exit(143); });
 const REMOTE_AGENT_STATE = new Map();
 const ACTIVE_RUNS = new Map();
 const LOCAL_RUNTIME_STATE = new Map();
@@ -731,7 +732,7 @@ async function processRunControls(agentId, activeRun) {
 
 const server = new McpServer({
   name: "aify-comms-mcp",
-  version: "3.6.6",
+  version: "3.7.0",
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2544,7 +2545,7 @@ th{background:#21262d;color:#8b949e}tr:hover{background:#1c2128}
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("aify-comms-mcp v3.6.6 running on stdio");
+  console.error("aify-comms-mcp v3.7.0 running on stdio");
   console.error(`Mode: ${IS_REMOTE ? "REMOTE (" + SERVER_URL + ")" : "LOCAL (" + MESSAGES_DIR + ")"}`);
   console.error(`Working dir: ${DEFAULT_CWD}`);
 }
