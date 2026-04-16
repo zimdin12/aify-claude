@@ -146,42 +146,47 @@ wait_for_port() {
   ' "$port"
 }
 
-# Try to reuse an existing app-server from another codex-aify in the same
-# directory. Two codex app-server processes on the same Windows machine
-# can't coexist — the second one hangs. Sharing one app-server works:
-# each codex --remote connection gets its own thread.
-find_existing_app_server() {
-  local marker_dir="${XDG_STATE_HOME:-$HOME/.local/state}/aify-comms/runtime-markers"
-  [ -d "$marker_dir" ] || return 1
-  for marker in "$marker_dir"/codex-*.json; do
-    [ -f "$marker" ] || continue
-    local info
-    info="$(node -e "
-      try {
-        const m = JSON.parse(require('fs').readFileSync('$marker','utf-8'));
-        if (m.appServerUrl && m.pid) console.log(m.pid + ' ' + m.appServerUrl);
-      } catch {}
-    " 2>/dev/null)"
-    [ -n "$info" ] || continue
-    local pid url
-    pid="${info%% *}"
-    url="${info#* }"
-    if kill -0 "$pid" 2>/dev/null; then
-      echo "$url"
-      return 0
-    else
-      rm -f "$marker"
-    fi
-  done
+# One shared codex app-server per machine. The first codex-aify starts it;
+# subsequent instances reuse it. The app-server is NOT killed on exit —
+# it persists so other sessions keep working. An idle app-server uses
+# ~50 MB; it dies on reboot or when explicitly killed.
+#
+# Discovery file stores the URL and PID. On startup:
+#   1. Read discovery file → PID alive + port reachable → reuse
+#   2. Otherwise → clean up, start fresh, write discovery file
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/aify-comms"
+mkdir -p "$STATE_DIR"
+DISCOVERY_FILE="$STATE_DIR/codex-app-server.json"
+
+try_existing_app_server() {
+  [ -f "$DISCOVERY_FILE" ] || return 1
+  local info
+  info="$(node -e "
+    try {
+      const m = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf-8'));
+      if (m.url && m.pid) console.log(m.pid + ' ' + m.url);
+    } catch {}
+  " "$DISCOVERY_FILE" 2>/dev/null)"
+  [ -n "$info" ] || return 1
+  local pid="${info%% *}"
+  local url="${info#* }"
+  if ! kill -0 "$pid" 2>/dev/null; then
+    rm -f "$DISCOVERY_FILE"
+    return 1
+  fi
+  local port="${url##*:}"
+  if wait_for_port "$port" 2>/dev/null; then
+    echo "$url"
+    return 0
+  fi
+  rm -f "$DISCOVERY_FILE"
   return 1
 }
 
-EXISTING_URL="$(find_existing_app_server || true)"
-OWN_APP_SERVER=""
+APP_SERVER_URL="$(try_existing_app_server || true)"
 
-if [ -n "$EXISTING_URL" ]; then
-  APP_SERVER_URL="$EXISTING_URL"
-  echo "Reusing existing codex app-server at $APP_SERVER_URL" >&2
+if [ -n "$APP_SERVER_URL" ]; then
+  echo "Reusing codex app-server at $APP_SERVER_URL" >&2
 else
   PORT="$(pick_port)"
   if [ -z "$PORT" ]; then
@@ -189,31 +194,24 @@ else
     exit 1
   fi
   APP_SERVER_URL="ws://127.0.0.1:$PORT"
-  LOG_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/aify-comms"
-  mkdir -p "$LOG_ROOT"
-  LOG_FILE="$LOG_ROOT/codex-aify-app-server-$PORT.log"
+  LOG_FILE="$STATE_DIR/codex-aify-app-server-$PORT.log"
   codex app-server --listen "$APP_SERVER_URL" >>"$LOG_FILE" 2>&1 &
-  OWN_APP_SERVER=$!
+  APP_SERVER_PID=$!
+  # Write discovery file immediately so the next codex-aify finds it
+  node -e "require('fs').writeFileSync(process.argv[1], JSON.stringify({url:'$APP_SERVER_URL',pid:$APP_SERVER_PID}))" "$DISCOVERY_FILE"
+  if ! wait_for_port "$PORT"; then
+    echo "codex-aify could not reach the local app-server at $APP_SERVER_URL." >&2
+    echo "Check $LOG_FILE for details." >&2
+    rm -f "$DISCOVERY_FILE"
+    exit 1
+  fi
+  echo "Started codex app-server at $APP_SERVER_URL (pid $APP_SERVER_PID)" >&2
 fi
 
 export AIFY_CODEX_APP_SERVER_URL="$APP_SERVER_URL"
 
-cleanup() {
-  if [ -n "$OWN_APP_SERVER" ] && kill -0 "$OWN_APP_SERVER" 2>/dev/null; then
-    kill "$OWN_APP_SERVER" >/dev/null 2>&1 || true
-    wait "$OWN_APP_SERVER" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT INT TERM
-
-if [ -z "$EXISTING_URL" ]; then
-  local_port="${APP_SERVER_URL##*:}"
-  if ! wait_for_port "$local_port"; then
-    echo "codex-aify could not reach the local app-server at $APP_SERVER_URL." >&2
-    echo "Check $LOG_FILE for details." >&2
-    exit 1
-  fi
-fi
+# No cleanup trap — the app-server is shared and persists across sessions.
+# It dies on reboot, or when the user runs: kill $(jq -r .pid $DISCOVERY_FILE)
 
 codex --remote "$APP_SERVER_URL" "$@"
 EOF
