@@ -57,16 +57,18 @@ try {
 
 const hookPayload = await readHookPayload();
 
-// Find agent ID from the PID-keyed temp file written by server.js.
-// We no longer fall back to {cwd}/.aify-agent — that file is shared
-// across sessions in the same directory and causes cross-talk.
+// Find agent ID from PID-keyed temp files written by server.js.
 let agentId = "";
-const SESSION_FILE = path.join(tmpDir, `aify-agent-${process.ppid || ""}`);
 let heartbeatAllowed = false;
-
-if (fs.existsSync(SESSION_FILE)) {
-  agentId = fs.readFileSync(SESSION_FILE, "utf-8").trim();
-  heartbeatAllowed = true;
+const pidCandidates = [
+  path.join(tmpDir, `aify-agent-${process.ppid || ""}`),
+  path.join(tmpDir, `aify-agent-${process.pid}`),
+];
+for (const candidate of pidCandidates) {
+  try {
+    const value = fs.readFileSync(candidate, "utf-8").trim();
+    if (value) { agentId = value; heartbeatAllowed = true; break; }
+  } catch { /* keep looking */ }
 }
 if (!agentId) process.exit(0);
 
@@ -98,14 +100,23 @@ try {
 
   if (data.total > 0) {
     const msgs = data.messages || [];
-    const hasUrgent = msgs.some(m => m.priority === "urgent" || m.priority === "high");
-    const tag = hasUrgent ? " ⚠ URGENT" : "";
+    const urgent = msgs.filter(m => m.priority === "urgent");
+    const high = msgs.filter(m => m.priority === "high");
     const previews = msgs.map(m => {
       const p = (m.priority && m.priority !== "normal") ? ` [${m.priority.toUpperCase()}]` : "";
-      return `  - From ${m.from}${p}: "${m.subject}"`;
+      return `  ${m.from}${p}: ${m.subject}`;
     }).join("\n");
     const more = data.total > 3 ? `\n  ...and ${data.total - 3} more` : "";
-    emitNotice(`[aify-comms]${tag} ${data.total} unread message(s):\n${previews}${more}\nUse comms_inbox to read them.`, hookPayload);
+
+    let notice;
+    if (urgent.length) {
+      notice = `STOP — you have ${urgent.length} URGENT message(s) that need immediate action. Read them NOW.\n${previews}${more}\nCall comms_inbox(agentId="${agentId}") immediately.`;
+    } else if (high.length) {
+      notice = `IMPORTANT: ${high.length} high-priority message(s) waiting. Read before continuing current work.\n${previews}${more}\nCall comms_inbox(agentId="${agentId}").`;
+    } else {
+      notice = `${data.total} unread message(s) in your inbox:\n${previews}${more}\nCall comms_inbox(agentId="${agentId}") when you have a moment.`;
+    }
+    emitNotice(notice, hookPayload);
   }
 } catch {
   // Server unreachable — cache the failure so we skip quickly next time

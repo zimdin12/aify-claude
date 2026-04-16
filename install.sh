@@ -382,9 +382,11 @@ install_claude_hook() {
       h => !JSON.stringify(h).includes('notify-check')
     );
     settings.hooks.PostToolUse.push({
+      matcher: 'Bash',
       hooks: [{
         type: 'command',
-        command: 'node \"$SCRIPT_DIR/mcp/stdio/notify-check.js\"'
+        command: 'node \"$SCRIPT_DIR/mcp/stdio/notify-check.js\"',
+        timeout: 3
       }]
     });
     fs.writeFileSync('$settings_file', JSON.stringify(settings, null, 2));
