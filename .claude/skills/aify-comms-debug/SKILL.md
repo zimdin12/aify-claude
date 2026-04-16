@@ -1,7 +1,6 @@
 ---
 name: aify-comms-debug
 description: Known aify-comms issues and how to fix them. Check here when a dispatch fails, a wake mode looks wrong, a run is stuck, a bridge seems stale, or Claude/Codex reports a path/channel error. Complements the main aify-comms skill.
-trigger: tool_available("comms_register") OR tool_available("comms_send") OR tool_available("comms_inbox")
 ---
 
 # aify-comms: Troubleshooting

@@ -45,7 +45,7 @@ Subagent rule:
 ```
 comms_listen(agentId="my-agent")
 ```
-Use it when you intentionally want an inbox-driven loop. Do not assume resident triggering depends on `comms_listen`; `comms_send(...)` should wake properly registered resident sessions directly unless you pass `silent=true`.
+Call `comms_listen` only when you want an explicit inbox-driven dispatch loop. By default, `comms_send(...)` and `comms_dispatch(...)` wake the recipient directly without needing listen. Pass `silent=true` to send without waking.
 
 If `comms_listen` is not available, you are likely connected through SSE. In that mode, use `comms_inbox(agentId="my-agent")` to check work and remember that active dispatch cannot launch local Claude/Codex/OpenCode runs from your side.
 
@@ -82,7 +82,7 @@ Gotchas regardless of runtime:
 
 ## Tools (25)
 
-### Messaging
+### Messaging (15)
 | Tool | Use |
 |------|-----|
 | `comms_register` | Register the exact live session you currently have open. |
@@ -101,7 +101,7 @@ Gotchas regardless of runtime:
 | `comms_run_interrupt` | Request interruption of an active run. Works when the target runtime supports interrupt. |
 | `comms_run_steer` | Send more guidance to an active run. Works when the target runtime supports steer. |
 
-### Channels (Group Chat)
+### Channels (5)
 | Tool | Use |
 |------|-----|
 | `comms_channel_create` | Create a named channel. You're auto-joined. |
@@ -110,14 +110,14 @@ Gotchas regardless of runtime:
 | `comms_channel_read` | Read recent channel messages. |
 | `comms_channel_list` | List all channels with member/message counts. |
 
-### File Sharing
+### File Sharing (3)
 | Tool | Use |
 |------|-----|
 | `comms_share` | Share text, files, logs, PNGs, or screenshots. Binary files supported. |
 | `comms_read` | Read a shared artifact by name. |
 | `comms_files` | List all shared artifacts. |
 
-### Management
+### Management (2)
 | Tool | Use |
 |------|-----|
 | `comms_clear` | Clear inbox, shared files, or agents. Optional age filter. |

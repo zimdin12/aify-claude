@@ -143,7 +143,7 @@ The old bridge stays alive and keeps polling (that's fine — polling is cheap) 
 
 ## Identifier name constraints
 
-**Decision.** Agent IDs, channel names, and shared-artifact names are `[A-Za-z0-9._-]{1,128}`.
+**Decision.** Agent IDs, channel names, and shared-artifact names must match `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$` — start with an alphanumeric, then up to 127 more alphanumerics, dots, underscores, or hyphens (max 128 total).
 
 **Why.** These end up in URLs (`/agents/{id}/...`), filesystem paths (shared artifacts), and shell arguments. The strict regex prevents path traversal, URL escaping issues, and shell injection without having to sanitize at every call site.
 
