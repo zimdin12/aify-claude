@@ -146,6 +146,24 @@ wait_for_port() {
   ' "$port"
 }
 
+# Clean up stale app-server processes from previous codex-aify sessions.
+# On Windows, closing a CMD tab doesn't send SIGTERM to background processes,
+# so app-servers from crashed/closed sessions accumulate as zombies.
+cleanup_stale_app_servers() {
+  local marker_dir="${XDG_STATE_HOME:-$HOME/.local/state}/aify-comms/runtime-markers"
+  [ -d "$marker_dir" ] || return 0
+  for marker in "$marker_dir"/codex-*.json; do
+    [ -f "$marker" ] || continue
+    local pid
+    pid="$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$marker','utf-8')).pid||'')}catch{}" 2>/dev/null)"
+    [ -n "$pid" ] || continue
+    if ! kill -0 "$pid" 2>/dev/null; then
+      rm -f "$marker"
+    fi
+  done
+}
+cleanup_stale_app_servers
+
 PORT="$(pick_port)"
 if [ -z "$PORT" ]; then
   echo "Failed to allocate a local port for codex app-server." >&2
