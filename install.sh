@@ -180,11 +180,7 @@ if ! wait_for_port "$PORT"; then
   exit 1
 fi
 
-# Run plain codex (no --remote) for the interactive TUI. The app-server
-# still runs in the background for dispatch — the bridge connects to it
-# directly via AIFY_CODEX_APP_SERVER_URL. Using --remote causes TUI
-# rendering freezes on Windows.
-codex "$@"
+codex --remote "$APP_SERVER_URL" --full-auto "$@"
 EOF
   chmod +x "$wrapper_path"
   install_windows_cmd_shim "codex-aify" "$wrapper_dir"
