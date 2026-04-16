@@ -146,64 +146,76 @@ wait_for_port() {
   ' "$port"
 }
 
-# Clean up stale app-server processes from previous codex-aify sessions.
-# On Windows, closing a CMD tab doesn't send SIGTERM to background processes,
-# so app-servers from crashed/closed sessions accumulate as zombies.
-cleanup_stale_app_servers() {
+# Try to reuse an existing app-server from another codex-aify in the same
+# directory. Two codex app-server processes on the same Windows machine
+# can't coexist — the second one hangs. Sharing one app-server works:
+# each codex --remote connection gets its own thread.
+find_existing_app_server() {
   local marker_dir="${XDG_STATE_HOME:-$HOME/.local/state}/aify-comms/runtime-markers"
-  [ -d "$marker_dir" ] || return 0
+  [ -d "$marker_dir" ] || return 1
   for marker in "$marker_dir"/codex-*.json; do
     [ -f "$marker" ] || continue
-    local pid
-    pid="$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$marker','utf-8')).pid||'')}catch{}" 2>/dev/null)"
-    [ -n "$pid" ] || continue
-    if ! kill -0 "$pid" 2>/dev/null; then
+    local info
+    info="$(node -e "
+      try {
+        const m = JSON.parse(require('fs').readFileSync('$marker','utf-8'));
+        if (m.appServerUrl && m.pid) console.log(m.pid + ' ' + m.appServerUrl);
+      } catch {}
+    " 2>/dev/null)"
+    [ -n "$info" ] || continue
+    local pid url
+    pid="${info%% *}"
+    url="${info#* }"
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "$url"
+      return 0
+    else
       rm -f "$marker"
     fi
   done
+  return 1
 }
-cleanup_stale_app_servers
 
-PORT="$(pick_port)"
-if [ -z "$PORT" ]; then
-  echo "Failed to allocate a local port for codex app-server." >&2
-  exit 1
+EXISTING_URL="$(find_existing_app_server || true)"
+OWN_APP_SERVER=""
+
+if [ -n "$EXISTING_URL" ]; then
+  APP_SERVER_URL="$EXISTING_URL"
+  echo "Reusing existing codex app-server at $APP_SERVER_URL" >&2
+else
+  PORT="$(pick_port)"
+  if [ -z "$PORT" ]; then
+    echo "Failed to allocate a local port for codex app-server." >&2
+    exit 1
+  fi
+  APP_SERVER_URL="ws://127.0.0.1:$PORT"
+  LOG_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/aify-comms"
+  mkdir -p "$LOG_ROOT"
+  LOG_FILE="$LOG_ROOT/codex-aify-app-server-$PORT.log"
+  codex app-server --listen "$APP_SERVER_URL" >>"$LOG_FILE" 2>&1 &
+  OWN_APP_SERVER=$!
 fi
 
-APP_SERVER_URL="ws://127.0.0.1:$PORT"
 export AIFY_CODEX_APP_SERVER_URL="$APP_SERVER_URL"
 
-LOG_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/aify-comms"
-mkdir -p "$LOG_ROOT"
-LOG_FILE="$LOG_ROOT/codex-aify-app-server-$PORT.log"
-
-codex app-server --listen "$APP_SERVER_URL" >>"$LOG_FILE" 2>&1 &
-APP_SERVER_PID=$!
-
-# The runtime marker is written by the long-lived aify-comms MCP bridge
-# itself (mcp/stdio/server.js) on startup when it sees
-# AIFY_CODEX_APP_SERVER_URL in its environment. Previously the wrapper
-# wrote the marker with bash $$ as the pid, which on Git Bash for Windows
-# is an MSYS shell PID invisible to process.kill() — isProcessAlive would
-# auto-delete the marker on first read and break all Codex auto-discovery.
-
 cleanup() {
-  if kill -0 "$APP_SERVER_PID" >/dev/null 2>&1; then
-    kill "$APP_SERVER_PID" >/dev/null 2>&1 || true
-    wait "$APP_SERVER_PID" 2>/dev/null || true
+  if [ -n "$OWN_APP_SERVER" ] && kill -0 "$OWN_APP_SERVER" 2>/dev/null; then
+    kill "$OWN_APP_SERVER" >/dev/null 2>&1 || true
+    wait "$OWN_APP_SERVER" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT INT TERM
 
-if ! wait_for_port "$PORT"; then
-  echo "codex-aify could not reach the local app-server at $APP_SERVER_URL." >&2
-  echo "Check $LOG_FILE for details." >&2
-  exit 1
+if [ -z "$EXISTING_URL" ]; then
+  local_port="${APP_SERVER_URL##*:}"
+  if ! wait_for_port "$local_port"; then
+    echo "codex-aify could not reach the local app-server at $APP_SERVER_URL." >&2
+    echo "Check $LOG_FILE for details." >&2
+    exit 1
+  fi
 fi
 
 codex --remote "$APP_SERVER_URL" "$@"
-STATUS=$?
-exit "$STATUS"
 EOF
   chmod +x "$wrapper_path"
   install_windows_cmd_shim "codex-aify" "$wrapper_dir"
