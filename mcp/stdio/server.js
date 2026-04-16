@@ -475,9 +475,17 @@ async function reregisterAgentFromState(agentId, state) {
 
 function ensureDispatchLoop() {
   if (!IS_REMOTE || dispatchLoopTimer) return;
-  dispatchLoopTimer = setInterval(() => {
-    runDispatchLoop().catch((error) => console.error("[aify] dispatch loop error:", error));
-  }, DISPATCH_POLL_MS);
+  // Defer the first tick to let Codex finish its --remote WebSocket
+  // handshake and MCP initialization. Without this delay, heartbeat
+  // HTTP calls from the first poll fire during startup and can block
+  // the Node event loop, interfering with the MCP stdio pipe and
+  // causing TUI rendering freezes on Windows.
+  const STARTUP_DELAY_MS = 5000;
+  setTimeout(() => {
+    dispatchLoopTimer = setInterval(() => {
+      runDispatchLoop().catch((error) => console.error("[aify] dispatch loop error:", error));
+    }, DISPATCH_POLL_MS);
+  }, STARTUP_DELAY_MS);
 }
 
 async function runDispatchLoop() {
