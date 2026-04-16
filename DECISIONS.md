@@ -129,6 +129,14 @@ The old bridge stays alive and keeps polling (that's fine — polling is cheap) 
 
 **Consequence.** If an agent never runs a Bash tool call, it never checks for unread messages from the hook path. Agents should call `comms_inbox` explicitly at natural check-in points (start of a task, between major steps).
 
+## Claude channel bridge completes runs on delivery
+
+**Decision.** The `claude-channel.js` bridge claims a dispatch run, delivers the content to the Claude session via MCP notification, and immediately marks the run as `completed` with summary `"Delivered to Claude resident session"` — all in one poll tick.
+
+**Why.** Previously the channel bridge left runs in `running` state and polled for completion, but it had no way to know when Claude actually finished the work. Runs hung until the 2-hour timeout and blocked all subsequent dispatches for the agent, silently stalling multi-agent teams. The channel bridge cannot track Claude's progress — it fires a notification and hopes Claude acts on it. "Delivered" is the honest status; "running" was a lie.
+
+**Consequence.** Dispatch run history for Claude resident sessions shows `completed` immediately after delivery. The actual "did Claude do the work" tracking is via the message/reply flow (`comms_send` → `comms_inbox` → `comms_send` back with `inReplyTo`). Interrupt/steer controls for Claude resident sessions are not supported through the dispatch run — use `comms_send` instead.
+
 ## Dispatched runs do not auto-reply
 
 **Decision.** When a dispatched run completes, the server records `status` and `summary` on the run — it does not send a message back to the requester. If the requester wants a reply, the target has to explicitly call `comms_send(...)`.

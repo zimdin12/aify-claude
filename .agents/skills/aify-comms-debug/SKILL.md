@@ -129,7 +129,9 @@ On Windows, the installer creates both a Bash `claude-aify` and a `claude-aify.c
 
 **Symptom.** A dispatch is marked `running` but nothing is happening. `comms_run_interrupt` returns ok but the run never moves.
 
-**Cause.** The bridge that owned the run has died (crash, machine sleep, network drop). `comms_run_interrupt` works by enqueueing a control the owning bridge polls for — if the bridge is gone, no one claims the control.
+**Cause (Codex / managed workers).** The bridge that owned the run has died (crash, machine sleep, network drop). `comms_run_interrupt` works by enqueueing a control the owning bridge polls for — if the bridge is gone, no one claims the control.
+
+**Cause (Claude resident).** On older bridge code, the channel bridge claimed dispatch runs and left them `running` indefinitely — it had no way to track Claude's progress. On current code, the channel bridge completes runs immediately on delivery, so this failure mode no longer occurs for Claude agents. If you still see it, the bridge is running pre-fix code — `git pull` and restart `claude-aify`.
 
 **Auto-recovery (current build).** When a replacement bridge polls `/dispatch/claim` for the same agent, the server detects the stale run (owned by a different bridge) and marks it failed automatically. The next queued run is then claimed normally. No manual intervention is needed as long as a live bridge exists for the agent.
 
