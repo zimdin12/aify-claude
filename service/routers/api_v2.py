@@ -1525,13 +1525,25 @@ async def agent_last_read(agent_id: str, request: Request):
 
 @router.post("/agents/{agent_id}/heartbeat")
 async def agent_heartbeat(agent_id: str, request: Request):
-    """Lightweight heartbeat — called by notification hook to signal agent is alive."""
+    """Lightweight heartbeat — bridge poll loop calls this to signal liveness."""
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    bridge_id = str(body.get("bridgeId", "") or "").strip()
+    now = _now()
     db = await get_db()
     try:
         await db.execute(
             "UPDATE agents SET last_seen = ?, status = CASE WHEN status IN ('blocked','completed','working') THEN status ELSE 'active' END WHERE id = ?",
-            (_now(), agent_id)
+            (now, agent_id),
         )
+        if bridge_id:
+            await db.execute(
+                "UPDATE bridge_instances SET last_seen = ? WHERE id = ? AND agent_id = ?",
+                (now, bridge_id, agent_id),
+            )
         await db.commit()
         return {"ok": True}
     finally:
@@ -1813,76 +1825,44 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
             }
 
         agent_runtime = _normalize_runtime(agent["runtime"] or "generic")
+
+        # Update bridge liveness — the claim poll itself is the heartbeat.
+        if req.bridgeId:
+            await db.execute(
+                "UPDATE bridge_instances SET last_seen = ? WHERE id = ? AND agent_id = ?",
+                (_now(), req.bridgeId, req.agentId),
+            )
+
+        # Stale-run cleanup.
+        #
+        # The bridge-side gate (ACTIVE_RUNS in server.js) prevents a live
+        # bridge from calling /dispatch/claim while it has work in flight.
+        # Therefore: if this bridge IS calling claim, it has no local active
+        # run. Any DB-level "active" row for this agent is either:
+        #   (a) owned by THIS bridge (same bridgeId) — a bridge-side bug;
+        #       return blockedBy as a safety net.
+        #   (b) owned by a DIFFERENT bridge (or unowned) — stale by
+        #       definition, because the owning bridge would not be polling
+        #       if it were alive and busy. Clean it up and proceed.
         active_state = await _get_dispatch_state_for_agent(db, req.agentId)
         active_run = active_state.get("activeRun")
         if active_run:
-            if req.bridgeId and active_run.get("claimBridgeId") and active_run.get("claimBridgeId") != req.bridgeId:
-                if await _bridge_is_superseded(db, active_run["claimBridgeId"], req.agentId):
-                    finished_at = _now()
-                    await db.execute(
-                        """
-                        UPDATE dispatch_runs
-                        SET status = 'failed', error_text = ?, finished_at = ?
-                        WHERE id = ?
-                        """,
-                        (
-                            f'Run was owned by superseded bridge instance "{active_run["claimBridgeId"]}" and was replaced by "{req.bridgeId}"',
-                            finished_at,
-                            active_run["runId"],
-                        )
-                    )
-                    await _append_dispatch_event(
-                        db,
-                        active_run["runId"],
-                        "failed",
-                        f'Superseded bridge recovery: {active_run["claimBridgeId"]} -> {req.bridgeId}',
-                    )
-                    await _fail_pending_controls_for_run(
-                        db,
-                        active_run["runId"],
-                        handled_at=finished_at,
-                        response_text=f'Run was superseded by newer bridge "{req.bridgeId}" before the control could be handled.',
-                    )
-                    active_run = None
-                else:
-                    await db.commit()
-                    return {"ok": True, "run": None, "blockedBy": active_run}
-            elif req.bridgeId and not active_run.get("claimBridgeId"):
-                bridge_registered_at = await _bridge_registered_at(db, req.bridgeId, req.agentId)
-                active_started_at = active_run.get("startedAt") or active_run.get("requestedAt") or ""
-                if bridge_registered_at and active_started_at and active_started_at < bridge_registered_at:
-                    finished_at = _now()
-                    await db.execute(
-                        """
-                        UPDATE dispatch_runs
-                        SET status = 'failed', error_text = ?, finished_at = ?
-                        WHERE id = ?
-                        """,
-                        (
-                            f'Legacy active run without bridge ownership was superseded by bridge "{req.bridgeId}" registered at {bridge_registered_at}',
-                            finished_at,
-                            active_run["runId"],
-                        )
-                    )
-                    await _append_dispatch_event(
-                        db,
-                        active_run["runId"],
-                        "failed",
-                        f'Legacy bridge recovery: unowned run superseded by {req.bridgeId}',
-                    )
-                    await _fail_pending_controls_for_run(
-                        db,
-                        active_run["runId"],
-                        handled_at=finished_at,
-                        response_text=f'Legacy run was superseded by newer bridge "{req.bridgeId}" before the control could be handled.',
-                    )
-                    active_run = None
-                else:
-                    await db.commit()
-                    return {"ok": True, "run": None, "blockedBy": active_run}
-            else:
+            owner = (active_run.get("claimBridgeId") or "").strip()
+            if owner and owner == req.bridgeId:
                 await db.commit()
                 return {"ok": True, "run": None, "blockedBy": active_run}
+            finished_at = _now()
+            owner_label = owner or "unowned"
+            await db.execute(
+                "UPDATE dispatch_runs SET status = 'failed', error_text = ?, finished_at = ? WHERE id = ?",
+                (
+                    f'Stale run from bridge "{owner_label}" cleaned by live bridge "{req.bridgeId}" during claim poll',
+                    finished_at,
+                    active_run["runId"],
+                ),
+            )
+            await _append_dispatch_event(db, active_run["runId"], "failed", f"Stale run cleanup: {owner_label} -> {req.bridgeId}")
+            await _fail_pending_controls_for_run(db, active_run["runId"], handled_at=finished_at, response_text=f'Stale run cleaned by live bridge "{req.bridgeId}".')
         run_cursor = await db.execute(
             """
             SELECT * FROM dispatch_runs

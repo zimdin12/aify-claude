@@ -60,7 +60,7 @@ Do these steps in order:
 
 If another agent says you are not triggerable:
 
-- Claude: start the session with `claude-aify`, then re-register from that session with `runtime="claude-code"`. The bridge binds `claude-live` when **any** alive `claude-aify` wrapper is running on this machine — it does not have to be launched from the exact directory you `cd` into. If registration still reports `claude-needs-channel`, no `claude-aify` wrapper is alive; relaunch one.
+- Claude: start the session with `claude-aify`, then re-register from that session with `runtime="claude-code"`. Registration resolves to `claude-live` when any alive `claude-aify` wrapper is running on this machine — but **wake delivery is per-agent**: each Claude session runs its own channel bridge that polls only for its own agentId. Multiple Claude agents on the same machine do not cross-talk. If registration still reports `claude-needs-channel`, no `claude-aify` wrapper is alive; relaunch one.
 - Codex: if you want visible live wakeups, restart with `codex-aify`, then re-register from that exact live Codex session with `runtime="codex"`. If that still comes back as `message-only`, use the deterministic fallback from that same session: `comms_register(..., runtime="codex", sessionHandle="$CODEX_THREAD_ID")`. That explicit `sessionHandle` fallback is also the safest option when multiple `codex-aify` sessions are open on the same machine or the wrapper was launched from a different directory than the registered `cwd`. If aify still says the live binding is ambiguous, re-register from that same session with both `sessionHandle="$CODEX_THREAD_ID"` and `appServerUrl="$AIFY_CODEX_APP_SERVER_URL"`.
 - **If Codex dispatches keep failing with `AbsolutePathBuf deserialized without a base path` after an aify-comms update**, a stale background `codex-aify` bridge is almost certainly still polling and claiming runs. Closing one Codex tab is not enough — kill every `codex-aify` and `codex app-server` process, delete stale Codex runtime markers (`~/.local/state/aify-comms/runtime-markers/codex-*.json`), then launch a fresh `codex-aify` from the target project directory and re-register with explicit `cwd`, `sessionHandle`, and `appServerUrl`. See the full "Hard reset" sequence in [install.codex.md](../../../install.codex.md).
 - OpenCode: use `runtime="opencode"`. Managed workers work directly. Resident resume needs a real `sessionHandle`, so either register with one explicitly or use `comms_spawn_agent`.
@@ -72,7 +72,7 @@ Running multiple sessions on the same machine:
 
 | Runtime | Same project dir | Different project dirs |
 |---------|------------------|------------------------|
-| **claude-code** | OK — register each session with a distinct `agentId`. The bridge does not need one marker per cwd; any alive `claude-aify` wrapper on the machine enables `claude-live`. | OK |
+| **claude-code** | OK — register each session with a distinct `agentId`. Any alive `claude-aify` wrapper enables `claude-live` registration, but each session's channel bridge polls independently for its own agentId only — no cross-talk. | OK |
 | **codex** | Not reliable without explicit binding — the bridge sees ambiguous live markers and falls back to `message-only`. Fix: register with `sessionHandle="$CODEX_THREAD_ID"` and `appServerUrl="$AIFY_CODEX_APP_SERVER_URL"` from inside each session to bind each one deterministically. | OK |
 | **opencode** | OK with explicit `sessionHandle` per session. | OK |
 

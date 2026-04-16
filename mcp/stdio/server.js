@@ -488,6 +488,10 @@ async function runDispatchLoop() {
 
       const active = ACTIVE_RUNS.get(agentId);
       if (active) {
+        httpCall("POST", `/agents/${encodeURIComponent(agentId)}/heartbeat`, {
+          bridgeId: BRIDGE_INSTANCE_ID,
+          machineId: state.info.machineId || MACHINE_ID,
+        }).catch(() => {});
         await processRunControls(agentId, active).catch((error) => {
           console.error("[aify] control processing error:", error);
         });

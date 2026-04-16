@@ -132,7 +132,11 @@ On Windows, the installer creates both a Bash `claude-aify` and a `claude-aify.c
 
 **Cause.** The bridge that owned the run has died (crash, machine sleep, network drop). `comms_run_interrupt` works by enqueueing a control the owning bridge polls for — if the bridge is gone, no one claims the control.
 
-**Fix.** Cancel the run directly through the HTTP API:
+**Auto-recovery (current build).** When a replacement bridge polls `/dispatch/claim` for the same agent, the server detects the stale run (owned by a different bridge) and marks it failed automatically. The next queued run is then claimed normally. No manual intervention is needed as long as a live bridge exists for the agent.
+
+The original message that created the dispatch is still in the agent's inbox — message delivery is independent of dispatch tracking, so no content is lost when a run is failed by the stale-run cleanup.
+
+**Manual fix (if no bridge is polling).** Cancel the run directly through the HTTP API:
 
 ```bash
 curl -X PATCH http://localhost:8800/api/v1/dispatch/runs/<run_id> \
@@ -140,7 +144,7 @@ curl -X PATCH http://localhost:8800/api/v1/dispatch/runs/<run_id> \
   -d '{"status":"cancelled","error":"Bridge died, orphaned run"}'
 ```
 
-Afterwards, investigate why the bridge died and restart `claude-aify` / `codex-aify` as needed.
+Afterwards, restart `claude-aify` / `codex-aify` to bring a live bridge back online.
 
 ## `message-only` wake mode when you expected `codex-live`
 

@@ -31,6 +31,18 @@ Every agent registration resolves to one of these wake modes. `comms_agent_info`
 | `message-only` | No live wake path available. Messages still land in the inbox; dispatch cannot execute. |
 | `claude-needs-channel` | Claude agent is registered but no alive `claude-aify` wrapper exists on this machine. Fix: launch one. |
 
+## Stale-run cleanup replaces the active-run gate
+
+**Decision.** The `/dispatch/claim` endpoint no longer returns `blockedBy: activeRun` when the active run's owner is a different bridge from the one polling. Instead, it marks the stale run as failed inline and proceeds to hand out queued work. The only `blockedBy` case that remains is the safety-net: if the active run is owned by the *same* bridge that's polling, something is wrong on the bridge side and the server blocks.
+
+**Why.** The previous behavior had a ~60-line tree of heuristics (superseded-bridge check, timestamp comparison, legacy-unowned detection) that tried to distinguish "genuinely busy" from "stale orphan" based on bridge_instances metadata. These heuristics had timing gaps: if a bridge died and a replacement registered slightly before the dead bridge's last claim, the timestamp comparison failed and the stale run permanently blocked all wake delivery for that agent.
+
+The structural insight that eliminates the heuristics: the bridge-side gate in `server.js` prevents a live bridge from calling `/dispatch/claim` while it has work in flight. Therefore, if a bridge IS calling claim, it has no local active run. Any DB-level "active" row for that agent owned by a *different* bridge is definitionally stale — the owning bridge is dead or has been replaced. No liveness signal, heartbeat, or timing comparison is needed to reach this conclusion.
+
+**Bridge liveness as heartbeat.** As a side effect of every `/dispatch/claim` call, the server now updates `bridge_instances.last_seen`. When a bridge has an active run and skips the claim path, it calls `/agents/{id}/heartbeat` instead. This makes `last_seen` a reliable liveness signal for dashboard display without using it as a gate.
+
+**Failed messages stay in inbox.** When a stale run is cleaned up, the original message that created the dispatch is still in the agent's inbox. The agent can read and act on it via `comms_inbox` even though the tracked dispatch run was marked failed. No message content is lost.
+
 ## Dispatch buffering (cap 10)
 
 **Decision.** When an agent is already running a dispatch and the same sender tries to queue another, new dispatches are merged into one pending buffered run instead of stacking. The buffer caps at 10 items; past that, new dispatches are rejected with `reason: "buffer_full"` in `notStarted`.
@@ -57,7 +69,9 @@ Every agent registration resolves to one of these wake modes. `comms_agent_info`
 
 **Why the asymmetry.** Claude's resident-wake path only needs the channel bridge to be loaded into *any* Claude session — it's a process-level wake, not a per-thread one. Codex's resident-wake path binds to a specific `codex app-server` WebSocket URL owned by a specific `codex-aify` wrapper; picking the wrong wrapper means the wake goes to a different Codex session than the one the user registered.
 
-**Practical consequence.** In multi-tab Claude setups on the same machine, everything Just Works. In multi-tab Codex setups, you need to register each tab with explicit `sessionHandle="$CODEX_THREAD_ID"` and `appServerUrl="$AIFY_CODEX_APP_SERVER_URL"` from inside that tab.
+**Clarification: wake delivery is per-agent, not per-machine.** The "any alive wrapper" fallback is about *registration*: whether the agent gets `claude-live` or `claude-needs-channel` as its wake mode. Once registered, each Claude session runs its own `claude-channel.js` instance that polls `/dispatch/claim` for only its own agentId. Multiple Claude agents on the same machine do not cross-talk and do not share a wake binding.
+
+**Practical consequence.** In multi-tab Claude setups on the same machine, everything Just Works — each tab registers a distinct agentId and receives only its own dispatches. In multi-tab Codex setups, you need to register each tab with explicit `sessionHandle="$CODEX_THREAD_ID"` and `appServerUrl="$AIFY_CODEX_APP_SERVER_URL"` from inside that tab.
 
 ## Codex path format is chosen from connection type, not from the launcher
 
