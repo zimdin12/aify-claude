@@ -42,7 +42,12 @@ process.on("exit", removeOwnMarker);
 process.on("SIGINT", () => { removeOwnMarker(); process.exit(130); });
 process.on("SIGTERM", () => { removeOwnMarker(); process.exit(143); });
 
-let activeRunId = "";
+// No activeRunId tracking. The channel bridge claims a dispatch, delivers
+// it to the Claude session via MCP notification, and immediately marks the
+// run as completed in the same tick. Previously the bridge left runs in
+// "running" state indefinitely — it has no way to track whether Claude
+// actually processed the work, so runs hung until the 2-hour timeout and
+// blocked all subsequent dispatches for the agent.
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -96,10 +101,10 @@ function dispatchContent(agentId, run) {
     `Priority: ${run.priority || "normal"}`,
     run.messageId ? `Message ID: ${run.messageId}` : "",
     "",
-    "Treat this as a real wake-up event for the existing Claude session.",
-    "Do the requested work directly in this session.",
+    "Treat this as a real wake-up event for the current session.",
+    "Do the requested work directly.",
     run.messageId
-      ? `When you reply through aify, include inReplyTo="${run.messageId}" so the resident dispatch run closes automatically.`
+      ? `When you reply, include inReplyTo="${run.messageId}" so the sender sees your response linked to their original message.`
       : "Reply through aify when the task is done.",
     "",
     "Task body:",
@@ -109,24 +114,9 @@ function dispatchContent(agentId, run) {
   ].filter(Boolean).join("\n");
 }
 
-function controlContent(agentId, runId, control) {
-  const body = String(control.body || "").replace(/```/g, "'''");
-  const lines = [
-    `Aify control event for agent "${agentId}".`,
-    `Run ID: ${runId}`,
-    `Action: ${control.action}`,
-    control.from ? `Requested by: ${control.from}` : "",
-  ];
-  if (body) {
-    lines.push("", "Control body:", "```", body, "```");
-  }
-  if (control.action === "interrupt") {
-    lines.push("", "Stop the current aify task for this run as soon as practical, then send a brief status or result reply.");
-  } else if (control.action === "steer") {
-    lines.push("", "Apply this new guidance to the current aify task.");
-  }
-  return lines.filter(Boolean).join("\n");
-}
+// controlContent removed — the channel bridge no longer tracks active runs,
+// so there's nothing to send controls to. Interrupt/steer for Claude
+// resident sessions should be done via comms_send instead.
 
 const mcp = new Server(
   { name: "aify-comms-channel", version: "3.6.6" },
@@ -166,58 +156,31 @@ async function pollLoop() {
         continue;
       }
 
-      if (activeRunId) {
-        const runStatus = await httpCall("GET", `/dispatch/runs/${encodeURIComponent(activeRunId)}`);
-        const run = runStatus?.run;
-        if (!run || ["completed", "failed", "cancelled"].includes(run.status)) {
-          activeRunId = "";
-        }
-      }
-
-      if (!activeRunId) {
-        const claim = await httpCall("POST", "/dispatch/claim", {
-          agentId,
-          machineId: MACHINE_ID,
-          executionModes: ["resident"],
+      // Claim → deliver → complete in one tick. No "running" state to hang.
+      const claim = await httpCall("POST", "/dispatch/claim", {
+        agentId,
+        machineId: MACHINE_ID,
+        bridgeId: `channel-${MACHINE_ID}`,
+        executionModes: ["resident"],
+      });
+      if (claim?.run && claim.run.executionMode === "resident") {
+        const runId = claim.run.id;
+        await emitChannel(dispatchContent(agentId, claim.run), {
+          event_type: "dispatch",
+          agent_id: agentId,
+          run_id: runId,
+          from_agent: claim.run.from || "",
+          message_id: claim.run.messageId || "",
+          priority: claim.run.priority || "normal",
         });
-        if (claim?.run && claim.run.executionMode === "resident") {
-          activeRunId = claim.run.id;
-          await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(claim.run.id)}`, {
-            status: "running",
-            runtime: "claude-code",
-            agentStatus: "working",
-            appendEvent: "Delivered to Claude resident channel",
-            eventType: "runtime",
-          });
-          await emitChannel(dispatchContent(agentId, claim.run), {
-            event_type: "dispatch",
-            agent_id: agentId,
-            run_id: claim.run.id,
-            from_agent: claim.run.from || "",
-            message_id: claim.run.messageId || "",
-            priority: claim.run.priority || "normal",
-          });
-        }
-      }
-
-      if (activeRunId) {
-        const controlClaim = await httpCall("POST", "/dispatch/controls/claim", {
-          agentId,
-          runId: activeRunId,
-          machineId: MACHINE_ID,
+        await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(runId)}`, {
+          status: "completed",
+          summary: "Delivered to Claude resident session",
+          runtime: "claude-code",
+          agentStatus: "active",
+          appendEvent: "Delivered and completed by channel bridge",
+          eventType: "delivered",
         });
-        for (const control of controlClaim?.controls || []) {
-          await emitChannel(controlContent(agentId, activeRunId, control), {
-            event_type: "control",
-            agent_id: agentId,
-            run_id: activeRunId,
-            action: control.action || "",
-          });
-          await httpCall("PATCH", `/dispatch/controls/${encodeURIComponent(control.id)}`, {
-            status: "completed",
-            response: "Delivered to Claude resident session",
-          });
-        }
       }
     } catch (error) {
       console.error("[aify-channel] tick error:", error?.message || String(error));
