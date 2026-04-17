@@ -728,20 +728,19 @@ async def _find_mergeable_queued_run(
     recipient_id: str,
     from_agent: str,
 ):
+    # Merge across ALL senders, not just the same sender. The merged body
+    # includes sender attribution per item so the recipient knows who sent
+    # what. Oldest message at the top, newest at the bottom.
     cursor = await db.execute(
         """
         SELECT *
         FROM dispatch_runs
         WHERE target_agent = ?
           AND status = 'queued'
-          AND from_agent = ?
         ORDER BY requested_at ASC
         LIMIT 1
         """,
-        (
-            recipient_id,
-            from_agent,
-        ),
+        (recipient_id,),
     )
     return await cursor.fetchone()
 
