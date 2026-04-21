@@ -1471,32 +1471,8 @@ server.tool(
   }
 );
 
-server.tool(
-  "comms_run_steer",
-  "Request additional guidance for an active dispatched run. The target runtime will apply it if steer is supported.",
-  {
-    runId: z.string().describe("Dispatch run ID"),
-    body: z.string().describe("Additional steering instructions"),
-    from: z.string().optional().describe("Requesting agent ID"),
-  },
-  async ({ runId, body, from }) => {
-    if (!IS_REMOTE) {
-      return { content: [{ type: "text", text: "Run control is only available in remote server mode." }], isError: true };
-    }
-    try {
-      const r = await httpCall("POST", `/dispatch/runs/${encodeURIComponent(runId)}/control`, {
-        from_agent: from || "",
-        action: "steer",
-        body,
-      });
-      return {
-        content: [{ type: "text", text: `Steer requested for ${runId}. Control ID: ${r.controlId}` }],
-      };
-    } catch (error) {
-      return { content: [{ type: "text", text: error.message }], isError: true };
-    }
-  }
-);
+// comms_run_steer removed — replaced by comms_send(steer=true) which
+// doesn't require knowing the runId and also creates an inbox message.
 
 /**
  * Spawn a local runtime instance to handle a triggered message.

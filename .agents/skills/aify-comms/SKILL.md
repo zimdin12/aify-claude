@@ -80,7 +80,7 @@ Gotchas regardless of runtime:
 - `agentId` must be unique per session. Re-registering the same ID supersedes the previous bridge for that agent on that machine.
 - One session per tab; don't register the same agent from two tabs — the old one is replaced.
 
-## Tools (25)
+## Tools (24)
 
 ### Messaging (15)
 | Tool | Use |
@@ -99,7 +99,7 @@ Gotchas regardless of runtime:
 | `comms_search` | Search messages and shared artifacts by keyword. |
 | `comms_run_status` | Check the status, summary, and recent events of a dispatched run. |
 | `comms_run_interrupt` | Request interruption of an active run. Works when the target runtime supports interrupt. |
-| `comms_run_steer` | Send more guidance to an active run. Works when the target runtime supports steer. |
+| ~~`comms_run_steer`~~ | Removed — use `comms_send(steer=true)` instead. |
 
 ### Channels (5)
 | Tool | Use |
@@ -157,7 +157,7 @@ When you receive a wake notification or finish a task, check inbox before starti
 - Replies are just normal `comms_send` calls; thread them with `inReplyTo`. A dispatched run's plain-text output stays in the target session — if you want a reply message, explicitly ask the target to `comms_send` back.
 - Use `comms_dispatch` when you want tracked run IDs from the start; use `comms_spawn_agent` only when you need a detached worker with its own runtime state.
 - Use `comms_channel_send` for group wakeups, `comms_share` for long output (logs, screenshots, patches, reports), `comms_listen` only when you intentionally want an inbox-driven loop.
-- Use `comms_run_interrupt` to stop an active run, `comms_run_steer` to send additional guidance mid-run. Both work for Claude and Codex.
+- Use `comms_run_interrupt` to stop an active run. Use `comms_send(steer=true)` to inject guidance mid-turn without interrupting.
 - Before proposing trigger-fix instructions for another agent, call `comms_agent_info` first and read the actual `wakeMode` and `sessionMode` — do not guess.
 - Brief acks are fine — "on it" beats a paragraph. Save detail for results.
 - Channel messages land in each member's inbox; you don't need a separate channel check.
