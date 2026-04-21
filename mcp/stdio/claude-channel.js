@@ -169,14 +169,16 @@ async function pollLoop() {
         continue;
       }
 
-      // Claim → deliver → complete in one tick. No "running" state to hang.
-      const claim = await httpCall("POST", "/dispatch/claim", {
-        agentId,
-        machineId: MACHINE_ID,
-        bridgeId: `channel-${MACHINE_ID}`,
-        executionModes: ["resident"],
-      });
-      if (claim?.run && claim.run.executionMode === "resident") {
+      // Drain all queued dispatches in one tick — don't make the agent
+      // wait 3 seconds between each message.
+      for (let i = 0; i < 20; i++) {
+        const claim = await httpCall("POST", "/dispatch/claim", {
+          agentId,
+          machineId: MACHINE_ID,
+          bridgeId: `channel-${MACHINE_ID}`,
+          executionModes: ["resident"],
+        });
+        if (!claim?.run || claim.run.executionMode !== "resident") break;
         const runId = claim.run.id;
         await emitChannel(dispatchContent(agentId, claim.run), {
           event_type: "dispatch",
