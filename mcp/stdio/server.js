@@ -528,39 +528,50 @@ async function runDispatchLoop() {
       const executionModes = supportedExecutionModes(state.info);
       if (!executionModes.length) continue;
 
-      let claim;
-      try {
-        claim = await httpCall("POST", "/dispatch/claim", {
-          agentId,
-          machineId: state.info.machineId || MACHINE_ID,
-          bridgeId: BRIDGE_INSTANCE_ID,
-          executionModes,
-        });
-        CONSECUTIVE_FAILURES.set(agentId, 0);
-      } catch (error) {
-        // Auto-recover from persistent failures. 404 means the agent was
-        // removed from the server (e.g. via comms_clear or a DELETE) —
-        // re-register immediately. For other errors, count consecutive
-        // failures and re-register after a threshold so transient network
-        // blips don't trigger unnecessary churn.
-        if (error?.status === 404) {
-          console.error(`[aify] dispatch/claim 404 for "${agentId}"; auto-re-registering`);
-          await reregisterAgentFromState(agentId, state);
+      // Claim all available dispatches and merge into one turn. The server
+      // queues messages one by one as they arrive; the bridge batches them
+      // for delivery so the agent sees everything at once. Symmetric with
+      // the Claude channel bridge's batch notification.
+      const batchedRuns = [];
+      for (let i = 0; i < 20; i++) {
+        let claim;
+        try {
+          claim = await httpCall("POST", "/dispatch/claim", {
+            agentId,
+            machineId: state.info.machineId || MACHINE_ID,
+            bridgeId: BRIDGE_INSTANCE_ID,
+            executionModes,
+          });
           CONSECUTIVE_FAILURES.set(agentId, 0);
-          continue;
+        } catch (error) {
+          if (error?.status === 404) {
+            console.error(`[aify] dispatch/claim 404 for "${agentId}"; auto-re-registering`);
+            await reregisterAgentFromState(agentId, state);
+            CONSECUTIVE_FAILURES.set(agentId, 0);
+          } else {
+            const count = (CONSECUTIVE_FAILURES.get(agentId) || 0) + 1;
+            CONSECUTIVE_FAILURES.set(agentId, count);
+            if (count >= AUTO_REREGISTER_AFTER_FAILURES) {
+              console.error(`[aify] ${count} consecutive dispatch/claim failures for "${agentId}" (last: ${error?.message || error}); attempting auto-re-register`);
+              await reregisterAgentFromState(agentId, state);
+              CONSECUTIVE_FAILURES.set(agentId, 0);
+            }
+          }
+          break;
         }
-        const count = (CONSECUTIVE_FAILURES.get(agentId) || 0) + 1;
-        CONSECUTIVE_FAILURES.set(agentId, count);
-        if (count >= AUTO_REREGISTER_AFTER_FAILURES) {
-          console.error(`[aify] ${count} consecutive dispatch/claim failures for "${agentId}" (last: ${error?.message || error}); attempting auto-re-register`);
-          await reregisterAgentFromState(agentId, state);
-          CONSECUTIVE_FAILURES.set(agentId, 0);
-        }
-        continue;
+        if (!claim?.run) break;
+        batchedRuns.push(claim.run);
       }
-      if (!claim?.run) continue;
+      if (!batchedRuns.length) continue;
 
-      const run = claim.run;
+      const run = batchedRuns[0];
+      if (batchedRuns.length > 1) {
+        const extras = batchedRuns.slice(1).map((r, i) =>
+          `--- Message ${i + 2} of ${batchedRuns.length} ---\nFrom: ${r.from}\nSubject: ${r.subject}\n${r.body || ""}`
+        ).join("\n\n");
+        run.body = `${run.body || ""}\n\n${extras}`;
+        run.subject = `${batchedRuns.length} messages (latest: ${run.subject})`;
+      }
       const runtime = normalizeRuntime(state.info.runtime || "generic");
       if (run.requestedRuntime && normalizeRuntime(run.requestedRuntime) !== runtime) {
         await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, {
@@ -1220,8 +1231,9 @@ server.tool(
     inReplyTo: z.string().optional().describe("Message ID this replies to"),
     trigger: z.boolean().optional().describe("Legacy override for active dispatch behavior"),
     silent: z.boolean().optional().describe("When true, send only a message and do not request active dispatch"),
+    steer: z.boolean().optional().describe("When true and target is busy, deliver between tool calls instead of queuing for after current work"),
   },
-  async ({ from, to, toRole, type, subject, body, priority, inReplyTo, trigger, silent }) => {
+  async ({ from, to, toRole, type, subject, body, priority, inReplyTo, trigger, silent, steer }) => {
     if (!to && !toRole) {
       return { content: [{ type: "text", text: "Error: need 'to' or 'toRole'" }], isError: true };
     }
@@ -1230,7 +1242,7 @@ server.tool(
     // -- Remote mode --
     if (IS_REMOTE) {
       const r = await httpCall("POST", "/messages/send", {
-        from_agent: from, to, toRole, type, subject, body, priority: priority || "normal", inReplyTo, trigger: shouldTrigger,
+        from_agent: from, to, toRole, type, subject, body, priority: priority || "normal", inReplyTo, trigger: shouldTrigger, steer: steer || false,
       });
       if (!r.ok) return { content: [{ type: "text", text: r.error || "No recipients found." }] };
 
@@ -2173,15 +2185,16 @@ server.tool(
     priority: z.enum(["normal", "high", "urgent"]).optional().describe("Message priority (default: normal)"),
     trigger: z.boolean().optional().describe("Legacy override for active dispatch behavior"),
     silent: z.boolean().optional().describe("When true, send only the channel post and do not request active dispatch"),
+    steer: z.boolean().optional().describe("When true and members are busy, deliver between tool calls instead of queuing"),
   },
-  async ({ channel, from, body, type, priority, trigger, silent }) => {
+  async ({ channel, from, body, type, priority, trigger, silent, steer }) => {
     try { validateName(channel, "channel name"); } catch (e) { return { content: [{ type: "text", text: e.message }], isError: true }; }
     const shouldTrigger = silent === true ? false : (trigger !== false);
     const subject = `#${channel}: ${body.slice(0, 80)}`;
 
     if (IS_REMOTE) {
       const r = await httpCall("POST", `/channels/${encodeURIComponent(channel)}/send`, {
-        from_agent: from, channel, body, type: type || "info", priority: priority || "normal", trigger: shouldTrigger, silent: silent === true,
+        from_agent: from, channel, body, type: type || "info", priority: priority || "normal", trigger: shouldTrigger, silent: silent === true, steer: steer || false,
       });
       if (shouldTrigger && (r.dispatchRuns?.length || r.notStarted?.length)) {
         const queued = (r.dispatchRuns || []).map((x) => formatQueuedRun(x));

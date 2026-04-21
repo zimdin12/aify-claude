@@ -42,6 +42,7 @@ class MessageSend(BaseModel):
     priority: str = "normal"
     inReplyTo: Optional[str] = None
     trigger: bool = False
+    steer: bool = False
 
 
 class AgentRuntimeStateUpdate(BaseModel):
@@ -76,6 +77,7 @@ class DispatchRequest(BaseModel):
     mode: str = "start_if_possible"
     createMessage: bool = True
     requestedRuntime: Optional[str] = None
+    steer: bool = False
 
 
 class DispatchClaimRequest(BaseModel):
@@ -135,6 +137,7 @@ class ChannelMessage(BaseModel):
     priority: str = "normal"
     trigger: bool = True
     silent: bool = False
+    steer: bool = False
 
 
 class ChannelJoin(BaseModel):

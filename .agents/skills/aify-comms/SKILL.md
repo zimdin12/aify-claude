@@ -153,7 +153,7 @@ When you receive a wake notification or finish a task, check inbox before starti
 
 ## Working With Other Agents
 
-- `comms_send` and `comms_channel_send` wake the recipient by default. Pass `silent=true` only for genuinely background delivery.
+- `comms_send` and `comms_channel_send` wake the recipient by default. Pass `silent=true` for inbox-only delivery. Pass `steer=true` to deliver between tool calls if the target is busy (instead of queuing for after current work).
 - Replies are just normal `comms_send` calls; thread them with `inReplyTo`. A dispatched run's plain-text output stays in the target session — if you want a reply message, explicitly ask the target to `comms_send` back.
 - Use `comms_dispatch` when you want tracked run IDs from the start; use `comms_spawn_agent` only when you need a detached worker with its own runtime state.
 - Use `comms_channel_send` for group wakeups, `comms_share` for long output (logs, screenshots, patches, reports), `comms_listen` only when you intentionally want an inbox-driven loop.

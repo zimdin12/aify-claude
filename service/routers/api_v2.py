@@ -759,10 +759,34 @@ async def _create_dispatch_runs(
     execution_mode: str,
     requested_runtime: Optional[str],
     message_id: Optional[str] = None,
+    steer: bool = False,
 ):
     runs = []
     requested_at = _now()
     for recipient_id in recipients:
+        # steer=true: if target has an active run, deliver as a steer
+        # control on that run (injected between tool calls) instead of
+        # queuing a new dispatch. Symmetric for Claude and Codex.
+        if steer:
+            active_state = await _get_dispatch_state_for_agent(db, recipient_id)
+            active_run = active_state.get("activeRun")
+            if active_run:
+                steer_body = f"[Message from {from_agent}]\nSubject: {subject}\n\n{body}"
+                control_id = await _append_dispatch_control(
+                    db,
+                    active_run["runId"],
+                    from_agent=from_agent,
+                    action="steer",
+                    body=steer_body,
+                )
+                runs.append({
+                    "runId": active_run["runId"],
+                    "targetAgentId": recipient_id,
+                    "status": "steered",
+                    "controlId": control_id,
+                })
+                continue
+
         mergeable_run = await _find_mergeable_queued_run(
             db,
             recipient_id=recipient_id,
@@ -1312,6 +1336,7 @@ async def send_message(req: MessageSend, request: Request):
                 execution_mode="managed",
                 requested_runtime=None,
                 message_id=msg_id if len(recipients) == 1 else None,
+                steer=req.steer,
             )
             for run, (_, execution_mode) in zip(dispatch_runs, launchable_recipients):
                 if run.get("rejected"):
@@ -1748,6 +1773,7 @@ async def create_dispatch(req: DispatchRequest, request: Request):
                 execution_mode="managed",
                 requested_runtime=req.requestedRuntime,
                 message_id=message_id if len(recipients) == 1 else None,
+                steer=req.steer,
             )
             for run, (_, execution_mode) in zip(runs, launchable_recipients):
                 if run.get("rejected"):
@@ -2643,6 +2669,7 @@ async def send_channel_message(name: str, req: ChannelMessage, request: Request)
                 execution_mode="managed",
                 requested_runtime=None,
                 message_id=inbox_message_ids.get(recipients[0]) if len(recipients) == 1 else None,
+                steer=req.steer,
             )
             for run, (_, execution_mode) in zip(dispatch_runs, launchable_recipients):
                 await db.execute(
