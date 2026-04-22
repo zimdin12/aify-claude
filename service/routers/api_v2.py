@@ -1473,8 +1473,10 @@ async def get_inbox(
                         "INSERT OR IGNORE INTO read_receipts (message_id, agent_id, read_at) VALUES (?,?,?)",
                         (msg["id"], agent_id, now)
                     )
-            # Complete any dispatch runs linked to messages we just read.
-            # The message was delivered and read — the dispatch's job is done.
+            # Complete stuck dispatch runs linked to messages we just read.
+            # Only claimed/running (stuck from dead bridges) — NOT queued.
+            # Queued dispatches should be left for the bridge to claim and
+            # execute as a turn. Completing them here would prevent the wake.
             if unread_found > 0:
                 read_msg_ids = [msg["id"] for msg in messages if not msg["read"]]
                 for msg_id in read_msg_ids:
@@ -1482,7 +1484,7 @@ async def get_inbox(
                         """
                         UPDATE dispatch_runs
                         SET status = 'completed', summary = 'Message read via inbox', finished_at = ?
-                        WHERE message_id = ? AND target_agent = ? AND status IN ('queued', 'claimed', 'running')
+                        WHERE message_id = ? AND target_agent = ? AND status IN ('claimed', 'running')
                         """,
                         (now, msg_id, agent_id),
                     )
