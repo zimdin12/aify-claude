@@ -46,8 +46,22 @@ export function detectCodexResumeFailure(error) {
 // (Codex accepts `C:/foo` on Windows; on Linux the replace is a no-op).
 // When appServerUrl is empty, we're spawning our own Codex via launcher,
 // so defer to the legacy launcher-dispatched transform.
+//
+// Extra: on Linux, a Windows-style cwd like `C:/Users/...` must be converted
+// to `/mnt/c/Users/...` because Rust's Path::is_absolute() rejects it.
+// This happens when an agent registered from Windows but the dispatch runs
+// on a Linux/WSL bridge.
+function ensureNativePath(cwd) {
+  const normalized = cwd.replace(/\\/g, "/");
+  if (process.platform !== "win32") {
+    const match = normalized.match(/^([A-Za-z]):\/(.*)$/);
+    if (match) return `/mnt/${match[1].toLowerCase()}/${match[2]}`;
+  }
+  return normalized;
+}
+
 export function resolveCodexRequestCwdFor({ hostCwd, appServerUrl, legacyTransform }) {
   const raw = String(hostCwd || "");
-  if (appServerUrl) return raw.replace(/\\/g, "/");
+  if (appServerUrl) return ensureNativePath(raw);
   return legacyTransform(raw);
 }
