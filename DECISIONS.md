@@ -43,6 +43,14 @@ The structural insight that eliminates the heuristics: the bridge-side gate in `
 
 **Failed messages stay in inbox.** When a stale run is cleaned up, the original message that created the dispatch is still in the agent's inbox. The agent can read and act on it via `comms_inbox` even though the tracked dispatch run was marked failed. No message content is lost.
 
+## Steer requests are message-backed and stale-safe
+
+**Decision.** `comms_send(..., steer=true)` still writes the inbox message first. If the target already has a live active run on a steer-capable runtime, the server appends a steer control to that run and records the source inbox message ID. When the bridge later marks the control `completed`, the inbox copy is auto-marked read. If the only active run is owned by a superseded bridge, the server fails that stale run inline and falls back to a normal queued dispatch instead of steering into dead state.
+
+**Why.** Steering is advisory work-routing, not a separate message transport. The sender still expects an auditable inbox record. Before this fix, steer results could look like "queued behind active run `<same run id>`", and a steer sent while the DB still pointed at a dead bridge could disappear into a stale control queue. Recording the source message ID and treating superseded active runs as stale before steering eliminates both failure modes.
+
+**Consequence.** A successful live steer no longer leaves an unread inbox copy behind. If the active run was stale, you may see that older run fail with an auto-heal summary while the new message queues normally for the replacement bridge.
+
 ## Dispatch buffering (cap 10)
 
 **Decision.** When an agent is already running a dispatch and the same sender tries to queue another, new dispatches are merged into one pending buffered run instead of stacking. The buffer caps at 10 items; past that, new dispatches are rejected with `reason: "buffer_full"` in `notStarted`.
@@ -82,6 +90,20 @@ The structural insight that eliminates the heuristics: the bridge-side gate in `
 **Why the connection type and not the platform.** Linux users running `codex-aify` have no launcher drama (their `defaultCodexCommand()` is `codex`, not `wsl.exe`), and their managed-worker path already does the right thing. Only the interaction of (Windows host) × (codex-aify resident path) × (legacy launcher-derived transform) produced the bug, and the discriminator that cleanly separates the fix case from the pass-through case is whether we connect to an existing app-server vs spawn our own.
 
 **Regression coverage.** `mcp/stdio/tests/codex-cwd-transform.test.js` asserts: resident (appServerUrl set) on Windows produces `C:/...`; managed (no appServerUrl) on Windows keeps the legacy `/mnt/c/...` output; Linux is unchanged; mixed-separator inputs collapse to a single form. `npm test` runs it with the other bridge tests.
+
+## Backend rejects impossible live Codex cwd/machine combinations
+
+**Decision.** `POST /agents` rejects resident Codex registrations that include an `appServerUrl` but pair an obviously wrong cwd format with the reported host family: `linux:` / `darwin:` machine IDs may not register drive-letter cwds like `C:/repo`, and `win32:` machine IDs may not register WSL-style `/mnt/c/repo` cwds.
+
+**Why.** Those records are not just "suboptimal"; they are structurally broken for resident dispatch. A Linux/WSL Codex app-server cannot safely consume a Windows drive-letter cwd, and a native Windows Codex app-server cannot safely consume a `/mnt/...` cwd. Before this guard, the bad record looked healthy until the first dispatch failed deep inside Codex with `AbsolutePathBuf deserialized without a base path`, which was noisy, delayed, and easy to misdiagnose as a queue bug or stale bridge race.
+
+**Scope.** The guard is intentionally narrow. It only applies to resident Codex registrations with a live `appServerUrl`, because that is the case where the backend knows the agent is binding to an existing host-native Codex app-server. Managed workers and non-live registrations keep the old behavior.
+
+## Channel history is canonical-only
+
+**Decision.** Channel read endpoints (`GET /channels`, `GET /channels/{name}`) count and return only canonical channel rows (`to_agent IS NULL`). Per-member inbox fan-out rows are not part of channel history.
+
+**Why.** Channel send writes one canonical row plus one inbox delivery row per recipient. Treating both as channel history duplicated every logical post in the UI and MCP reads, inflated message counts, and made channels look noisy even when delivery worked correctly. Canonical-only reads preserve the actual conversation while leaving inbox fan-out intact for unread counts and wake delivery.
 
 ## Corrupt Codex rollouts auto-heal instead of failing forever
 
@@ -129,13 +151,13 @@ The old bridge stays alive and keeps polling (that's fine — polling is cheap) 
 
 **Consequence.** If an agent never runs a Bash tool call, it never checks for unread messages from the hook path. Agents should call `comms_inbox` explicitly at natural check-in points (start of a task, between major steps).
 
-## Claude channel bridge completes runs on delivery
+## Claude channel bridge completes runs only after delivery succeeds
 
-**Decision.** The `claude-channel.js` bridge claims a dispatch run, delivers the content to the Claude session via MCP notification, and immediately marks the run as `completed` with summary `"Delivered to Claude resident session"` — all in one poll tick.
+**Decision.** The `claude-channel.js` bridge claims a dispatch run, attempts delivery to the Claude session via MCP notification, and marks the run as `completed` only after the notification succeeds. If delivery throws, the bridge marks the run as `failed` instead of pretending it completed.
 
-**Why.** Previously the channel bridge left runs in `running` state and polled for completion, but it had no way to know when Claude actually finished the work. Runs hung until the 2-hour timeout and blocked all subsequent dispatches for the agent, silently stalling multi-agent teams. The channel bridge cannot track Claude's progress — it fires a notification and hopes Claude acts on it. "Delivered" is the honest status; "running" was a lie.
+**Why.** The older "leave it running" model was wrong because the bridge cannot observe Claude's progress, so runs hung for hours. But marking the run `completed` before the notification actually fired was also wrong: a failed notification silently dropped work while the server claimed success. "Delivered" is only honest after the notification call returns successfully.
 
-**Consequence.** Dispatch run history for Claude resident sessions shows `completed` immediately after delivery. The actual "did Claude do the work" tracking is via the message/reply flow (`comms_send` → `comms_inbox` → `comms_send` back with `inReplyTo`). Interrupt/steer controls for Claude resident sessions are not supported through the dispatch run — use `comms_send` instead.
+**Consequence.** Dispatch run history for Claude resident sessions still shows `completed` immediately after successful delivery, but failed notification attempts now surface as failed runs instead of false positives. The actual "did Claude do the work" tracking remains the message/reply flow (`comms_send` → `comms_inbox` → `comms_send` back with `inReplyTo`). Interrupt/steer controls for Claude resident sessions are not supported through the dispatch run — use `comms_send` instead.
 
 ## Dispatched runs do not auto-reply
 

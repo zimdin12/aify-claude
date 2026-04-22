@@ -6,7 +6,7 @@
 //   comms_register, comms_spawn_agent, comms_agents, comms_status, comms_describe, comms_send, comms_dispatch, comms_inbox, comms_search,
 //   comms_share, comms_read, comms_files,
 //   comms_channel_create, comms_channel_join, comms_channel_send, comms_channel_read, comms_channel_list,
-//   comms_agent_info, comms_listen, comms_unsend, comms_run_status, comms_run_interrupt, comms_run_steer,
+//   comms_agent_info, comms_listen, comms_unsend, comms_run_status, comms_run_interrupt,
 //   comms_clear, comms_dashboard
 //
 // Modes:
@@ -355,6 +355,14 @@ function formatDispatchState(info = {}) {
 
 function formatQueuedRun(run = {}) {
   let text = `${run.targetAgentId} (${run.runId})`;
+  if (run.steered || run.status === "steered") {
+    const target = run.steeredIntoActiveRun || {};
+    text += ` steered into active run ${target.runId || run.runId}`;
+    if (target.subject) {
+      text += ` (${target.subject})`;
+    }
+    return text;
+  }
   if (run.merged && Number(run.mergedCount || 0) > 1) {
     text += ` buffered ${run.mergedCount} updates`;
   }
@@ -935,7 +943,7 @@ server.tool(
     registry.agents[agentId] = {
       role,
       name: name || agentId,
-      cwd: agentCwd,
+      cwd: resolvedCwd,
       model: model || "",
       instructions: instructions || "",
       runtime: resolvedRuntime,
@@ -956,7 +964,7 @@ server.tool(
       content: [{
         type: "text",
         text:
-          `Registered "${agentId}" (${resolvedSessionMode}, role: ${role}, cwd: ${agentCwd}, runtime: ${resolvedRuntime}).` +
+          `Registered "${agentId}" (${resolvedSessionMode}, role: ${role}, cwd: ${resolvedCwd}, runtime: ${resolvedRuntime}).` +
           (resolvedSessionHandle ? ` Session: ${resolvedSessionHandle}` : "") +
           (
             resolvedRuntime === "codex" &&
@@ -1253,7 +1261,7 @@ server.tool(
           content: [{
             type: "text",
             text:
-              `Sent + queued dispatch for ${queued.join(", ") || "no launchable recipients"}. Use comms_run_status(...) to inspect progress. No reply message will be sent unless the target sends one explicitly.` +
+              `Sent. Dispatch handling: ${queued.join(", ") || "no launchable recipients"}. Use comms_run_status(...) to inspect progress. No reply message will be sent unless the target sends one explicitly.` +
               (skipped.length ? `\nNot started: ${skipped.join("; ")}` : ""),
           }],
         };
@@ -1381,24 +1389,14 @@ server.tool(
     }
 
     const lines = (r.runs || []).map((run) => {
-      let line = `- ${run.targetAgentId}: ${run.runId} [${run.status}]`;
-      if (run.merged && Number(run.mergedCount || 0) > 1) {
-        line += ` buffered ${run.mergedCount} updates`;
-      }
-      if (run.queuedBehindActiveRun?.runId) {
-        line += ` queued behind active run ${run.queuedBehindActiveRun.runId}`;
-        if (run.queuedBehindActiveRun.subject) {
-          line += ` (${run.queuedBehindActiveRun.subject})`;
-        }
-      }
-      return line;
+      return `- ${formatQueuedRun(run)} [${run.status}]`;
     });
     const skipped = (r.notStarted || []).map((item) => `- ${item.targetAgentId}: ${item.reason}`);
     return {
       content: [{
         type: "text",
         text:
-          `Queued ${r.runs?.length || 0} dispatch run(s):\n${lines.join("\n") || "- none"}` +
+          `Dispatch handling:\n${lines.join("\n") || "- none"}` +
           (skipped.length ? `\n\nNot started:\n${skipped.join("\n")}` : "") +
           `\n\nUse comms_run_status(...) to inspect progress. No reply message will be sent unless the target sends one explicitly.`,
       }],

@@ -57,6 +57,7 @@ class SpawnAgentRequest(BaseModel):
     name: Optional[str] = None
     cwd: Optional[str] = None
     model: Optional[str] = None
+    description: Optional[str] = None
     instructions: Optional[str] = None
     machineId: Optional[str] = None
     priority: str = "normal"

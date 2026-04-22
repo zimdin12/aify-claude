@@ -15,6 +15,8 @@ Before digging in, always call `comms_agent_info(agentId="target")` on the agent
 
 **Root cause #1 (Windows, resident, and the one you hit first).** On Windows the bridge's `defaultCodexCommand()` returns `wsl.exe -e codex app-server`, so the legacy launcher-based `codexWorkingPath` transform turns `C:/Docker/project` into `/mnt/c/Docker/project` regardless of whether the bridge will spawn its own Codex or connect to one `codex-aify` already started. When the connection is to a native-Windows Codex (the normal `codex-aify` setup), sending `/mnt/c/...` makes Rust's `Path::is_absolute()` return false — there is no drive-letter prefix — and `AbsolutePathBuf::deserialize` rejects the request at `turn/start`. Fixed in the bridge by `resolveCodexRequestCwdFor` in `mcp/stdio/codex-errors.js`: when `appServerUrl` is set, the transform is skipped and we send `C:/Docker/project` instead. Locked down by `mcp/stdio/tests/codex-cwd-transform.test.js`. Check with `npm test` from `mcp/stdio/`. If the test is absent or fails, the bridge predates the fix — `git pull` and restart `codex-aify`.
 
+**Backend guard (current build).** The server now rejects impossible resident Codex registrations up front: `linux:` / `darwin:` machine IDs cannot register `C:/...` cwds when `appServerUrl` is present, and `win32:` machine IDs cannot register `/mnt/...` cwds. If `comms_register` now fails immediately with `Invalid cwd`, that is the intended fast-fail path; fix the cwd and re-register instead of trying to dispatch through it.
+
 **Root cause #2 (stored rollout).** Codex's `thread/resume` loads the thread's stored rollout from `~/.codex/sessions/...`. If a path field in that file cannot be deserialized the call crashes before the bridge can send anything else. The tell is that the failed run has an **empty `externalThreadId`**: the bridge never got past `thread/resume`. This is the case the auto-heal path (below) is designed for.
 
 **Auto-recovery (shipped).** On current bridge code, **both managed and resident** sessions auto-heal this case. When `thread/resume` fails with `AbsolutePathBuf deserialized`, `AbsolutePathBufGuard`, or `no rollout found for thread id`, the bridge:
@@ -179,6 +181,27 @@ If only the thread ID is available, pass `sessionHandle` without `appServerUrl`.
 **Cause.** A newer `comms_register` for the same `agentId` on the same machine has replaced this bridge. The server rejects claims from superseded bridges so they can't steal work from the fresh one.
 
 **Fix.** Shut the superseded bridge down. This is not an error — it's the server protecting the queue. The fresh bridge is the one that should be claiming runs.
+
+## `comms_send(steer=true)` stayed unread or looked queued behind itself
+
+**Symptom.** A steer message lands in the inbox unread, the tool output says it was queued behind the same run ID, or a steer sent during a bridge replacement seems to disappear.
+
+**Cause.** Older server code treated a steered result like a newly queued run and could target a stale active run that was still owned by a superseded bridge. In that state the source inbox message had no completed steer control to mark it read.
+
+**Fix (current build).** Pull latest and restart the target bridge (`codex-aify` / `claude-aify`) so it is running the steer-tracking fix. Current behavior is:
+- if there is a live steer-capable active run, the message becomes a steer control and the inbox copy auto-marks read when the control completes
+- if the only active run is stale or superseded, the server fails that run first and queues a fresh dispatch instead of steering into dead state
+- if the runtime does not support steering, the send falls back to normal queueing
+
+If you still see the old behavior after update, capture the run ID plus `/api/v1/dispatch/runs/<id>` and `/api/v1/agents/<agent>` output.
+
+## Run summary says `Auto-healed: bridge "<old>" replaced by "<new>"`
+
+**Symptom.** A dispatch run shows an auto-heal summary like `Auto-healed: bridge "old" replaced by "new"` or `Auto-healed before steer...`.
+
+**Cause.** The server saw a new live bridge polling for the agent while the DB still had an active run claimed by an older bridge. That older run was stale, so the server failed it to unblock the queue.
+
+**Fix.** Usually no repair is needed beyond shutting down the stale bridge and re-registering from the live session. This is a recovery path, not silent data loss: the inbox message still exists, and newer builds will queue fresh work instead of steering into that stale run.
 
 ## Bridge "lost" the agent / has to be re-registered manually
 

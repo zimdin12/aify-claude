@@ -1,0 +1,196 @@
+import asyncio
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from service.db import get_db, init_db
+from service.routers.api_v2 import router
+
+
+class _DummyWS:
+    async def broadcast(self, *_args, **_kwargs):
+        return None
+
+    async def notify_agent(self, *_args, **_kwargs):
+        return None
+
+
+class ApiV2RegressionTests(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._db_path = Path(self._tmpdir.name) / "aify-test.db"
+        asyncio.run(init_db(self._db_path))
+
+        app = FastAPI()
+        app.state.ws_manager = _DummyWS()
+        app.state.config = SimpleNamespace(data_dir=self._tmpdir.name)
+        app.include_router(router, prefix="/api/v1")
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        self.client.close()
+        self._tmpdir.cleanup()
+
+    def _register(self, agent_id: str, *, role: str = "coder", **extra):
+        payload = {"agentId": agent_id, "role": role}
+        payload.update(extra)
+        response = self.client.post("/api/v1/agents", json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def _send_message(self, **payload):
+        response = self.client.post("/api/v1/messages/send", json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def _fetchone(self, query: str, params=()):
+        async def _run():
+            db = await get_db()
+            try:
+                cursor = await db.execute(query, params)
+                return await cursor.fetchone()
+            finally:
+                await db.close()
+
+        return asyncio.run(_run())
+
+    def test_channel_history_excludes_inbox_fanout_rows(self):
+        self._register("alice")
+        self._register("bob")
+
+        response = self.client.post(
+            "/api/v1/channels",
+            json={"name": "room", "description": "", "createdBy": "alice"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = self.client.post("/api/v1/channels/room/join", json={"agentId": "bob"})
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = self.client.post(
+            "/api/v1/channels/room/send",
+            json={"from_agent": "alice", "channel": "room", "body": "hello", "trigger": False},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        channel = self.client.get("/api/v1/channels/room")
+        self.assertEqual(channel.status_code, 200, channel.text)
+        data = channel.json()
+
+        self.assertEqual(data["totalMessages"], 2)
+        self.assertEqual(len(data["messages"]), 2)
+        self.assertEqual([message["body"] for message in data["messages"]], ["bob joined the channel", "hello"])
+        self.assertTrue(all(not message["id"].endswith("-bob") for message in data["messages"]))
+
+        channels = self.client.get("/api/v1/channels")
+        self.assertEqual(channels.status_code, 200, channels.text)
+        listed = {item["name"]: item for item in channels.json()["channels"]}
+        self.assertEqual(listed["room"]["messageCount"], 2)
+
+    def test_clear_inbox_detaches_threaded_replies_before_delete(self):
+        self._register("alice")
+        self._register("bob")
+
+        parent = self._send_message(
+            from_agent="alice",
+            to="bob",
+            subject="parent",
+            body="hello",
+            type="info",
+        )
+        parent_id = parent["messageId"]
+
+        self._send_message(
+            from_agent="bob",
+            to="alice",
+            subject="reply",
+            body="done",
+            type="response",
+            inReplyTo=parent_id,
+        )
+
+        cleared = self.client.post("/api/v1/clear", json={"target": "inbox", "agentId": "bob"})
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertEqual(cleared.json()["deletedMessages"], 1)
+        self.assertEqual(cleared.json()["cleared"]["messages"], 1)
+
+        parent_row = self._fetchone("SELECT id FROM messages WHERE id = ?", (parent_id,))
+        self.assertIsNone(parent_row)
+
+        reply_row = self._fetchone("SELECT in_reply_to FROM messages WHERE subject = 'reply'")
+        self.assertIsNotNone(reply_row)
+        self.assertIsNone(reply_row["in_reply_to"])
+
+    def test_delete_channel_detaches_replies_to_channel_messages(self):
+        self._register("alice")
+        self._register("bob")
+
+        response = self.client.post(
+            "/api/v1/channels",
+            json={"name": "ops", "description": "", "createdBy": "alice"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.client.post("/api/v1/channels/ops/join", json={"agentId": "bob"})
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.client.post(
+            "/api/v1/channels/ops/send",
+            json={"from_agent": "alice", "channel": "ops", "body": "deploy now", "trigger": False},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        channel_message = self._fetchone(
+            "SELECT id FROM messages WHERE channel = ? AND to_agent IS NULL AND body = ?",
+            ("ops", "deploy now"),
+        )
+        self.assertIsNotNone(channel_message)
+
+        self._send_message(
+            from_agent="bob",
+            to="alice",
+            subject="ack",
+            body="done",
+            type="response",
+            inReplyTo=channel_message["id"],
+        )
+
+        deleted = self.client.delete("/api/v1/channels/ops")
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+
+        reply_row = self._fetchone("SELECT in_reply_to FROM messages WHERE subject = 'ack'")
+        self.assertIsNotNone(reply_row)
+        self.assertIsNone(reply_row["in_reply_to"])
+
+    def test_rejects_cross_os_codex_live_cwd_registration(self):
+        linux_bad = self.client.post(
+            "/api/v1/agents",
+            json={
+                "agentId": "linux-codex",
+                "role": "coder",
+                "runtime": "codex",
+                "sessionMode": "resident",
+                "machineId": "linux:test-box",
+                "cwd": "C:/repo/project",
+                "runtimeConfig": {"appServerUrl": "ws://127.0.0.1:9000"},
+            },
+        )
+        self.assertEqual(linux_bad.status_code, 400, linux_bad.text)
+        self.assertIn("Invalid cwd", linux_bad.text)
+
+        windows_bad = self.client.post(
+            "/api/v1/agents",
+            json={
+                "agentId": "windows-codex",
+                "role": "coder",
+                "runtime": "codex",
+                "sessionMode": "resident",
+                "machineId": "win32:test-box",
+                "cwd": "/mnt/c/repo/project",
+                "runtimeConfig": {"appServerUrl": "ws://127.0.0.1:9000"},
+            },
+        )
+        self.assertEqual(windows_bad.status_code, 400, windows_bad.text)
+        self.assertIn("Invalid cwd", windows_bad.text)

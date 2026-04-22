@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS agents (
     description TEXT DEFAULT '',
     instructions TEXT DEFAULT '',
     status TEXT DEFAULT 'idle',
+    status_note TEXT DEFAULT '',
     runtime TEXT DEFAULT 'generic',
     machine_id TEXT DEFAULT '',
     launch_mode TEXT DEFAULT 'detached',
@@ -40,9 +41,10 @@ CREATE TABLE IF NOT EXISTS messages (
     subject TEXT DEFAULT '',
     body TEXT DEFAULT '',
     priority TEXT DEFAULT 'normal',
+    dispatch_requested INTEGER DEFAULT 0,
     in_reply_to TEXT,
     timestamp INTEGER NOT NULL,
-    FOREIGN KEY (in_reply_to) REFERENCES messages(id)
+    FOREIGN KEY (in_reply_to) REFERENCES messages(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS read_receipts (
@@ -127,6 +129,7 @@ CREATE TABLE IF NOT EXISTS dispatch_controls (
     id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL,
     from_agent TEXT DEFAULT '',
+    source_message_id TEXT DEFAULT '',
     action TEXT NOT NULL,
     body TEXT DEFAULT '',
     status TEXT NOT NULL DEFAULT 'pending',
@@ -177,11 +180,20 @@ AGENT_MIGRATIONS = {
     "runtime_config": "ALTER TABLE agents ADD COLUMN runtime_config TEXT DEFAULT '{}'",
     "runtime_state": "ALTER TABLE agents ADD COLUMN runtime_state TEXT DEFAULT '{}'",
     "description": "ALTER TABLE agents ADD COLUMN description TEXT DEFAULT ''",
+    "status_note": "ALTER TABLE agents ADD COLUMN status_note TEXT DEFAULT ''",
 }
 
 DISPATCH_RUN_MIGRATIONS = {
     "execution_mode": "ALTER TABLE dispatch_runs ADD COLUMN execution_mode TEXT DEFAULT 'managed'",
     "claim_bridge_id": "ALTER TABLE dispatch_runs ADD COLUMN claim_bridge_id TEXT DEFAULT ''",
+}
+
+MESSAGE_MIGRATIONS = {
+    "dispatch_requested": "ALTER TABLE messages ADD COLUMN dispatch_requested INTEGER DEFAULT 0",
+}
+
+DISPATCH_CONTROL_MIGRATIONS = {
+    "source_message_id": "ALTER TABLE dispatch_controls ADD COLUMN source_message_id TEXT DEFAULT ''",
 }
 
 
@@ -201,6 +213,22 @@ async def _migrate_dispatch_runs_table(db: aiosqlite.Connection):
             await db.execute(statement)
 
 
+async def _migrate_messages_table(db: aiosqlite.Connection):
+    cursor = await db.execute("PRAGMA table_info(messages)")
+    existing = {row[1] for row in await cursor.fetchall()}
+    for column, statement in MESSAGE_MIGRATIONS.items():
+        if column not in existing:
+            await db.execute(statement)
+
+
+async def _migrate_dispatch_controls_table(db: aiosqlite.Connection):
+    cursor = await db.execute("PRAGMA table_info(dispatch_controls)")
+    existing = {row[1] for row in await cursor.fetchall()}
+    for column, statement in DISPATCH_CONTROL_MIGRATIONS.items():
+        if column not in existing:
+            await db.execute(statement)
+
+
 async def init_db(db_path: Path = None):
     global _db_path
     if db_path:
@@ -212,6 +240,8 @@ async def init_db(db_path: Path = None):
         await db.executescript(SCHEMA)
         await _migrate_agents_table(db)
         await _migrate_dispatch_runs_table(db)
+        await _migrate_messages_table(db)
+        await _migrate_dispatch_controls_table(db)
         await db.commit()
 
 async def get_db() -> aiosqlite.Connection:

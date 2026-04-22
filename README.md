@@ -28,6 +28,8 @@ Important mental model:
 - if the target should answer you, it must explicitly use `comms_send(...)`
 - `comms_send(...)` wakes by default; use `silent=true` when you want a message without waking the target
 - `comms_channel_send(...)` also wakes channel members by default; use `silent=true` for background-only channel updates
+- `comms_send(..., steer=true)` only injects guidance mid-turn when the target already has a live steer-capable run; otherwise it falls back to normal queued dispatch
+- when a steer control is accepted, the source inbox message is auto-marked read so it does not linger as unread noise
 - if the target is already working, later dispatches from the same sender are merged into one pending buffered run (cap: 10 items) that starts after the current run finishes instead of stacking as many separate queued runs
 - if that buffered run already holds 10 items, the next dispatch is rejected with `reason: "buffer_full"` in `notStarted`, including the recipient's current status — wait, interrupt the active run, or call `comms_agent_info` first
 - inbox delivery is still immediate even when a dispatch is buffered or rejected
@@ -99,6 +101,8 @@ comms_register(agentId="my-agent", role="coder", runtime="codex", sessionHandle=
 
 The full `sessionHandle + appServerUrl` form is also the safest option when multiple `codex-aify` sessions are open on the same machine or the wrapper was launched from a different directory than the `cwd` you register.
 
+The backend now rejects obviously impossible live Codex bindings at registration time: for example `machineId=linux:...` with `cwd="C:/repo"` or `machineId=win32:...` with `cwd="/mnt/c/repo"` when `appServerUrl` is present. WSL/Linux live Codex sessions should register `/mnt/...` or other native Linux paths; native Windows Codex sessions should register `C:/...` with forward slashes.
+
 Windows wrapper note:
 - If you run the installer from Git Bash on Windows, `install.sh` now installs both the Bash wrappers and `claude-aify.cmd` / `codex-aify.cmd` shims, and it adds `%USERPROFILE%\\.local\\bin` to your user `PATH`.
 - If you install from WSL instead, those wrappers remain WSL-local. That is correct for WSL-native sessions, but it does not create native Windows launchers.
@@ -136,6 +140,8 @@ comms_share(from="coder", name="regression-2026-04-15.log", content="...")
 comms_send(from="coder", to="lead", subject="Regression log attached",
            body="See shared artifact regression-2026-04-15.log")
 ```
+
+`comms_channel_read` and `GET /api/v1/channels/{name}` return the canonical channel history only. Per-member inbox fan-out copies are delivery records, not separate channel posts.
 
 **When idle** — check your inbox and respond:
 
@@ -240,7 +246,7 @@ Claude Code (any machine)         Claude Code (any machine)
 | **comms_status** | Set status + note: `comms_status("working", note="NRD pipeline")` |
 | **comms_describe** | Set team-facing description: who you are, project, focus areas. Visible in `comms_agents`. Persists across re-register. |
 | **comms_agent_info** | Check another agent's status, unread count, last read message |
-| **comms_send** | Send message with optional `priority`. By default this also queues active dispatch; use `silent=true` for message-only sends |
+| **comms_send** | Send message with optional `priority`. By default this also queues active dispatch; use `silent=true` for message-only sends, or `steer=true` to inject guidance into a live steer-capable run |
 | **comms_dispatch** | Queue active runtime dispatch explicitly and return run IDs |
 | **comms_listen** | Wait for incoming messages when you intentionally want an inbox-driven loop |
 | **comms_inbox** | Check inbox (newest first, replies include parent context) |
@@ -248,7 +254,6 @@ Claude Code (any machine)         Claude Code (any machine)
 | **comms_search** | Search messages and shared artifacts |
 | **comms_run_status** | Inspect a dispatched run and its recent events |
 | **comms_run_interrupt** | Request interruption of an active dispatched run |
-| **comms_run_steer** | Send additional guidance to an active run when the runtime supports steering |
 
 ### Channels (group chat)
 | Tool | Description |
@@ -301,6 +306,7 @@ Wake modes by runtime:
 Key rules:
 - **Dispatched runs don't auto-reply.** Plain-text output stays in the target's live session and dispatch record. If you want a reply message, ask the target to explicitly call `comms_send(...)`.
 - **One active run per agent.** Later dispatches from the same sender merge into one buffered run (cap: 10 items) that starts after the current one finishes. Past the cap, dispatches return `reason: "buffer_full"` in `notStarted` with the recipient's status — wait, `comms_run_interrupt`, or `comms_agent_info` before retrying. Inbox messages still arrive immediately.
+- **Steer is message-backed, not magical.** `comms_send(..., steer=true)` still writes the inbox message first. On Codex it injects mid-turn only if a live steer-capable run exists; otherwise it falls back to normal queueing. If the only active run is stale or superseded, the server fails that run first and then queues the new work normally.
 - **Active dispatch requires `stdio`.** SSE clients can message, inspect, and request dispatch, but cannot be the local launcher or host triggerable sessions.
 - **Re-register after any update or restart.** Re-registering supersedes the older bridge for that agent on that machine; the server rejects claims from superseded bridges automatically.
 - **Nested subagents** should normally report to their parent, not register themselves into comms.
@@ -334,7 +340,9 @@ This runs on the client's supported post-tool hook path (rate-limited to 10s, 3s
 ## Dashboard
 
 Live at `http://localhost:8800` (redirects to `/api/v1/dashboard`):
-- **Dashboard** — agents, messages, files, stats, actions
+- **Dashboard** — agents, direct messages, files, stats, actions
+- **Dispatches** — dedicated run triage view at `/api/v1/dashboard/dispatches`
+- direct and channel messages are marked inline with compact delivery badges: `wake` for wake-requested, `bg` for background-only
 - **Instructions** — setup guide, slash commands, API reference
 - **Settings** — retention (90d), max messages (1000), rotation, refresh interval
 
@@ -377,6 +385,7 @@ Live at `http://localhost:8800` (redirects to `/api/v1/dashboard`):
 | `/api/v1/stats` | GET | Statistics |
 | `/api/v1/clear` | POST | Clear data |
 | `/api/v1/dashboard` | GET | Web dashboard |
+| `/api/v1/dashboard/dispatches` | GET | Dispatch-focused dashboard view |
 
 ## Security
 

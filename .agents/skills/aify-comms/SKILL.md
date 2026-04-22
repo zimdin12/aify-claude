@@ -17,6 +17,8 @@ comms_register(agentId="my-agent", role="coder", cwd="/path/to/project")
 
 On Windows, always pass `cwd` with **forward slashes** (e.g. `cwd="C:/Users/you/project"`), never backslashes. Backslash paths break Codex dispatch with `AbsolutePathBuf deserialized without a base path` and break Codex thread auto-discovery silently.
 
+For live Codex sessions, the cwd must also match the host OS of the app-server you are binding to: WSL/Linux sessions should register `/mnt/...` or other native Linux paths, while native Windows sessions should register `C:/...`. The backend now rejects impossible cross-OS mixes instead of accepting them and failing later at dispatch time.
+
 Codex note:
 - If you are running inside `codex-aify`, do not stop at a bare register when the live env is available.
 - First read `CODEX_THREAD_ID` and `AIFY_CODEX_APP_SERVER_URL` from that same live session, then prefer the strongest exact registration:
@@ -82,7 +84,7 @@ Gotchas regardless of runtime:
 
 ## Tools (24)
 
-### Messaging (15)
+### Messaging (14)
 | Tool | Use |
 |------|-----|
 | `comms_register` | Register the exact live session you currently have open. |
@@ -91,7 +93,7 @@ Gotchas regardless of runtime:
 | `comms_status` | Set status + optional note: `comms_status("working", note="NRD pipeline")`. |
 | `comms_describe` | Set your team-facing description: who you are, project, focus areas. Visible in `comms_agents`. Persists across re-register. |
 | `comms_agent_info` | Check another agent's status, unread count, and last message they read. |
-| `comms_send` | DM by ID (`to`) or role (`toRole`). By default it also asks the recipient runtime to start working immediately; use `silent=true` for inbox-only delivery. |
+| `comms_send` | DM by ID (`to`) or role (`toRole`). By default it also asks the recipient runtime to start working immediately; use `silent=true` for inbox-only delivery, or `steer=true` to inject guidance into a live steer-capable run. |
 | `comms_dispatch` | Queue active work explicitly and get run IDs back. Use when you want execution now, not just delivery. |
 | `comms_listen` | **Wait for messages.** Blocks until a message arrives. Call when idle instead of polling. |
 | `comms_inbox` | Check inbox. Returns unread, newest first. Replies include parent context. |
@@ -99,7 +101,6 @@ Gotchas regardless of runtime:
 | `comms_search` | Search messages and shared artifacts by keyword. |
 | `comms_run_status` | Check the status, summary, and recent events of a dispatched run. |
 | `comms_run_interrupt` | Request interruption of an active run. Works when the target runtime supports interrupt. |
-| ~~`comms_run_steer`~~ | Removed — use `comms_send(steer=true)` instead. |
 
 ### Channels (5)
 | Tool | Use |
@@ -107,7 +108,7 @@ Gotchas regardless of runtime:
 | `comms_channel_create` | Create a named channel. You're auto-joined. |
 | `comms_channel_join` | Join yourself or add another agent: `comms_channel_join(channel, from, agentId="coder")`. |
 | `comms_channel_send` | Send to a channel. By default this also wakes channel members other than the sender; use `silent=true` for background-only updates. |
-| `comms_channel_read` | Read recent channel messages. |
+| `comms_channel_read` | Read recent canonical channel messages. Inbox fan-out copies are not shown as extra channel posts. |
 | `comms_channel_list` | List all channels with member/message counts. |
 
 ### File Sharing (3)
@@ -121,7 +122,7 @@ Gotchas regardless of runtime:
 | Tool | Use |
 |------|-----|
 | `comms_clear` | Clear inbox, shared files, or agents. Optional age filter. |
-| `comms_dashboard` | Get the dashboard URL. |
+| `comms_dashboard` | Get the dashboard URL. Main view marks messages as `wake` or `bg`; `/api/v1/dashboard/dispatches` is the run-focused page. |
 
 ## Sending Messages vs Dispatching Work
 
@@ -138,6 +139,8 @@ Gotchas regardless of runtime:
 **Wake and priority are independent.** Waking an agent does NOT imply urgency. `priority="high"` does. Sending a wake message with "not urgent" in the body means the recipient will read it and defer — correctly. If you want work done now, say so: use `priority="high"` and explicit blocking language.
 
 **Silent acks:** Use `silent=true` for confirmations, thread closures, and ack-of-ack messages that don't need to wake the recipient. Keeps audit trail without creating noise.
+
+**Steer behavior:** `comms_send(steer=true)` only injects mid-turn when the target already has a live steer-capable run. Otherwise it falls back to normal queueing. When the steer control is accepted, the inbox copy is auto-marked read.
 
 ## Understanding Agent Status
 
@@ -189,4 +192,3 @@ When you receive a wake notification or finish a task, check inbox before starti
 - `reviewer`: code review and risk spotting
 - `researcher`: docs, web facts, alternatives
 - `architect`: design boundaries and coordination rules
-

@@ -155,6 +155,28 @@ async function emitChannel(content, meta = {}) {
   });
 }
 
+async function markDispatchDelivered(runId) {
+  await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(runId)}`, {
+    status: "completed",
+    summary: "Delivered to Claude resident session",
+    runtime: "claude-code",
+    agentStatus: "active",
+    appendEvent: "Delivered and completed by channel bridge",
+    eventType: "delivered",
+  });
+}
+
+async function markDispatchDeliveryFailed(runId, error) {
+  await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(runId)}`, {
+    status: "failed",
+    error: error?.message || String(error),
+    runtime: "claude-code",
+    agentStatus: "active",
+    appendEvent: `Claude channel delivery failed: ${error?.message || String(error)}`,
+    eventType: "failed",
+  });
+}
+
 async function pollLoop() {
   while (true) {
     try {
@@ -181,33 +203,41 @@ async function pollLoop() {
         });
         if (!claim?.run || claim.run.executionMode !== "resident") break;
         batch.push(claim.run);
-        await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(claim.run.id)}`, {
-          status: "completed",
-          summary: "Delivered to Claude resident session",
-          runtime: "claude-code",
-          agentStatus: "active",
-          appendEvent: "Delivered and completed by channel bridge",
-          eventType: "delivered",
-        });
       }
       if (batch.length === 1) {
-        await emitChannel(dispatchContent(agentId, batch[0]), {
-          event_type: "dispatch",
-          agent_id: agentId,
-          run_id: batch[0].id,
-          from_agent: batch[0].from || "",
-          message_id: batch[0].messageId || "",
-          priority: batch[0].priority || "normal",
-        });
+        try {
+          await emitChannel(dispatchContent(agentId, batch[0]), {
+            event_type: "dispatch",
+            agent_id: agentId,
+            run_id: batch[0].id,
+            from_agent: batch[0].from || "",
+            message_id: batch[0].messageId || "",
+            priority: batch[0].priority || "normal",
+          });
+          await markDispatchDelivered(batch[0].id);
+        } catch (error) {
+          await markDispatchDeliveryFailed(batch[0].id, error);
+          throw error;
+        }
       } else if (batch.length > 1) {
         const combined = batch.map((run, i) => `--- Message ${i + 1} of ${batch.length} ---\n${dispatchContent(agentId, run)}`).join("\n\n");
         const highestPriority = batch.some(r => r.priority === "urgent") ? "urgent" : batch.some(r => r.priority === "high") ? "high" : "normal";
-        await emitChannel(combined, {
-          event_type: "dispatch_batch",
-          agent_id: agentId,
-          count: batch.length,
-          priority: highestPriority,
-        });
+        try {
+          await emitChannel(combined, {
+            event_type: "dispatch_batch",
+            agent_id: agentId,
+            count: batch.length,
+            priority: highestPriority,
+          });
+          for (const run of batch) {
+            await markDispatchDelivered(run.id);
+          }
+        } catch (error) {
+          for (const run of batch) {
+            await markDispatchDeliveryFailed(run.id, error);
+          }
+          throw error;
+        }
       }
 
       // Poll for controls (interrupt/steer) independently of run tracking.

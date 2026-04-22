@@ -26,6 +26,8 @@ from service.models import (
 )
 
 SAFE_NAME_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$')
+_WINDOWS_DRIVE_CWD_RE = re.compile(r"^[a-zA-Z]:/")
+_WSL_DRIVE_CWD_RE = re.compile(r"^/mnt/[a-zA-Z](?:/|$)")
 
 def validate_name(name: str, label: str = "name") -> None:
     if not SAFE_NAME_RE.match(name):
@@ -100,6 +102,10 @@ def _normalize_runtime(runtime: Any) -> str:
     return _RUNTIME_ALIASES.get(key, key or "generic")
 
 
+def _machine_family(machine_id: Any) -> str:
+    return str(machine_id or "").strip().split(":", 1)[0].lower()
+
+
 def _dedupe_preserve(values: list[str]) -> list[str]:
     seen = set()
     result = []
@@ -115,6 +121,75 @@ def _has_codex_live_app_server(runtime_config: Optional[dict[str, Any]] = None) 
     if not isinstance(runtime_config, dict):
         return False
     return str(runtime_config.get("appServerUrl") or "").strip().lower().startswith(("ws://", "wss://"))
+
+
+def _normalize_channel_history_where(channel_name: str) -> tuple[str, tuple[Any, ...]]:
+    return "channel = ? AND to_agent IS NULL", (channel_name,)
+
+
+def _validate_registration_cwd(
+    *,
+    agent_id: str,
+    runtime: str,
+    session_mode: str,
+    machine_id: str,
+    cwd: str,
+    runtime_config: Optional[dict[str, Any]] = None,
+) -> None:
+    normalized_runtime = _normalize_runtime(runtime)
+    normalized_session_mode = _normalize_session_mode(session_mode)
+    resolved_cwd = str(cwd or "").strip()
+    family = _machine_family(machine_id)
+    if not resolved_cwd or normalized_runtime != "codex" or normalized_session_mode != "resident":
+        return
+    if not _has_codex_live_app_server(runtime_config):
+        return
+    if family in {"linux", "darwin"} and _WINDOWS_DRIVE_CWD_RE.match(resolved_cwd):
+        hint = '/mnt/<drive>/...' if family == "linux" else "/Users/..."
+        raise HTTPException(
+            400,
+            (
+                f'Invalid cwd "{resolved_cwd}" for codex live agent "{agent_id}" on {family}. '
+                f'Use a native host path such as "{hint}", not a Windows drive-letter path.'
+            ),
+        )
+    if family == "win32" and _WSL_DRIVE_CWD_RE.match(resolved_cwd):
+        raise HTTPException(
+            400,
+            (
+                f'Invalid cwd "{resolved_cwd}" for codex live agent "{agent_id}" on Windows. '
+                'Use forward-slash drive-letter form like "C:/repo", not a "/mnt/..." WSL path.'
+            ),
+        )
+
+
+async def _select_message_ids(db, where_clause: str, params: tuple[Any, ...] = ()) -> list[str]:
+    cursor = await db.execute(f"SELECT id FROM messages WHERE {where_clause}", params)
+    return [str(row["id"]) for row in await cursor.fetchall() if str(row["id"] or "").strip()]
+
+
+async def _delete_messages_by_ids(db, message_ids: list[str], *, chunk_size: int = 250) -> int:
+    pending = _dedupe_preserve([str(message_id or "").strip() for message_id in message_ids if str(message_id or "").strip()])
+    if not pending:
+        return 0
+
+    deleted = 0
+    for start in range(0, len(pending), chunk_size):
+        chunk = pending[start:start + chunk_size]
+        placeholders = ",".join("?" for _ in chunk)
+        await db.execute(f"UPDATE messages SET in_reply_to = NULL WHERE in_reply_to IN ({placeholders})", chunk)
+        await db.execute(f"UPDATE dispatch_runs SET message_id = NULL WHERE message_id IN ({placeholders})", chunk)
+        await db.execute(f"UPDATE dispatch_runs SET in_reply_to = NULL WHERE in_reply_to IN ({placeholders})", chunk)
+        await db.execute(f"UPDATE dispatch_controls SET source_message_id = '' WHERE source_message_id IN ({placeholders})", chunk)
+        await db.execute(f"DELETE FROM read_receipts WHERE message_id IN ({placeholders})", chunk)
+        cursor = await db.execute(f"DELETE FROM messages WHERE id IN ({placeholders})", chunk)
+        deleted += cursor.rowcount or 0
+    return deleted
+
+
+async def _delete_messages_where(db, where_clause: str, params: tuple[Any, ...] = ()) -> int:
+    message_ids = await _select_message_ids(db, where_clause, params)
+    return await _delete_messages_by_ids(db, message_ids)
 
 
 def _default_capabilities_for(
@@ -159,6 +234,12 @@ async def _resolve_recipient_ids(db, *, to: Optional[str], to_role: Optional[str
 
 def _row_capabilities(row) -> list[str]:
     return _json_loads_or(row["capabilities"], [])
+
+
+def _row_status_note(row) -> str:
+    if not row or "status_note" not in row.keys():
+        return ""
+    return str(row["status_note"] or "").strip()
 
 
 def _agent_wake_mode(row) -> str:
@@ -457,7 +538,11 @@ def _status_with_dispatch(status: str, dispatch_state: Optional[dict[str, Any]])
 def _agent_record_to_dict(row, status: str, unread: int, dispatch_state: Optional[dict[str, Any]] = None):
     runtime = _normalize_runtime(row["runtime"] or "generic")
     session_mode = _normalize_session_mode(row["session_mode"] or "resident")
+    status_note = _row_status_note(row)
     effective_status = _status_with_dispatch(status, dispatch_state)
+    display_status = effective_status
+    if status_note and effective_status == status:
+        display_status = f"{effective_status}: {status_note}"
     return {
         "role": row["role"],
         "name": row["name"],
@@ -465,7 +550,9 @@ def _agent_record_to_dict(row, status: str, unread: int, dispatch_state: Optiona
         "model": row["model"],
         "description": (row["description"] if "description" in row.keys() else "") or "",
         "instructions": row["instructions"],
-        "status": effective_status,
+        "status": display_status,
+        "statusRaw": effective_status,
+        "statusNote": status_note,
         "registeredAt": row["registered_at"],
         "lastSeen": row["last_seen"],
         "unread": unread,
@@ -540,15 +627,16 @@ async def _append_dispatch_control(
     from_agent: str,
     action: str,
     body: str = "",
+    source_message_id: str = "",
 ):
     control_id = f"ctl_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
     await db.execute(
         """
         INSERT INTO dispatch_controls (
-            id, run_id, from_agent, action, body, status, requested_at
-        ) VALUES (?,?,?,?,?,?,?)
+            id, run_id, from_agent, source_message_id, action, body, status, requested_at
+        ) VALUES (?,?,?,?,?,?,?,?)
         """,
-        (control_id, run_id, from_agent or "", action, body or "", "pending", _now())
+        (control_id, run_id, from_agent or "", source_message_id or "", action, body or "", "pending", _now())
     )
     await _append_dispatch_event(db, run_id, f"control:{action}", f"requested by {from_agent or 'unknown'}")
     return control_id
@@ -745,6 +833,70 @@ async def _find_mergeable_queued_run(
     return await cursor.fetchone()
 
 
+async def _discard_superseded_active_run(db, recipient_id: str, active_run: dict[str, Any]) -> bool:
+    owner_bridge_id = str(active_run.get("claimBridgeId") or "").strip()
+    if not owner_bridge_id or not await _bridge_is_superseded(db, owner_bridge_id, recipient_id):
+        return False
+
+    finished_at = _now()
+    await db.execute(
+        "UPDATE dispatch_runs SET status = 'failed', summary = ?, finished_at = ? WHERE id = ?",
+        (
+            f'Auto-healed before steer: bridge "{owner_bridge_id}" was already superseded',
+            finished_at,
+            active_run["runId"],
+        ),
+    )
+    await _append_dispatch_event(
+        db,
+        active_run["runId"],
+        "auto_heal",
+        f"Steer fallback cleaned stale run owned by superseded bridge {owner_bridge_id}",
+    )
+    await _fail_pending_controls_for_run(
+        db,
+        active_run["runId"],
+        handled_at=finished_at,
+        response_text=f'Stale run cleaned before steer by live server path. Superseded bridge: "{owner_bridge_id}".',
+    )
+    return True
+
+
+async def _finalize_dispatch_runs(
+    db,
+    runs: list[dict[str, Any]],
+    launchable_recipients: list[tuple[str, str]],
+    not_started: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    finalized = []
+    for run, (_, execution_mode) in zip(runs, launchable_recipients):
+        if run.get("rejected"):
+            not_started.append(run["rejectionHint"])
+            continue
+
+        if run.get("steered"):
+            dispatch_state = await _get_dispatch_state_for_agent(db, run["targetAgentId"])
+            run["queuedRunsForTarget"] = dispatch_state.get("queuedRuns", 0)
+            finalized.append(run)
+            continue
+
+        await db.execute(
+            "UPDATE dispatch_runs SET execution_mode = ? WHERE id = ?",
+            (execution_mode, run["runId"])
+        )
+        active = await _get_blocking_active_run(db, run["targetAgentId"], exclude_run_id=run["runId"])
+        if active:
+            run["queuedBehindActiveRun"] = {
+                "runId": active["runId"],
+                "status": active["status"],
+                "subject": active["subject"],
+            }
+        dispatch_state = await _get_dispatch_state_for_agent(db, run["targetAgentId"])
+        run["queuedRunsForTarget"] = dispatch_state.get("queuedRuns", 0)
+        finalized.append(run)
+    return finalized
+
+
 async def _create_dispatch_runs(
     db,
     recipients: list[str],
@@ -759,6 +911,7 @@ async def _create_dispatch_runs(
     execution_mode: str,
     requested_runtime: Optional[str],
     message_id: Optional[str] = None,
+    source_message_ids: Optional[dict[str, str]] = None,
     steer: bool = False,
 ):
     runs = []
@@ -768,9 +921,15 @@ async def _create_dispatch_runs(
         # control on that run (injected between tool calls) instead of
         # queuing a new dispatch. Symmetric for Claude and Codex.
         if steer:
+            row_cursor = await db.execute("SELECT * FROM agents WHERE id = ?", (recipient_id,))
+            recipient_row = await row_cursor.fetchone()
+            capabilities = _row_capabilities(recipient_row) if recipient_row else []
             active_state = await _get_dispatch_state_for_agent(db, recipient_id)
             active_run = active_state.get("activeRun")
-            if active_run:
+            if active_run and await _discard_superseded_active_run(db, recipient_id, active_run):
+                active_state = await _get_dispatch_state_for_agent(db, recipient_id)
+                active_run = active_state.get("activeRun")
+            if active_run and "steer" in capabilities:
                 steer_body = f"[Message from {from_agent}]\nSubject: {subject}\n\n{body}"
                 control_id = await _append_dispatch_control(
                     db,
@@ -778,12 +937,19 @@ async def _create_dispatch_runs(
                     from_agent=from_agent,
                     action="steer",
                     body=steer_body,
+                    source_message_id=(source_message_ids or {}).get(recipient_id, message_id or ""),
                 )
                 runs.append({
                     "runId": active_run["runId"],
                     "targetAgentId": recipient_id,
                     "status": "steered",
+                    "steered": True,
                     "controlId": control_id,
+                    "steeredIntoActiveRun": {
+                        "runId": active_run["runId"],
+                        "status": active_run["status"],
+                        "subject": active_run["subject"],
+                    },
                 })
                 continue
 
@@ -970,6 +1136,16 @@ async def register_agent(req: AgentRegister, request: Request):
     try:
         normalized_runtime = _normalize_runtime(req.runtime or "generic")
         normalized_session_mode = _normalize_session_mode(req.sessionMode or "resident")
+        resolved_cwd = req.cwd or ""
+        runtime_config = req.runtimeConfig or {}
+        _validate_registration_cwd(
+            agent_id=req.agentId,
+            runtime=normalized_runtime,
+            session_mode=normalized_session_mode,
+            machine_id=req.machineId or "",
+            cwd=resolved_cwd,
+            runtime_config=runtime_config,
+        )
         now = _now()
         existing = await db.execute("SELECT * FROM agents WHERE id = ?", (req.agentId,))
         row = await existing.fetchone()
@@ -992,17 +1168,19 @@ async def register_agent(req: AgentRegister, request: Request):
         await db.execute(
             """
             INSERT OR REPLACE INTO agents (
-                id, role, name, cwd, model, description, instructions, status, runtime, machine_id,
+                id, role, name, cwd, model, description, instructions, status, status_note, runtime, machine_id,
                 launch_mode, session_mode, session_handle, managed_by, capabilities,
                 runtime_config, runtime_state, registered_at, last_seen
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
-                req.agentId, req.role, req.name or req.agentId, req.cwd or "", req.model or "",
-                description_value, req.instructions or "", req.status or "idle", normalized_runtime,
+                req.agentId, req.role, req.name or req.agentId, resolved_cwd, req.model or "",
+                description_value, req.instructions or "", req.status or "idle",
+                (row["status_note"] if row and "status_note" in row.keys() else "") or "",
+                normalized_runtime,
                 req.machineId or "", req.launchMode or "detached",
                 normalized_session_mode, session_handle, req.managedBy or "",
-                json.dumps(capabilities or []), json.dumps(req.runtimeConfig or {}),
+                json.dumps(capabilities or []), json.dumps(runtime_config),
                 existing_state, row["registered_at"] if row and row["registered_at"] else now, now
             )
         )
@@ -1118,10 +1296,10 @@ async def spawn_agent(req: SpawnAgentRequest, request: Request):
         await db.execute(
             """
             INSERT OR REPLACE INTO agents (
-                id, role, name, cwd, model, description, instructions, status, runtime, machine_id,
+                id, role, name, cwd, model, description, instructions, status, status_note, runtime, machine_id,
                 launch_mode, session_mode, session_handle, managed_by, capabilities,
                 runtime_config, runtime_state, registered_at, last_seen
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 req.agentId,
@@ -1132,6 +1310,7 @@ async def spawn_agent(req: SpawnAgentRequest, request: Request):
                 description_value,
                 req.instructions or "",
                 "idle",
+                (existing["status_note"] if existing and "status_note" in existing.keys() else "") or "",
                 normalized_runtime,
                 machine_id,
                 "managed",
@@ -1210,15 +1389,15 @@ async def update_agent(agent_id: str, req: AgentStatusUpdate, request: Request):
         note = getattr(req, 'note', None) or ''
         status_val = f"{req.status}: {note}" if note else req.status
         cursor = await db.execute(
-            "UPDATE agents SET status = ?, last_seen = ? WHERE id = ?",
-            (status_val, _now(), agent_id)
+            "UPDATE agents SET status = ?, status_note = ?, last_seen = ? WHERE id = ?",
+            (req.status, note, _now(), agent_id)
         )
         await db.commit()
         if cursor.rowcount == 0:
             raise HTTPException(404, f"Agent '{agent_id}' not found")
         ws = await _get_ws(request)
         if ws: await ws.broadcast("agent_status", {"agentId": agent_id, "status": req.status})
-        return {"ok": True, "agentId": agent_id, "status": req.status}
+        return {"ok": True, "agentId": agent_id, "status": status_val, "statusRaw": req.status, "statusNote": note}
     finally:
         await db.close()
 
@@ -1263,10 +1442,11 @@ async def send_message(req: MessageSend, request: Request):
             return {"ok": False, "error": "No recipients found", "recipients": []}
 
         for r in recipients:
+            recipient_message_id = f"{msg_id}-{r}" if len(recipients) > 1 else msg_id
             await db.execute(
-                "INSERT INTO messages (id, from_agent, to_agent, source, type, subject, body, priority, in_reply_to, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (f"{msg_id}-{r}" if len(recipients) > 1 else msg_id,
-                 req.from_agent, r, "direct", req.type, req.subject, req.body, req.priority, resolved_in_reply_to, ts)
+                "INSERT INTO messages (id, from_agent, to_agent, source, type, subject, body, priority, dispatch_requested, in_reply_to, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (recipient_message_id,
+                 req.from_agent, r, "direct", req.type, req.subject, req.body, req.priority, 1 if req.trigger else 0, resolved_in_reply_to, ts)
             )
 
         if resolved_in_reply_to:
@@ -1311,6 +1491,10 @@ async def send_message(req: MessageSend, request: Request):
         dispatch_runs = []
         not_started = []
         if req.trigger:
+            source_message_ids = {
+                recipient_id: (f"{msg_id}-{recipient_id}" if len(recipients) > 1 else msg_id)
+                for recipient_id in recipients
+            }
             launchable_recipients = []
             for recipient_id in recipients:
                 agent_cursor = await db.execute("SELECT * FROM agents WHERE id = ?", (recipient_id,))
@@ -1336,26 +1520,10 @@ async def send_message(req: MessageSend, request: Request):
                 execution_mode="managed",
                 requested_runtime=None,
                 message_id=msg_id if len(recipients) == 1 else None,
+                source_message_ids=source_message_ids,
                 steer=req.steer,
             )
-            for run, (_, execution_mode) in zip(dispatch_runs, launchable_recipients):
-                if run.get("rejected"):
-                    not_started.append(run["rejectionHint"])
-                    continue
-                await db.execute(
-                    "UPDATE dispatch_runs SET execution_mode = ? WHERE id = ?",
-                    (execution_mode, run["runId"])
-                )
-                dispatch_state = await _get_dispatch_state_for_agent(db, run["targetAgentId"])
-                active = dispatch_state.get("activeRun")
-                if active:
-                    run["queuedBehindActiveRun"] = {
-                        "runId": active["runId"],
-                        "status": active["status"],
-                        "subject": active["subject"],
-                    }
-                run["queuedRunsForTarget"] = dispatch_state.get("queuedRuns", 0)
-            dispatch_runs = [r for r in dispatch_runs if not r.get("rejected")]
+            dispatch_runs = await _finalize_dispatch_runs(db, dispatch_runs, launchable_recipients, not_started)
 
         # Gather recipient status info for sender context
         recipient_info = {}
@@ -1376,6 +1544,8 @@ async def send_message(req: MessageSend, request: Request):
             for r in recipients:
                 await ws.notify_agent(r, "new_message", {"from": req.from_agent, "subject": req.subject})
             for run in dispatch_runs:
+                if run.get("steered"):
+                    continue
                 await ws.broadcast("dispatch_queued", {"runId": run["runId"], "targetAgentId": run["targetAgentId"]})
         # Wake up any listening agents
         for r in recipients:
@@ -1451,6 +1621,7 @@ async def get_inbox(
                 "subject": row["subject"], "body": row["body"],
                 "priority": row["priority"], "timestamp": row["timestamp"],
                 "inReplyTo": row["in_reply_to"],
+                "dispatchRequested": bool(row["dispatch_requested"]) if "dispatch_requested" in row.keys() else False,
                 "read": row["read_at"] is not None,
                 "readAt": row["read_at"],
             }
@@ -1661,6 +1832,7 @@ async def listen_for_messages(agent_id: str, request: Request, timeout: int = Qu
                         "subject": row["subject"], "body": row["body"],
                         "priority": row["priority"], "timestamp": row["timestamp"],
                         "inReplyTo": row["in_reply_to"],
+                        "dispatchRequested": bool(row["dispatch_requested"]) if "dispatch_requested" in row.keys() else False,
                     }
                     # Parent context for replies
                     if row["in_reply_to"]:
@@ -1747,16 +1919,19 @@ async def create_dispatch(req: DispatchRequest, request: Request):
             }
 
         message_id = None
+        source_message_ids = {}
         if req.createMessage:
             message_id = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
             ts = int(time.time() * 1000)
             for recipient_id in recipients:
+                recipient_message_id = f"{message_id}-{recipient_id}" if len(recipients) > 1 else message_id
+                source_message_ids[recipient_id] = recipient_message_id
                 await db.execute(
-                    "INSERT INTO messages (id, from_agent, to_agent, source, type, subject, body, priority, in_reply_to, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO messages (id, from_agent, to_agent, source, type, subject, body, priority, dispatch_requested, in_reply_to, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (
-                        f"{message_id}-{recipient_id}" if len(recipients) > 1 else message_id,
+                        recipient_message_id,
                         req.from_agent, recipient_id, "direct", req.type, req.subject, req.body,
-                        req.priority, resolved_in_reply_to, ts
+                        req.priority, 1 if req.mode != "message_only" else 0, resolved_in_reply_to, ts
                     )
                 )
 
@@ -1775,26 +1950,10 @@ async def create_dispatch(req: DispatchRequest, request: Request):
                 execution_mode="managed",
                 requested_runtime=req.requestedRuntime,
                 message_id=message_id if len(recipients) == 1 else None,
+                source_message_ids=source_message_ids,
                 steer=req.steer,
             )
-            for run, (_, execution_mode) in zip(runs, launchable_recipients):
-                if run.get("rejected"):
-                    not_started.append(run["rejectionHint"])
-                    continue
-                await db.execute(
-                    "UPDATE dispatch_runs SET execution_mode = ? WHERE id = ?",
-                    (execution_mode, run["runId"])
-                )
-                dispatch_state = await _get_dispatch_state_for_agent(db, run["targetAgentId"])
-                active = dispatch_state.get("activeRun")
-                if active:
-                    run["queuedBehindActiveRun"] = {
-                        "runId": active["runId"],
-                        "status": active["status"],
-                        "subject": active["subject"],
-                    }
-                run["queuedRunsForTarget"] = dispatch_state.get("queuedRuns", 0)
-            runs = [r for r in runs if not r.get("rejected")]
+            runs = await _finalize_dispatch_runs(db, runs, launchable_recipients, not_started)
 
         recipient_info = {}
         for recipient_id in recipients:
@@ -1813,6 +1972,8 @@ async def create_dispatch(req: DispatchRequest, request: Request):
             for recipient_id in recipients:
                 await ws.notify_agent(recipient_id, "dispatch_request", {"from": req.from_agent, "subject": req.subject})
             for run in runs:
+                if run.get("steered"):
+                    continue
                 await ws.broadcast("dispatch_queued", {"runId": run["runId"], "targetAgentId": run["targetAgentId"]})
         for recipient_id in recipients:
             _wake_agent(recipient_id)
@@ -2309,6 +2470,22 @@ async def update_dispatch_control(control_id: str, req: DispatchControlUpdate, r
             "UPDATE dispatch_controls SET status = ?, response_text = ?, handled_at = ? WHERE id = ?",
             (req.status, req.response or "", handled_at, control_id)
         )
+        if req.status == "completed" and (control["source_message_id"] or "").strip():
+            run_cursor = await db.execute(
+                "SELECT target_agent FROM dispatch_runs WHERE id = ?",
+                (control["run_id"],),
+            )
+            run = await run_cursor.fetchone()
+            if run and (run["target_agent"] or "").strip():
+                msg_cursor = await db.execute(
+                    "SELECT 1 FROM messages WHERE id = ?",
+                    ((control["source_message_id"] or "").strip(),),
+                )
+                if await msg_cursor.fetchone():
+                    await db.execute(
+                        "INSERT OR IGNORE INTO read_receipts (message_id, agent_id, read_at) VALUES (?,?,?)",
+                        ((control["source_message_id"] or "").strip(), run["target_agent"], handled_at),
+                    )
         await _append_dispatch_event(
             db,
             control["run_id"],
@@ -2329,10 +2506,9 @@ async def unsend_message(message_id: str, request: Request):
     """Delete a message by ID. Also removes associated read receipts."""
     db = await get_db()
     try:
-        await db.execute("DELETE FROM read_receipts WHERE message_id = ?", (message_id,))
-        cursor = await db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+        deleted = await _delete_messages_by_ids(db, [message_id])
         await db.commit()
-        if cursor.rowcount == 0:
+        if deleted == 0:
             raise HTTPException(404, f"Message '{message_id}' not found")
         ws = await _get_ws(request)
         if ws: await ws.broadcast("message_deleted", {"id": message_id})
@@ -2346,20 +2522,19 @@ async def cleanup_orphan_unread_messages(request: Request):
     """Delete unread inbox messages addressed to removed agents."""
     db = await get_db()
     try:
-        cursor = await db.execute(
+        deleted = await _delete_messages_where(
+            db,
             """
-            DELETE FROM messages
-            WHERE id IN (
+            id IN (
                 SELECT m.id
                 FROM messages m
                 LEFT JOIN agents a ON a.id = m.to_agent
                 LEFT JOIN read_receipts r ON r.message_id = m.id AND r.agent_id = m.to_agent
                 WHERE m.to_agent IS NOT NULL AND a.id IS NULL AND r.message_id IS NULL
             )
-            """
+            """,
         )
         await db.commit()
-        deleted = cursor.rowcount or 0
         ws = await _get_ws(request)
         if ws and deleted:
             await ws.broadcast("messages_cleaned", {"kind": "orphan_unread", "deleted": deleted})
@@ -2468,7 +2643,8 @@ async def list_channels(request: Request):
         for ch in await cursor.fetchall():
             mc = await db.execute("SELECT COUNT(*) FROM channel_members WHERE channel_name = ?", (ch["name"],))
             member_count = (await mc.fetchone())[0]
-            msg_c = await db.execute("SELECT COUNT(*) FROM messages WHERE channel = ?", (ch["name"],))
+            history_where, history_params = _normalize_channel_history_where(ch["name"])
+            msg_c = await db.execute(f"SELECT COUNT(*) FROM messages WHERE {history_where}", history_params)
             msg_count = (await msg_c.fetchone())[0]
             channels.append({
                 "name": ch["name"], "description": ch["description"],
@@ -2521,19 +2697,21 @@ async def get_channel(name: str, request: Request, limit: int = Query(50, ge=1, 
         mem_c = await db.execute("SELECT agent_id FROM channel_members WHERE channel_name = ?", (name,))
         members = [r["agent_id"] for r in await mem_c.fetchall()]
 
-        total_c = await db.execute("SELECT COUNT(*) FROM messages WHERE channel = ?", (name,))
+        history_where, history_params = _normalize_channel_history_where(name)
+        total_c = await db.execute(f"SELECT COUNT(*) FROM messages WHERE {history_where}", history_params)
         total = (await total_c.fetchone())[0]
 
         # Paginate newest first
         msg_c = await db.execute(
-            "SELECT * FROM messages WHERE channel = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-            (name, limit, offset)
+            f"SELECT * FROM messages WHERE {history_where} ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+            history_params + (limit, offset)
         )
         messages = []
         for row in await msg_c.fetchall():
             messages.append({
                 "id": row["id"], "from": row["from_agent"], "type": row["type"],
                 "body": row["body"], "timestamp": row["timestamp"],
+                "dispatchRequested": bool(row["dispatch_requested"]) if "dispatch_requested" in row.keys() else False,
             })
         # Reverse so oldest is first in the returned slice (chat order)
         messages.reverse()
@@ -2551,7 +2729,7 @@ async def delete_channel(name: str, request: Request):
     db = await get_db()
     try:
         await db.execute("DELETE FROM channel_members WHERE channel_name = ?", (name,))
-        await db.execute("DELETE FROM messages WHERE channel = ?", (name,))
+        await _delete_messages_where(db, "channel = ?", (name,))
         cursor = await db.execute("DELETE FROM channels WHERE name = ?", (name,))
         await db.commit()
         if cursor.rowcount == 0:
@@ -2623,8 +2801,8 @@ async def send_channel_message(name: str, req: ChannelMessage, request: Request)
 
         # Channel message (canonical)
         await db.execute(
-            "INSERT INTO messages (id, from_agent, channel, source, type, subject, body, timestamp) VALUES (?,?,?,?,?,?,?,?)",
-            (msg_id, req.from_agent, name, "channel", req.type, subject, req.body, ts)
+            "INSERT INTO messages (id, from_agent, channel, source, type, subject, body, dispatch_requested, timestamp) VALUES (?,?,?,?,?,?,?,?,?)",
+            (msg_id, req.from_agent, name, "channel", req.type, subject, req.body, 1 if (False if req.silent else req.trigger is not False) else 0, ts)
         )
 
         # Deliver to each member's inbox (except sender)
@@ -2638,8 +2816,11 @@ async def send_channel_message(name: str, req: ChannelMessage, request: Request)
                 recipients.append(member)
                 inbox_message_ids[member] = recipient_msg_id
                 await db.execute(
-                    "INSERT INTO messages (id, from_agent, to_agent, channel, source, type, subject, body, priority, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (recipient_msg_id, req.from_agent, member, name, "channel", req.type, subject, req.body, req.priority or "normal", ts)
+                    "INSERT INTO messages (id, from_agent, to_agent, channel, source, type, subject, body, priority, dispatch_requested, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        recipient_msg_id, req.from_agent, member, name, "channel", req.type, subject,
+                        req.body, req.priority or "normal", 1 if (False if req.silent else req.trigger is not False) else 0, ts
+                    )
                 )
 
         should_trigger = False if req.silent else req.trigger is not False
@@ -2671,22 +2852,10 @@ async def send_channel_message(name: str, req: ChannelMessage, request: Request)
                 execution_mode="managed",
                 requested_runtime=None,
                 message_id=inbox_message_ids.get(recipients[0]) if len(recipients) == 1 else None,
+                source_message_ids=inbox_message_ids,
                 steer=req.steer,
             )
-            for run, (_, execution_mode) in zip(dispatch_runs, launchable_recipients):
-                await db.execute(
-                    "UPDATE dispatch_runs SET execution_mode = ? WHERE id = ?",
-                    (execution_mode, run["runId"])
-                )
-                dispatch_state = await _get_dispatch_state_for_agent(db, run["targetAgentId"])
-                active = dispatch_state.get("activeRun")
-                if active:
-                    run["queuedBehindActiveRun"] = {
-                        "runId": active["runId"],
-                        "status": active["status"],
-                        "subject": active["subject"],
-                    }
-                run["queuedRunsForTarget"] = dispatch_state.get("queuedRuns", 0)
+            dispatch_runs = await _finalize_dispatch_runs(db, dispatch_runs, launchable_recipients, not_started)
 
         recipient_info = {}
         for recipient_id in recipients:
@@ -2706,6 +2875,8 @@ async def send_channel_message(name: str, req: ChannelMessage, request: Request)
             for recipient_id in recipients:
                 await ws.notify_agent(recipient_id, "new_message", {"from": req.from_agent, "subject": subject, "channel": name})
             for run in dispatch_runs:
+                if run.get("steered"):
+                    continue
                 await ws.broadcast("dispatch_queued", {"runId": run["runId"], "targetAgentId": run["targetAgentId"]})
         # Wake up any listening members
         for member in members:
@@ -2862,17 +3033,29 @@ async def clear_data(req: ClearRequest, request: Request):
         if req.olderThanHours:
             cutoff = int((time.time() - req.olderThanHours * 3600) * 1000)
 
+        deleted_messages = 0
+        deleted_files = 0
+        deleted_agents = 0
+
         if req.target in ("inbox", "all"):
             if req.agentId:
                 if cutoff:
-                    await db.execute("DELETE FROM messages WHERE to_agent = ? AND timestamp < ?", (req.agentId, cutoff))
+                    deleted_messages += await _delete_messages_where(
+                        db,
+                        "to_agent = ? AND timestamp < ?",
+                        (req.agentId, cutoff),
+                    )
                 else:
-                    await db.execute("DELETE FROM messages WHERE to_agent = ?", (req.agentId,))
+                    deleted_messages += await _delete_messages_where(db, "to_agent = ?", (req.agentId,))
             else:
                 if cutoff:
-                    await db.execute("DELETE FROM messages WHERE timestamp < ?", (cutoff,))
+                    deleted_messages += await _delete_messages_where(
+                        db,
+                        "to_agent IS NOT NULL AND timestamp < ?",
+                        (cutoff,),
+                    )
                 else:
-                    await db.execute("DELETE FROM messages")
+                    deleted_messages += await _delete_messages_where(db, "to_agent IS NOT NULL")
 
         if req.target in ("shared", "all"):
             # Delete binary files from disk
@@ -2881,13 +3064,18 @@ async def clear_data(req: ClearRequest, request: Request):
                 if row["file_path"]:
                     p = Path(row["file_path"])
                     if p.exists(): p.unlink()
+            count_cursor = await db.execute("SELECT COUNT(*) FROM shared_artifacts")
+            deleted_files = (await count_cursor.fetchone())[0]
             await db.execute("DELETE FROM shared_artifacts")
 
         if req.target in ("agents", "all"):
+            count_cursor = await db.execute("SELECT COUNT(*) FROM agents")
+            deleted_agents = (await count_cursor.fetchone())[0]
             await db.execute("DELETE FROM agents")
 
         if req.target in ("channels", "all"):
             await db.execute("DELETE FROM channel_members")
+            deleted_messages += await _delete_messages_where(db, "channel IS NOT NULL")
             await db.execute("DELETE FROM channels")
 
         if req.target == "all":
@@ -2896,7 +3084,15 @@ async def clear_data(req: ClearRequest, request: Request):
         await db.commit()
         ws = await _get_ws(request)
         if ws: await ws.broadcast("data_cleared", {"target": req.target})
-        return {"ok": True}
+        return {
+            "ok": True,
+            "deletedMessages": deleted_messages,
+            "cleared": {
+                "messages": deleted_messages,
+                "files": deleted_files,
+                "agents": deleted_agents,
+            },
+        }
     finally:
         await db.close()
 
@@ -2916,8 +3112,7 @@ async def rotate(request: Request):
         # Expire old messages
         retention_ms = int(settings["retention_days"] * 86400 * 1000)
         cutoff = int(time.time() * 1000) - retention_ms
-        cursor = await db.execute("DELETE FROM messages WHERE timestamp < ?", (cutoff,))
-        stats["expired_messages"] = cursor.rowcount
+        stats["expired_messages"] = await _delete_messages_where(db, "timestamp < ?", (cutoff,))
 
         # Trim per-agent inboxes
         max_msgs = settings["max_messages_per_agent"]
@@ -2928,17 +3123,23 @@ async def rotate(request: Request):
             count = (await c.fetchone())[0]
             if count > max_msgs:
                 trim = count - max_msgs
-                await db.execute(
-                    "DELETE FROM messages WHERE id IN (SELECT id FROM messages WHERE to_agent = ? ORDER BY timestamp ASC LIMIT ?)",
-                    (aid, trim)
+                stats["trimmed_messages"] += await _delete_messages_where(
+                    db,
+                    """
+                    id IN (
+                        SELECT id FROM messages
+                        WHERE to_agent = ?
+                        ORDER BY timestamp ASC
+                        LIMIT ?
+                    )
+                    """,
+                    (aid, trim),
                 )
-                stats["trimmed_messages"] += trim
 
         # Mark stale agents
         stale_hours = settings["stale_agent_hours"]
-        stale_cutoff = _now()  # We compare in SQL
         cursor = await db.execute(
-            "UPDATE agents SET status = 'stale' WHERE status != 'stale' AND last_seen < datetime('now', ? || ' hours')",
+            "UPDATE agents SET status = 'stale' WHERE status != 'stale' AND datetime(last_seen) < datetime('now', ? || ' hours')",
             (f"-{stale_hours}",)
         )
         stats["stale_agents"] = cursor.rowcount
@@ -2961,3 +3162,8 @@ async def dashboard():
         html_path.read_text(encoding="utf-8"),
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
     )
+
+
+@router.get("/dashboard/dispatches", response_class=HTMLResponse)
+async def dashboard_dispatches():
+    return await dashboard()

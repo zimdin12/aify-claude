@@ -34,9 +34,9 @@ const wslTransform = (raw) => {
   return `/mnt/${match[1].toLowerCase()}/${match[2]}`;
 };
 
-// 1. codex-aify case: appServerUrl is set. Must NOT apply the WSL transform.
-//    The native Windows Codex on the other end of the WebSocket needs a
-//    drive-letter path so Path::is_absolute() is true.
+// 1. appServerUrl is set. Send a path native to the OS that will deserialize
+//    it. On Windows that means a forward-slash drive-letter path; on Linux/WSL
+//    a Windows registration path must be converted to /mnt/<drive>/... .
 const residentWin = resolveCodexRequestCwdFor({
   hostCwd: "C:\\Docker\\aify-project-graph",
   appServerUrl: "ws://127.0.0.1:55555",
@@ -44,8 +44,8 @@ const residentWin = resolveCodexRequestCwdFor({
 });
 assert.equal(
   residentWin,
-  "C:/Docker/aify-project-graph",
-  "resident (appServerUrl set) must send forward-slash Windows path, not /mnt/c/...",
+  process.platform === "win32" ? "C:/Docker/aify-project-graph" : "/mnt/c/Docker/aify-project-graph",
+  "resident (appServerUrl set) must send a path format native to the Codex host OS",
 );
 
 // 2. Same case but the input already uses forward slashes.
@@ -54,7 +54,10 @@ const residentWinFwd = resolveCodexRequestCwdFor({
   appServerUrl: "ws://127.0.0.1:55555",
   legacyTransform: wslTransform,
 });
-assert.equal(residentWinFwd, "C:/Docker/aify-project-graph");
+assert.equal(
+  residentWinFwd,
+  process.platform === "win32" ? "C:/Docker/aify-project-graph" : "/mnt/c/Docker/aify-project-graph",
+);
 
 // 3. No appServerUrl → we're about to spawn our own Codex via the legacy
 //    launcher, so the legacy transform applies. On Windows that means
@@ -102,6 +105,9 @@ const mixed = resolveCodexRequestCwdFor({
   appServerUrl: "ws://127.0.0.1:55555",
   legacyTransform: wslTransform,
 });
-assert.equal(mixed, "C:/Docker/aify-project-graph/subdir");
+assert.equal(
+  mixed,
+  process.platform === "win32" ? "C:/Docker/aify-project-graph/subdir" : "/mnt/c/Docker/aify-project-graph/subdir",
+);
 
 console.log("codex-cwd-transform.test.js: all assertions passed");
