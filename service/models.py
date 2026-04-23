@@ -1,5 +1,5 @@
 """Pydantic models for aify-comms API."""
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from pydantic import BaseModel
 
 
@@ -77,7 +77,7 @@ class DispatchRequest(BaseModel):
     priority: str = "normal"
     inReplyTo: Optional[str] = None
     mode: str = "start_if_possible"
-    createMessage: bool = True
+    createMessage: Literal[True] = True
     requestedRuntime: Optional[str] = None
     steer: bool = False
     requireReply: Optional[bool] = None

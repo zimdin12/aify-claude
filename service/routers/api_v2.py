@@ -988,6 +988,11 @@ async def _create_dispatch_runs(
     runs = []
     requested_at = _now()
     for recipient_id in recipients:
+        source_message_id = _dispatch_message_id_for_recipient(
+            recipient_id,
+            message_id=message_id,
+            source_message_ids=source_message_ids,
+        )
         # steer=true: if target has an active run, deliver as a steer
         # control on that run (injected between tool calls) instead of
         # queuing a new dispatch. Symmetric for Claude and Codex.
@@ -1008,7 +1013,7 @@ async def _create_dispatch_runs(
                     from_agent=from_agent,
                     action="steer",
                     body=steer_body,
-                    source_message_id=(source_message_ids or {}).get(recipient_id, message_id or ""),
+                    source_message_id=source_message_id,
                 )
                 runs.append({
                     "runId": active_run["runId"],
@@ -1039,7 +1044,7 @@ async def _create_dispatch_runs(
                 body=body,
                 priority=priority,
                 requested_at=requested_at,
-                message_id=str(message_id or ""),
+                message_id=source_message_id,
                 in_reply_to=str(in_reply_to or ""),
             )
             if merge_result is None:
@@ -1128,7 +1133,7 @@ async def _create_dispatch_runs(
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
-                run_id, message_id, from_agent, recipient_id, dispatch_mode, execution_mode, requested_runtime or "",
+                run_id, source_message_id or None, from_agent, recipient_id, dispatch_mode, execution_mode, requested_runtime or "",
                 message_type, subject, body, priority, in_reply_to, "queued", 1 if require_reply else 0, requested_at
             )
         )
@@ -1162,6 +1167,15 @@ def _primary_result_message_id(message_id: str, recipients: list[str]) -> str:
     if not recipients:
         return message_id
     return f"{message_id}-{recipients[0]}"
+
+
+def _dispatch_message_id_for_recipient(
+    recipient_id: str,
+    *,
+    message_id: Optional[str],
+    source_message_ids: Optional[dict[str, str]] = None,
+) -> str:
+    return str((source_message_ids or {}).get(recipient_id, message_id or "") or "").strip()
 
 
 def _serialize_inbox_message(row, *, include_body: bool) -> dict[str, Any]:
@@ -1234,6 +1248,51 @@ async def _link_reply_message_to_dispatch_run(
     )
     await _append_dispatch_event(db, replied_run["id"], "handoff", handoff_note)
     return True
+
+
+async def _cancel_nonterminal_runs_for_agents(
+    db,
+    agent_ids: list[str],
+    *,
+    summary: str,
+    event_type: str,
+) -> int:
+    targets = _dedupe_preserve([str(agent_id or "").strip() for agent_id in agent_ids if str(agent_id or "").strip()])
+    if not targets:
+        return 0
+
+    cancelled = 0
+    finished_at = _now()
+    chunk_size = 250
+    for i in range(0, len(targets), chunk_size):
+        chunk = targets[i : i + chunk_size]
+        placeholders = ",".join("?" for _ in chunk)
+        cursor = await db.execute(
+            f"""
+            SELECT id
+            FROM dispatch_runs
+            WHERE target_agent IN ({placeholders})
+              AND status IN ('queued', 'claimed', 'running')
+            """,
+            chunk,
+        )
+        rows = await cursor.fetchall()
+        if not rows:
+            continue
+        for row in rows:
+            await db.execute(
+                "UPDATE dispatch_runs SET status = 'cancelled', summary = ?, finished_at = ? WHERE id = ?",
+                (summary, finished_at, row["id"]),
+            )
+            await _append_dispatch_event(db, row["id"], event_type, summary)
+            await _fail_pending_controls_for_run(
+                db,
+                row["id"],
+                handled_at=finished_at,
+                response_text=summary,
+            )
+            cancelled += 1
+    return cancelled
 
 # ─── Root ────────────────────────────────────────────────────────────────────
 
@@ -1527,6 +1586,12 @@ async def spawn_agent(req: SpawnAgentRequest, request: Request):
 async def unregister_agent(agent_id: str, request: Request):
     db = await get_db()
     try:
+        await _cancel_nonterminal_runs_for_agents(
+            db,
+            [agent_id],
+            summary=f'Agent "{agent_id}" was removed before the run could finish.',
+            event_type="agent_removed",
+        )
         cursor = await db.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
         await db.commit()
         ws = await _get_ws(request)
@@ -2047,31 +2112,29 @@ async def create_dispatch(req: DispatchRequest, request: Request):
                 "notStarted": not_started,
             }
 
-        message_id = None
+        message_id = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
         source_message_ids = {}
-        if req.createMessage:
-            message_id = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
-            ts = int(time.time() * 1000)
-            for recipient_id in recipients:
-                recipient_message_id = f"{message_id}-{recipient_id}" if len(recipients) > 1 else message_id
-                source_message_ids[recipient_id] = recipient_message_id
-                await db.execute(
-                    "INSERT INTO messages (id, from_agent, to_agent, source, type, subject, body, priority, dispatch_requested, in_reply_to, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        recipient_message_id,
-                        req.from_agent, recipient_id, "direct", req.type, req.subject, req.body,
-                        req.priority, 1, resolved_in_reply_to, ts
-                    )
+        ts = int(time.time() * 1000)
+        for recipient_id in recipients:
+            recipient_message_id = f"{message_id}-{recipient_id}" if len(recipients) > 1 else message_id
+            source_message_ids[recipient_id] = recipient_message_id
+            await db.execute(
+                "INSERT INTO messages (id, from_agent, to_agent, source, type, subject, body, priority, dispatch_requested, in_reply_to, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    recipient_message_id,
+                    req.from_agent, recipient_id, "direct", req.type, req.subject, req.body,
+                    req.priority, 1, resolved_in_reply_to, ts
                 )
-            if resolved_in_reply_to:
-                await _link_reply_message_to_dispatch_run(
-                    db,
-                    from_agent=req.from_agent,
-                    resolved_in_reply_to=resolved_in_reply_to,
-                    reply_message_id=_primary_result_message_id(message_id, recipients),
-                    reply_type=req.type,
-                    reply_body=req.body,
-                )
+            )
+        if resolved_in_reply_to:
+            await _link_reply_message_to_dispatch_run(
+                db,
+                from_agent=req.from_agent,
+                resolved_in_reply_to=resolved_in_reply_to,
+                reply_message_id=_primary_result_message_id(message_id, recipients),
+                reply_type=req.type,
+                reply_body=req.body,
+            )
 
         runs = []
         if launchable_recipients:
@@ -3183,6 +3246,14 @@ async def clear_data(req: ClearRequest, request: Request):
             await db.execute("DELETE FROM shared_artifacts")
 
         if req.target in ("agents", "all"):
+            agent_rows = await (await db.execute("SELECT id FROM agents")).fetchall()
+            agent_ids = [row["id"] for row in agent_rows]
+            await _cancel_nonterminal_runs_for_agents(
+                db,
+                agent_ids,
+                summary=f'Agents were cleared via clear(target="{req.target}").',
+                event_type="agents_cleared",
+            )
             count_cursor = await db.execute("SELECT COUNT(*) FROM agents")
             deleted_agents = (await count_cursor.fetchone())[0]
             await db.execute("DELETE FROM agents")

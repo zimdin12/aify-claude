@@ -415,6 +415,126 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertIsNotNone(mirror_receipt)
         self.assertTrue(mirror_receipt["read_at"])
 
+    def test_multi_recipient_send_tracks_per_recipient_message_ids(self):
+        self._register("lead", role="manager", runtime="codex", sessionMode="managed")
+        self._register("alice", runtime="codex", sessionMode="managed")
+        self._register("bob", runtime="codex", sessionMode="managed")
+
+        sent = self._send_message(
+            from_agent="lead",
+            toRole="coder",
+            type="request",
+            subject="work",
+            body="do it",
+            trigger=True,
+        )
+        alice_message = self._fetchone(
+            "SELECT id FROM messages WHERE to_agent = ? ORDER BY timestamp DESC LIMIT 1",
+            ("alice",),
+        )["id"]
+        bob_message = self._fetchone(
+            "SELECT id FROM messages WHERE to_agent = ? ORDER BY timestamp DESC LIMIT 1",
+            ("bob",),
+        )["id"]
+
+        reply = self._send_message(
+            from_agent="alice",
+            to="lead",
+            type="response",
+            subject="done",
+            body="ship it",
+            inReplyTo=alice_message,
+            trigger=False,
+        )
+
+        runs_by_target = {}
+        for run in sent["dispatchRuns"]:
+            payload = self.client.get(f"/api/v1/dispatch/runs/{run['runId']}")
+            self.assertEqual(payload.status_code, 200, payload.text)
+            runs_by_target[run["targetAgentId"]] = payload.json()["run"]
+
+        self.assertEqual(runs_by_target["alice"]["messageId"], alice_message)
+        self.assertEqual(runs_by_target["alice"]["resultMessageId"], reply["messageId"])
+        self.assertEqual(runs_by_target["alice"]["replyState"], "sent")
+        self.assertEqual(runs_by_target["bob"]["messageId"], bob_message)
+        self.assertEqual(runs_by_target["bob"]["replyState"], "awaiting")
+
+    def test_multi_recipient_dispatch_tracks_per_recipient_message_ids(self):
+        self._register("lead", role="manager", runtime="codex", sessionMode="managed")
+        self._register("alice", runtime="codex", sessionMode="managed")
+        self._register("bob", runtime="codex", sessionMode="managed")
+
+        created = self._dispatch(
+            from_agent="lead",
+            toRole="coder",
+            type="request",
+            subject="work",
+            body="do it",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        alice_message = self._fetchone(
+            "SELECT id FROM messages WHERE to_agent = ? ORDER BY timestamp DESC LIMIT 1",
+            ("alice",),
+        )["id"]
+        bob_message = self._fetchone(
+            "SELECT id FROM messages WHERE to_agent = ? ORDER BY timestamp DESC LIMIT 1",
+            ("bob",),
+        )["id"]
+
+        reply = self._dispatch(
+            from_agent="alice",
+            to="lead",
+            type="response",
+            subject="done",
+            body="ship it",
+            inReplyTo=alice_message,
+            mode="start_if_possible",
+            createMessage=True,
+            requireReply=False,
+        )
+
+        runs_by_target = {}
+        for run in created["runs"]:
+            payload = self.client.get(f"/api/v1/dispatch/runs/{run['runId']}")
+            self.assertEqual(payload.status_code, 200, payload.text)
+            runs_by_target[run["targetAgentId"]] = payload.json()["run"]
+
+        self.assertEqual(runs_by_target["alice"]["messageId"], alice_message)
+        self.assertEqual(runs_by_target["alice"]["resultMessageId"], reply["messageId"])
+        self.assertEqual(runs_by_target["alice"]["replyState"], "sent")
+        self.assertEqual(runs_by_target["bob"]["messageId"], bob_message)
+        self.assertEqual(runs_by_target["bob"]["replyState"], "awaiting")
+
+    def test_unregister_agent_cancels_nonterminal_runs_before_recreate(self):
+        self._register("lead", runtime="codex", sessionMode="managed")
+        self._register("worker", runtime="codex", sessionMode="managed")
+
+        created = self._dispatch(
+            from_agent="lead",
+            to="worker",
+            type="request",
+            subject="work",
+            body="do it",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        run_id = created["runs"][0]["runId"]
+
+        deleted = self.client.delete("/api/v1/agents/worker")
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+
+        run = self.client.get(f"/api/v1/dispatch/runs/{run_id}")
+        self.assertEqual(run.status_code, 200, run.text)
+        payload = run.json()["run"]
+        self.assertEqual(payload["status"], "cancelled")
+        self.assertIn("removed", payload["summary"])
+
+        self._register("worker", runtime="codex", sessionMode="managed")
+        claim = self.client.post("/api/v1/dispatch/claim", json={"agentId": "worker"})
+        self.assertEqual(claim.status_code, 200, claim.text)
+        self.assertIsNone(claim.json()["run"])
+
     def test_inbox_headers_mode_and_message_id_lookup(self):
         self._register("alice")
         self._register("bob")
@@ -462,3 +582,22 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400, response.text)
         self.assertIn("mode='message_only'", response.text)
         self.assertIn("comms_send(silent=true)", response.text)
+
+    def test_dispatch_rejects_create_message_false(self):
+        self._register("alice", runtime="codex", sessionMode="managed")
+        self._register("bob", runtime="codex", sessionMode="managed")
+
+        response = self.client.post(
+            "/api/v1/dispatch",
+            json={
+                "from_agent": "alice",
+                "to": "bob",
+                "type": "request",
+                "subject": "hello",
+                "body": "world",
+                "mode": "start_if_possible",
+                "createMessage": False,
+            },
+        )
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertIn("Input should be True", response.text)

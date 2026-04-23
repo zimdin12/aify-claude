@@ -404,6 +404,7 @@ Live at `http://localhost:8800` (redirects to `/api/v1/dashboard`):
 ## Security
 
 - **API key** (optional): Set `API_KEY` in `.env`. Clients need `CLAUDE_MCP_API_KEY` env var or `-e AIFY_API_KEY=...`.
+- **WebSocket auth matches HTTP auth**: if `API_KEY` is set, `/ws` also requires the same key via `X-API-Key` or `?api_key=...`.
 - **Prompt injection protection**: Message bodies wrapped in code fences with safety warnings.
 - **Input validation**: Agent IDs, channel names, artifact names: alphanumeric + `.` `-` `_`, 1-128 chars.
 - **Timing-safe auth**: API key comparison uses `hmac.compare_digest`.

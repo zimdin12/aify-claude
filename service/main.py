@@ -54,6 +54,17 @@ def _setup_logging(config):
 logger = logging.getLogger(__name__)
 
 
+async def _authorize_websocket(ws: WebSocket, api_key: str) -> bool:
+    provided_key = (
+        ws.headers.get("X-API-Key")
+        or ws.query_params.get("api_key")
+    )
+    if provided_key and hmac.compare_digest(provided_key, api_key):
+        return True
+    await ws.close(code=1008, reason="Invalid or missing API key")
+    return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config = get_config()
@@ -148,6 +159,8 @@ def create_app() -> FastAPI:
     # WebSocket endpoint
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):
+        if config.api_key and not await _authorize_websocket(ws, config.api_key):
+            return
         agent_id = ws.query_params.get("agent_id")
         manager = app.state.ws_manager
         await manager.connect(ws, agent_id)
