@@ -1298,7 +1298,7 @@ server.tool(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 3. comms_send -- Send message to agent by ID or role, with optional trigger
+// 3. comms_send -- Send message to agent by ID or role
 // ═══════════════════════════════════════════════════════════════════════════════
 
 server.tool(
@@ -1307,7 +1307,7 @@ server.tool(
     "By default this also requests active work on the target agent. Pass silent=true for a message-only send. " +
     "If the target is already working, later dispatches from the same sender are buffered into one pending run that starts after the current run finishes instead of piling up as many separate queued runs. " +
     "Resident sessions trigger only when that exact runtime/session handle supports resident execution; managed workers remain the detached fallback. " +
-    "Triggered request-type sends expect an explicit reply message by default; pass requireReply=true or false to override.",
+    "Request-type sends expect an explicit reply message by default; pass requireReply=true or false to override.",
   {
     from: z.string().describe("Your agent ID"),
     to: z.string().optional().describe("Target agent ID"),
@@ -1319,16 +1319,15 @@ server.tool(
     body: z.string().describe("Message content"),
     priority: z.enum(["normal", "high", "urgent"]).optional().describe("Message priority (default: normal)"),
     inReplyTo: z.string().optional().describe("Message ID this replies to"),
-    trigger: z.boolean().optional().describe("Legacy override for active dispatch behavior"),
     silent: z.boolean().optional().describe("When true, send only a message and do not request active dispatch"),
     steer: z.boolean().optional().describe("When true and target is busy, deliver between tool calls instead of queuing for after current work"),
-    requireReply: z.boolean().optional().describe("Override whether this triggered send should produce a reply message; request-type sends default to true"),
+    requireReply: z.boolean().optional().describe("Override whether this send should produce a reply message; request-type sends default to true"),
   },
-  async ({ from, to, toRole, type, subject, body, priority, inReplyTo, trigger, silent, steer, requireReply }) => {
+  async ({ from, to, toRole, type, subject, body, priority, inReplyTo, silent, steer, requireReply }) => {
     if (!to && !toRole) {
       return { content: [{ type: "text", text: "Error: need 'to' or 'toRole'" }], isError: true };
     }
-    const shouldTrigger = silent === true ? false : (trigger !== false);
+    const shouldTrigger = silent !== true;
 
     // -- Remote mode --
     if (IS_REMOTE) {
@@ -1344,7 +1343,7 @@ server.tool(
           content: [{
             type: "text",
             text:
-              `Sent. Dispatch handling: ${queued.join(", ") || "no launchable recipients"}. Use comms_run_status(...) to inspect progress. Request-type triggered sends expect an explicit reply by default; the bridge mirrors the result back if none is sent.` +
+              `Sent. Dispatch handling: ${queued.join(", ") || "no launchable recipients"}. Use comms_run_status(...) to inspect progress. Request-type sends expect an explicit reply by default; the bridge mirrors the result back if none is sent.` +
               (skipped.length ? `\nNot started: ${skipped.join("; ")}` : ""),
           }],
         };
@@ -1428,7 +1427,7 @@ server.tool(
 
 server.tool(
   "comms_dispatch",
-  "Send a task and queue active runtime dispatch for a triggerable resident session or managed worker. Direct dispatch expects a reply message by default; pass requireReply=false for fire-and-forget work.",
+  "Send a task and queue a tracked runtime dispatch for a triggerable resident session or managed worker. Use requireStart=true when inbox-only fallback is unacceptable. Direct dispatch expects a reply message by default; pass requireReply=false for fire-and-forget work.",
   {
     from: z.string().describe("Your agent ID"),
     to: z.string().optional().describe("Target agent ID"),
@@ -1440,10 +1439,10 @@ server.tool(
     body: z.string().describe("Task details"),
     priority: z.enum(["normal", "high", "urgent"]).optional().describe("Message priority (default: normal)"),
     inReplyTo: z.string().optional().describe("Message ID this replies to"),
-    mode: z.enum(["message_only", "start_if_possible", "require_start"]).optional().describe("Dispatch behavior. message_only delivers the message but does not create a run."),
+    requireStart: z.boolean().optional().describe("When true, fail instead of falling back to inbox-only delivery if the target cannot start work now."),
     requireReply: z.boolean().optional().describe("Override whether this run should produce a reply message; active dispatch defaults to true"),
   },
-  async ({ from, to, toRole, type, subject, body, priority, inReplyTo, mode, requireReply }) => {
+  async ({ from, to, toRole, type, subject, body, priority, inReplyTo, requireStart, requireReply }) => {
     if (!to && !toRole) {
       return { content: [{ type: "text", text: "Error: need 'to' or 'toRole'" }], isError: true };
     }
@@ -1464,7 +1463,7 @@ server.tool(
       body,
       priority: priority || "normal",
       inReplyTo,
-      mode: mode || "start_if_possible",
+      mode: requireStart ? "require_start" : "start_if_possible",
       createMessage: true,
       requireReply,
     });
@@ -1473,15 +1472,13 @@ server.tool(
       return { content: [{ type: "text", text: r.error || "Dispatch failed." }], isError: true };
     }
 
-    const requestedMode = mode || "start_if_possible";
     const lines = (r.runs || []).map((run) => {
       return `- ${formatQueuedRun(run)} [${run.status}]`;
     });
     const skipped = (r.notStarted || []).map((item) => `- ${item.targetAgentId}: ${item.reason}`);
-    const footer =
-      requestedMode === "message_only"
-        ? "\n\nMessage delivered only. No dispatch run was created because mode=message_only."
-        : "\n\nUse comms_run_status(...) to inspect progress. Explicit replies are expected by default for direct dispatch; if none is sent, the bridge mirrors the run result back.";
+    const footer = requireStart
+      ? "\n\nUse comms_run_status(...) to inspect progress. If start was impossible, requireStart=true would have failed instead of falling back to inbox-only delivery."
+      : "\n\nUse comms_run_status(...) to inspect progress. Explicit replies are expected by default for direct dispatch; if none is sent, the bridge mirrors the run result back.";
     return {
       content: [{
         type: "text",
@@ -2258,13 +2255,12 @@ server.tool(
       .optional()
       .describe("Message type (default: info)"),
     priority: z.enum(["normal", "high", "urgent"]).optional().describe("Message priority (default: normal)"),
-    trigger: z.boolean().optional().describe("Legacy override for active dispatch behavior"),
     silent: z.boolean().optional().describe("When true, send only the channel post and do not request active dispatch"),
     steer: z.boolean().optional().describe("When true and members are busy, deliver between tool calls instead of queuing"),
   },
-  async ({ channel, from, body, type, priority, trigger, silent, steer }) => {
+  async ({ channel, from, body, type, priority, silent, steer }) => {
     try { validateName(channel, "channel name"); } catch (e) { return { content: [{ type: "text", text: e.message }], isError: true }; }
-    const shouldTrigger = silent === true ? false : (trigger !== false);
+    const shouldTrigger = silent !== true;
     const subject = `#${channel}: ${body.slice(0, 80)}`;
 
     if (IS_REMOTE) {

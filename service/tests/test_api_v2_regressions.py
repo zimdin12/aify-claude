@@ -442,3 +442,23 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(body_payload["total"], 1)
         self.assertEqual(body_payload["messages"][0]["id"], message_id)
         self.assertEqual(body_payload["messages"][0]["body"], "body line 1\nbody line 2\nbody line 3")
+
+    def test_dispatch_rejects_message_only_mode(self):
+        self._register("alice", runtime="codex", sessionMode="managed")
+        self._register("bob", runtime="codex", sessionMode="managed")
+
+        response = self.client.post(
+            "/api/v1/dispatch",
+            json={
+                "from_agent": "alice",
+                "to": "bob",
+                "type": "request",
+                "subject": "hello",
+                "body": "world",
+                "mode": "message_only",
+                "createMessage": True,
+            },
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("mode='message_only'", response.text)
+        self.assertIn("comms_send(silent=true)", response.text)

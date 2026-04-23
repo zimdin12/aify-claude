@@ -207,9 +207,10 @@ tr:hover{background:#1c2128}
         <select id="send-type"><option>info</option><option>request</option><option>review</option><option>error</option><option>approval</option><option>response</option></select>
         <select id="send-priority"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select>
         <select id="send-mode">
-          <option value="message">Background only</option>
-          <option value="start_if_possible">Dispatch now</option>
-          <option value="require_start">Require start</option>
+          <option value="wake">Message + wake</option>
+          <option value="background">Background message</option>
+          <option value="dispatch">Tracked dispatch</option>
+          <option value="dispatch_strict">Tracked dispatch (require start)</option>
         </select>
         <input name="subject" id="send-subject" placeholder="Subject">
         <input name="body" id="send-body" placeholder="Message body">
@@ -321,17 +322,21 @@ bash install.sh --client opencode http://localhost:8800</pre>
       <p>Restart the client after install. Then re-register from the exact live session you want other agents to trigger. Active triggering works through the local <code>stdio</code> MCP bridge on the target machine. SSE clients can use the shared service but cannot launch local Claude/Codex/OpenCode work themselves.</p>
       <p>Codex CLI note: if you want visible live wakeups instead of background thread resume, start Codex through <code>codex-aify</code> before registering. From that live session, prefer the strongest exact registration first: <code>comms_register(..., runtime="codex", sessionHandle="$CODEX_THREAD_ID", appServerUrl="$AIFY_CODEX_APP_SERVER_URL")</code>. Plain <code>codex</code> still works, but it advertises the older <code>codex-thread-resume</code> fallback.</p>
       <p>Claude CLI note: resident wakeups require starting Claude through the installed <code>claude-aify</code> wrapper so the local aify channel bridge is allowed to load during the current research-preview channels phase. It is only installed when the Claude client was set up with a real shared aify server URL.</p>
-      <p><b>Resident vs managed:</b> <code>comms_register</code> binds the exact live session you have open for presence, inbox, and runtime metadata. Resident Codex sessions started with <code>codex-aify</code> become <code>codex-live</code>: the visible TUI and the aify bridge share the same local WebSocket <code>codex app-server</code>. Plain resident Codex sessions still fall back to <code>codex-thread-resume</code>, which resumes the stored thread through a separate background worker. Resident Claude sessions become wakeable through the local <code>aify-comms-channel</code> bridge when Claude is started with <code>claude-aify</code>. OpenCode supports managed workers now and resident session resume when you register with a real <code>sessionHandle</code>, also through a background worker. <code>comms_spawn_agent</code> creates a managed worker owned by that machine/bridge for detached/background execution. For normal wakeups, prefer <code>comms_send(...)</code> or <code>comms_channel_send(...)</code>; use <code>silent=true</code> only when a DM or channel post should stay background-only. On Windows, desktop Codex and WSL Codex use different thread stores, so plain resident triggering only works when the bridge talks to the same store that created the session.</p>
+      <p><b>Resident vs managed:</b> <code>comms_register</code> binds the exact live session you have open for presence, inbox, and runtime metadata. Resident Codex sessions started with <code>codex-aify</code> become <code>codex-live</code>: the visible TUI and the aify bridge share the same local WebSocket <code>codex app-server</code>. Plain resident Codex sessions still fall back to <code>codex-thread-resume</code>, which resumes the stored thread through a separate background worker. Resident Claude sessions become wakeable through the local <code>aify-comms-channel</code> bridge when Claude is started with <code>claude-aify</code>. OpenCode supports managed workers now and resident session resume when you register with a real <code>sessionHandle</code>, also through a background worker. <code>comms_spawn_agent</code> creates a managed worker owned by that machine/bridge for detached/background execution. For normal teamwork, default to <code>comms_send(...)</code> or <code>comms_channel_send(...)</code>; those wake by default. Use <code>silent=true</code> only when a DM or channel post should stay background-only. Use <code>comms_dispatch(...)</code> only when you specifically want tracked run state or strict start behavior. On Windows, desktop Codex and WSL Codex use different thread stores, so plain resident triggering only works when the bridge talks to the same store that created the session.</p>
         <p><b>Queueing:</b> only one active dispatched run is processed at a time per agent. If an agent is already working, later dispatches from the same sender are merged into one pending buffered run that starts after the current run finishes instead of piling up as many separate queued runs. Inbox delivery still happens immediately, and the agent table plus run list surface the active run and buffered backlog.</p>
+      <p><b>Dashboard composer:</b> <b>Message + wake</b> is the normal teamwork path. <b>Background message</b> stores the message without waking the target. <b>Tracked dispatch</b> creates a run you can inspect in the Dispatches page, and <b>Tracked dispatch (require start)</b> fails instead of quietly falling back to inbox-only delivery.</p>
 
       <h3>Tools</h3>
       <ul>
-        <li><b>Messaging:</b> <code>comms_register</code>, <code>comms_spawn_agent</code>, <code>comms_agents</code>, <code>comms_status</code>, <code>comms_agent_info</code>, <code>comms_send</code>, <code>comms_dispatch</code>, <code>comms_listen</code> (stdio only), <code>comms_inbox</code>, <code>comms_unsend</code>, <code>comms_search</code></li>
+        <li><b>Messaging:</b> <code>comms_register</code>, <code>comms_spawn_agent</code>, <code>comms_agents</code>, <code>comms_status</code>, <code>comms_agent_info</code>, <code>comms_send</code> (normal teamwork; wakes by default), <code>comms_dispatch</code> (explicit tracked runs), <code>comms_listen</code> (stdio only), <code>comms_inbox</code>, <code>comms_unsend</code>, <code>comms_search</code></li>
         <li><b>Run control:</b> <code>comms_run_status</code>, <code>comms_run_interrupt</code></li>
         <li><b>Channels:</b> <code>comms_channel_create</code>, <code>comms_channel_join</code> (+ invite others), <code>comms_channel_send</code> (wake by default, <code>silent=true</code> for background-only), <code>comms_channel_read</code>, <code>comms_channel_list</code></li>
         <li><b>File sharing:</b> <code>comms_share</code> (text + binary), <code>comms_read</code>, <code>comms_files</code></li>
         <li><b>Management:</b> <code>comms_clear</code>, <code>comms_dashboard</code></li>
       </ul>
+
+      <h3>Dashboard Settings</h3>
+      <p><code>idle_minutes</code> and <code>offline_minutes</code> control presence labels in the agent tables. <code>stale_agent_hours</code> is applied during rotation, which is separate from the live idle/offline presence calculation. <code>dashboard_refresh_seconds</code> only affects this dashboard browser refresh loop.</p>
 
       <h3>API Endpoints</h3>
       <ul>
@@ -342,7 +347,7 @@ bash install.sh --client opencode http://localhost:8800</pre>
         <li><code>GET /api/v1/agents/{id}/last-read</code> — Last message agent read</li>
         <li><code>POST /api/v1/agents/{id}/heartbeat</code> — Alive signal</li>
         <li><code>POST /api/v1/messages/send</code> — Send message (returns recipient status)</li>
-        <li><code>GET /api/v1/messages/inbox/{id}</code> — Check inbox (replies include parent context)</li>
+        <li><code>GET /api/v1/messages/inbox/{id}</code> — Check inbox (supports <code>mode=headers</code> and <code>messageId=...</code>; replies include parent context)</li>
         <li><code>DELETE /api/v1/messages/{id}</code> — Unsend a message</li>
         <li><code>POST /api/v1/agents/spawn</code> — Create a managed worker on a specific machine</li>
         <li><code>POST /api/v1/dispatch</code> — Queue active work for triggerable resident sessions or managed workers</li>
@@ -385,16 +390,22 @@ bash install.sh --client opencode http://localhost:8800</pre>
       <div class="form-group">
         <label>Idle Threshold (minutes)</label>
         <input type="number" id="s-idle" min="1" max="120">
-        <div class="hint">Agent shows "idle" after this many minutes of inactivity. Default: 5</div>
+        <div class="hint">Presence shows "idle" after this many minutes of inactivity. Default: 5</div>
       </div>
       <div class="form-group">
         <label>Offline Threshold (minutes)</label>
         <input type="number" id="s-offline" min="5" max="1440">
-        <div class="hint">Agent shows "offline" after this many minutes of inactivity. Default: 30</div>
+        <div class="hint">Presence shows "offline" after this many minutes of inactivity. Default: 30</div>
+      </div>
+      <div class="form-group">
+        <label>Stale Agent Threshold (hours)</label>
+        <input type="number" id="s-stale" min="1" max="720">
+        <div class="hint">Rotation marks agents stale after this many hours since last seen. Default: 24</div>
       </div>
       <div class="form-group">
         <label>Auto-Rotation</label>
         <select id="s-rotation"><option value="true">Enabled</option><option value="false">Disabled</option></select>
+        <div class="hint">When enabled, rotation expires old messages/files and marks stale agents using the settings above.</div>
       </div>
       <div class="btn-row">
         <button type="submit" class="btn btn-primary">Save Settings</button>
@@ -734,7 +745,13 @@ function renderRuns(runs, containerId = 'dispatch-runs-table') {
     const blocked = run.blockedByActiveRun;
     const summary = run.error || run.summary || (blocked ? `Queued behind active run ${blocked.runId}${blocked.subject ? ` (${blocked.subject})` : ''}` : '');
     const active = status === 'running' || status === 'claimed';
-    const mode = `${run.executionMode || 'managed'} / ${run.mode || 'start_if_possible'}`;
+    const modeLabel =
+      run.mode === 'require_start'
+        ? 'dispatch (require start)'
+        : run.mode === 'message_only'
+          ? 'message-only (legacy)'
+          : 'dispatch';
+    const mode = `${run.executionMode || 'managed'} / ${modeLabel}`;
     html += `<tr>` +
       `<td class="t">${esc(run.requestedAt || '')}</td>` +
       `<td class="t"${titleAttr(`${run.from} → ${run.targetAgentId}`)}><span class="run-route">${esc(run.from)} &nbsp;&rarr;&nbsp; ${esc(run.targetAgentId)}</span></td>` +
@@ -1042,15 +1059,17 @@ async function sendMessage() {
   const to = document.getElementById('send-to').value.trim();
   const type = document.getElementById('send-type').value;
   const priority = document.getElementById('send-priority').value;
-  const mode = document.getElementById('send-mode').value;
+  const delivery = document.getElementById('send-mode').value;
   const subject = document.getElementById('send-subject').value.trim();
   const body = document.getElementById('send-body').value.trim();
   if (!to || !subject) { toast('Need "To" and "Subject"', '#f85149'); return; }
-  const endpoint = mode === 'message' ? '/messages/send' : '/dispatch';
+  const endpoint = (delivery === 'dispatch' || delivery === 'dispatch_strict') ? '/dispatch' : '/messages/send';
   const payload = {from_agent: 'dashboard', to, type, subject, body: body || subject, priority};
-  if (mode !== 'message') {
-    payload.mode = mode;
+  if (endpoint === '/dispatch') {
+    payload.mode = delivery === 'dispatch_strict' ? 'require_start' : 'start_if_possible';
     payload.createMessage = true;
+  } else {
+    payload.trigger = delivery === 'wake';
   }
   const r = await apiFetch(API + endpoint, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -1059,8 +1078,8 @@ async function sendMessage() {
   if (r.ok) {
     const skipped = (r.notStarted || []).map(x => `${x.targetAgentId}: ${x.reason}`).join('; ');
     toast(
-      mode === 'message'
-        ? `Sent to ${r.recipients.join(', ')}`
+      endpoint === '/messages/send'
+        ? `${delivery === 'background' ? 'Background message' : 'Sent'} to ${r.recipients.join(', ')}`
         : `Queued ${r.runs?.length || 0} run(s)` + (skipped ? ` | skipped: ${skipped}` : '')
     );
     document.getElementById('send-subject').value = '';
@@ -1071,7 +1090,7 @@ async function sendMessage() {
 
 function prefillWorkerMessage(agentId, mode) {
   document.getElementById('send-to').value = agentId;
-  document.getElementById('send-mode').value = mode === 'dispatch' ? 'start_if_possible' : 'message';
+  document.getElementById('send-mode').value = mode === 'dispatch' ? 'dispatch' : 'wake';
   document.getElementById('send-type').value = mode === 'dispatch' ? 'request' : 'info';
   showPage('dashboard');
   document.getElementById('send-subject').focus();
@@ -1159,8 +1178,9 @@ async function loadSettings() {
   document.getElementById('s-max-msgs').value = s.max_messages_per_agent;
   document.getElementById('s-max-shared').value = s.max_shared_size_mb;
   document.getElementById('s-refresh').value = s.dashboard_refresh_seconds;
-  document.getElementById('s-idle').value = s.idle_minutes || 5;
-  document.getElementById('s-offline').value = s.offline_minutes || 30;
+  document.getElementById('s-idle').value = s.idle_minutes;
+  document.getElementById('s-offline').value = s.offline_minutes;
+  document.getElementById('s-stale').value = s.stale_agent_hours;
   document.getElementById('s-rotation').value = String(s.rotation_enabled);
   if (refreshInterval) clearInterval(refreshInterval);
   refreshInterval = setInterval(refreshDashboard, s.dashboard_refresh_seconds * 1000);
@@ -1176,6 +1196,7 @@ async function saveSettings(e) {
       dashboard_refresh_seconds: parseInt(document.getElementById('s-refresh').value),
       idle_minutes: parseInt(document.getElementById('s-idle').value),
       offline_minutes: parseInt(document.getElementById('s-offline').value),
+      stale_agent_hours: parseInt(document.getElementById('s-stale').value),
       rotation_enabled: document.getElementById('s-rotation').value === 'true',
     })});
   toast('Settings saved'); loadSettings();

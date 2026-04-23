@@ -242,14 +242,13 @@ async def comms_send(
     toRole: str = "",
     inReplyTo: str = "",
     priority: str = "normal",
-    trigger: bool = True,
     silent: bool = False,
     requireReply: bool | None = None,
 ) -> str:
-    """Send a message to an agent by ID or to all agents with a given role. By default this also requests active work on the target; use silent=true for inbox-only delivery. Triggered request-type sends expect a reply by default unless you override requireReply."""
+    """Send a message to an agent by ID or to all agents with a given role. By default this also requests active work on the target; use silent=true for inbox-only delivery. Request-type sends expect a reply by default unless you override requireReply."""
     if not to and not toRole:
         return "Error: need 'to' or 'toRole'"
-    should_trigger = False if silent else trigger is not False
+    should_trigger = not silent
     data = {
         "from_agent": from_agent,
         "type": type,
@@ -274,7 +273,7 @@ async def comms_send(
         note = f"Sent + queued dispatch for {', '.join(queued) if queued else 'no launchable recipients'}."
         if skipped:
             note += f" Not started: {'; '.join(skipped)}."
-        note += " Use comms_run_status(...) to inspect progress. Request-type triggered sends expect an explicit reply by default, and the bridge mirrors the result if none is sent."
+        note += " Use comms_run_status(...) to inspect progress. Request-type sends expect an explicit reply by default, and the bridge mirrors the result if none is sent."
         return note
     return f"Sent ({r['messageId']}) to {', '.join(r['recipients'])}. Subject: {subject}"
 
@@ -288,10 +287,10 @@ async def comms_dispatch(
     to: str = "",
     toRole: str = "",
     inReplyTo: str = "",
-    mode: str = "start_if_possible",
+    requireStart: bool = False,
     requireReply: bool | None = None,
 ) -> str:
-    """Queue active work for another agent. SSE clients can request dispatch, but cannot execute dispatch runs themselves. mode='message_only' delivers the message without creating a run. Direct dispatch expects a reply by default unless requireReply=false."""
+    """Queue tracked active work for another agent. SSE clients can request dispatch, but cannot execute dispatch runs themselves. Use requireStart=true when inbox-only fallback is unacceptable. For inbox-only delivery, use comms_send(..., silent=true). Direct dispatch expects a reply by default unless requireReply=false."""
     if not to and not toRole:
         return "Error: need 'to' or 'toRole'"
     data = {
@@ -299,7 +298,7 @@ async def comms_dispatch(
         "type": type,
         "subject": subject,
         "body": body,
-        "mode": mode,
+        "mode": "require_start" if requireStart else "start_if_possible",
         "createMessage": True,
         "requireReply": requireReply,
     }
@@ -319,11 +318,9 @@ async def comms_dispatch(
         lines.append("Not started:")
         lines.extend([f"- {item['targetAgentId']}: {item['reason']}" for item in not_started])
     if not lines:
-        if mode == "message_only":
-            return "Message delivered only. No dispatch run was created because mode=message_only."
         return "No dispatch runs were created."
-    if mode == "message_only":
-        lines.extend(["", "Message delivered only. No dispatch run was created because mode=message_only."])
+    if requireStart:
+        lines.extend(["", "Use comms_run_status(...) to inspect progress. If start was impossible, requireStart=true would have failed instead of falling back to inbox-only delivery."])
     else:
         lines.extend(["", "Use comms_run_status(...) to inspect progress. Direct dispatch expects an explicit reply by default, and the bridge mirrors the result if none is sent."])
     return "\n".join(lines)
@@ -503,11 +500,10 @@ async def comms_channel_send(
     body: str,
     type: str = "info",
     priority: str = "normal",
-    trigger: bool = True,
     silent: bool = False,
 ) -> str:
     """Send a message to a channel. By default this also requests active work for channel members other than the sender; use silent=true for a background-only channel update."""
-    should_trigger = False if silent else trigger is not False
+    should_trigger = not silent
     r = await _api("POST", f"/channels/{channel}/send", {
         "from_agent": from_agent, "channel": channel, "body": body, "type": type, "priority": priority, "trigger": should_trigger, "silent": silent,
     })

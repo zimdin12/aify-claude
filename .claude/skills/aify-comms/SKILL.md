@@ -93,8 +93,8 @@ Gotchas regardless of runtime:
 | `comms_status` | Set status + optional note: `comms_status("working", note="NRD pipeline")`. |
 | `comms_describe` | Set your team-facing description: who you are, project, focus areas. Visible in `comms_agents`. Persists across re-register. |
 | `comms_agent_info` | Check another agent's status, unread count, and last message they read. |
-| `comms_send` | DM by ID (`to`) or role (`toRole`). By default it also asks the recipient runtime to start working immediately; use `silent=true` for inbox-only delivery, `steer=true` to inject guidance into a live steer-capable run, and `requireReply=` to override reply-required handoff behavior. |
-| `comms_dispatch` | Queue active work explicitly and get run IDs back. Use when you want execution now, not just delivery. Reply handoff is required by default unless `requireReply=false`. |
+| `comms_send` | Primary teamwork message API. DM by ID (`to`) or role (`toRole`). By default it also asks the recipient runtime to start working immediately; use `silent=true` for inbox-only delivery, `steer=true` to inject guidance into a live steer-capable run, and `requireReply=` to override reply-required handoff behavior. |
+| `comms_dispatch` | Explicit tracked-run API. Use when you want run IDs, run-state triage, or `requireStart=true`. For normal teamwork communication, prefer `comms_send`. For inbox-only delivery, use `comms_send(silent=true)`. Reply handoff is required by default unless `requireReply=false`. |
 | `comms_listen` | **Wait for messages.** Blocks until a message arrives. Call when idle instead of polling. |
 | `comms_inbox` | Check inbox. Returns unread, newest first. Replies include parent context. Use `mode="headers"` for title/preview triage or `messageId="..."` to fetch one message. |
 | `comms_unsend` | Delete a sent message by ID. |
@@ -130,11 +130,11 @@ Gotchas regardless of runtime:
 |---|---|
 | Ask a question, get a reply | `comms_send` (default wake) |
 | Share info, recipient reads + acks | `comms_send` or `comms_send(silent=true)` |
-| **Recipient to execute the body as work** | **`comms_dispatch`** |
+| **Recipient to execute the body as tracked work** | **`comms_dispatch`** |
 | Just queue for inbox, don't wake | `comms_send(silent=true)` |
 | Inject guidance mid-turn without interrupting | `comms_send(steer=true)` |
 
-`comms_send` is for **communication** — the recipient reads your message and decides what to do. `comms_dispatch` is still a sender message too, but it also opens a tracked run and defaults to requiring a reply handoff. Use it when the body should be acted on now, not just read later.
+Default to `comms_send` for normal teamwork. It is the message API, and it already wakes by default. Use `comms_dispatch` only when you specifically want tracked work semantics: run IDs, run-state monitoring, or `requireStart=true`. If you only want inbox delivery without wake, use `comms_send(silent=true)`; `comms_dispatch` no longer has a message-only mode.
 
 **Wake and priority are independent.** Waking an agent does NOT imply urgency. `priority="high"` does. Sending a wake message with "not urgent" in the body means the recipient will read it and defer — correctly. If you want work done now, say so: use `priority="high"` and explicit blocking language.
 
@@ -171,7 +171,7 @@ When you receive a wake notification or finish a task, check inbox before starti
 
 ## Working With Other Agents
 
-- Thread replies with `inReplyTo`. `comms_dispatch` requires a reply by default, and triggered `comms_send(type="request")` does too unless you override `requireReply`. Explicit `comms_send` replies are still preferred, but a reply-dispatch back to the requester also counts. If a required reply never arrives, the bridge mirrors the run result back as a fallback handoff.
+- Thread replies with `inReplyTo`. `comms_dispatch` requires a reply by default, and `comms_send(type="request")` does too unless you override `requireReply`. Explicit `comms_send` replies are still preferred, but a reply-dispatch back to the requester also counts. If a required reply never arrives, the bridge mirrors the run result back as a fallback handoff.
 - `comms_channel_send` for group wakeups, `comms_share` for long output (logs, screenshots, patches, reports).
 - `comms_run_interrupt` to stop an active run. `comms_send(steer=true)` to inject guidance mid-turn.
 - Before diagnosing another agent's issues, call `comms_agent_info` first — don't guess.

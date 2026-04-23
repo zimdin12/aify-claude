@@ -2003,6 +2003,8 @@ def _wake_agent(agent_id: str):
 async def create_dispatch(req: DispatchRequest, request: Request):
     if not req.to and not req.toRole:
         raise HTTPException(400, "Need 'to' or 'toRole'")
+    if req.mode == "message_only":
+        raise HTTPException(400, "Dispatch no longer supports mode='message_only'. Use comms_send(silent=true) for inbox-only delivery.")
 
     db = await get_db()
     try:
@@ -2026,8 +2028,6 @@ async def create_dispatch(req: DispatchRequest, request: Request):
             row = await cursor.fetchone()
             if row:
                 recipient_rows[recipient_id] = row
-            if req.mode == "message_only":
-                continue
             execution_mode = None
             reason = None if row else "agent is not registered"
             if row:
@@ -2060,7 +2060,7 @@ async def create_dispatch(req: DispatchRequest, request: Request):
                     (
                         recipient_message_id,
                         req.from_agent, recipient_id, "direct", req.type, req.subject, req.body,
-                        req.priority, 1 if req.mode != "message_only" else 0, resolved_in_reply_to, ts
+                        req.priority, 1, resolved_in_reply_to, ts
                     )
                 )
             if resolved_in_reply_to:
@@ -2074,7 +2074,7 @@ async def create_dispatch(req: DispatchRequest, request: Request):
                 )
 
         runs = []
-        if req.mode != "message_only" and launchable_recipients:
+        if launchable_recipients:
             require_reply = _dispatch_requires_reply(req.requireReply, default=True)
             runs = await _create_dispatch_runs(
                 db,

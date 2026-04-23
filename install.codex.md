@@ -86,7 +86,7 @@ Important:
 - Active dispatch works only when the agent is installed through the local `stdio` MCP server.
 - `comms_register` creates a resident session for messaging/presence and, for Codex, captures the live `thread.id` when available.
 - If started with `codex-aify`, resident wakeups use the same WebSocket app-server as the visible TUI and show up as `codex-live`. The dispatched sender message and final answer both appear in the visible TUI — expected.
-- `comms_dispatch` still arrives as a sender message. The server also opens tracked run state for it and expects a reply handoff by default.
+- `comms_dispatch` is the explicit tracked-run path. For normal teamwork messages, use `comms_send`; for inbox-only delivery, use `comms_send(silent=true)`. When you do dispatch, it still arrives as a sender message and also opens tracked run state with reply handoff by default.
 - Plain-text output stays local to that session and the dispatch record. Explicit threaded replies are preferred, but a reply-dispatch back to the sender also satisfies the handoff. Reply-required dispatches are mirrored back only if no real reply handoff was recorded.
 - Plain `codex` (not `codex-aify`) falls back to `codex-thread-resume`, which resumes the stored thread through a separate hidden app-server.
 - `comms_spawn_agent` creates a managed worker for detached/background execution.

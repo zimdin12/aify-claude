@@ -25,7 +25,7 @@ Built on [aify-container](https://github.com/zimdin12/aify-container).
 Important mental model:
 - `comms_dispatch(...)` is still a message from the sender; the difference is that the server also opens a tracked run for it
 - `comms_dispatch(...)` expects an explicit reply message back by default
-- triggered `comms_send(...)` only defaults to reply-required when it is a `type="request"` send; override with `requireReply=true/false` when needed
+- `comms_send(...)` only defaults to reply-required when it is a `type="request"` send; override with `requireReply=true/false` when needed
 - if a required reply is still missing when the run ends, the bridge mirrors the run result back into the requester's inbox as a fallback handoff
 - a real threaded reply or reply-dispatch back to the requester satisfies that handoff and suppresses or auto-clears the fallback mirror
 - `comms_send(...)` wakes by default; use `silent=true` when you want a message without waking the target
@@ -157,7 +157,7 @@ comms_inbox(agentId="coder", messageId="<message id>")
 
 **Rules of thumb:**
 - `comms_send` wakes by default. Use `silent=true` only for pure FYI messages.
-- `comms_dispatch` expects a reply by default. Plain `comms_send` only does when it is a triggered `type="request"` send unless you override `requireReply`.
+- `comms_dispatch` expects a reply by default. Plain `comms_send` only does when it is a `type="request"` send unless you override `requireReply`.
 - Explicit `comms_send(..., inReplyTo=...)` is still the preferred handoff. Reply-dispatches back to the requester also count. The bridge only mirrors the run summary back when a required reply never happened.
 - `comms_inbox(..., mode="headers")` is the low-context way to scan unread titles/previews. `comms_inbox(..., messageId="...")` fetches one full message by ID.
 - Keep messages short. Subject = summary. If the detail is long, `comms_share` an artifact and point at it.
@@ -254,7 +254,7 @@ Claude Code (any machine)         Claude Code (any machine)
 | **comms_describe** | Set team-facing description: who you are, project, focus areas. Visible in `comms_agents`. Persists across re-register. |
 | **comms_agent_info** | Check another agent's status, unread count, last read message |
 | **comms_send** | Send message with optional `priority`. By default this also queues active dispatch; use `silent=true` for message-only sends, `steer=true` to inject guidance into a live steer-capable run, and `requireReply=` to override reply-required handoff behavior |
-| **comms_dispatch** | Queue active runtime dispatch explicitly and return run IDs. Reply handoff is required by default unless `requireReply=false` |
+| **comms_dispatch** | Queue active runtime dispatch explicitly and return run IDs. Use it when you want tracked work, especially with `requireStart=true`. For inbox-only delivery, use `comms_send(silent=true)`. Reply handoff is required by default unless `requireReply=false` |
 | **comms_listen** | Wait for incoming messages when you intentionally want an inbox-driven loop |
 | **comms_inbox** | Check inbox (newest first, replies include parent context). Use `mode="headers"` for title/preview triage or `messageId="..."` to fetch one specific message. |
 | **comms_unsend** | Delete a message by ID |
@@ -298,7 +298,7 @@ Claude Code (any machine)         Claude Code (any machine)
 
 ## Active Dispatch
 
-`comms_send`, `comms_channel_send`, and `comms_dispatch` queue work on the server. The target agent's owning local `stdio` MCP bridge claims the run and launches it on the correct runtime. `silent=true` on send/channel-send is the background-only exception; `comms_spawn_agent` creates a detached managed worker with its own runtime state.
+`comms_send`, `comms_channel_send`, and `comms_dispatch` queue work on the server. The target agent's owning local `stdio` MCP bridge claims the run and launches it on the correct runtime. `silent=true` on send/channel-send is the background-only exception; `comms_dispatch` is the explicit run API and no longer has a message-only mode; `requireStart=true` is the strict variant when inbox-only fallback is unacceptable; `comms_spawn_agent` creates a detached managed worker with its own runtime state.
 
 Wake modes by runtime:
 
@@ -312,7 +312,8 @@ Wake modes by runtime:
 | anything else | — | `message-only` | no |
 
 Key rules:
-- **Dispatch tracks handoff, not just execution.** `comms_dispatch` requires a reply by default, and triggered `comms_send(type="request")` does too unless overridden. Plain-text output still stays in the target's live session and dispatch record, but the run now also tracks whether a reply message was actually sent.
+- **Dispatch tracks handoff, not just execution.** `comms_dispatch` requires a reply by default, and `comms_send(type="request")` does too unless overridden. Plain-text output still stays in the target's live session and dispatch record, but the run now also tracks whether a reply message was actually sent.
+- **Dispatch is for tracked work.** For inbox-only delivery without wake, use `comms_send(silent=true)`. `comms_dispatch` is reserved for explicit runs, with `requireStart=true` as the strict mode.
 - **Explicit replies are preferred.** Agents should still call `comms_send(..., inReplyTo=...)` themselves. Reply-dispatches back to the requester also satisfy handoff tracking. If a required reply is missing when the run ends, the bridge mirrors the run result back to the requester as a fallback so the lane does not silently stall.
 - **One active run per agent.** Later dispatches from the same sender merge into one buffered run (cap: 10 items) that starts after the current one finishes. Past the cap, dispatches return `reason: "buffer_full"` in `notStarted` with the recipient's status — wait, `comms_run_interrupt`, or `comms_agent_info` before retrying. Inbox messages still arrive immediately.
 - **Steer is message-backed, not magical.** `comms_send(..., steer=true)` still writes the inbox message first. On Codex it injects mid-turn only if a live steer-capable run exists; otherwise it falls back to normal queueing. If the only active run is stale or superseded, the server fails that run first and then queues the new work normally.
@@ -364,6 +365,8 @@ Live at `http://localhost:8800` (redirects to `/api/v1/dashboard`):
 | `retention_days` | 90 | Auto-delete old messages |
 | `max_messages_per_agent` | 1000 | Trim oldest when exceeded |
 | `max_shared_size_mb` | 500 | Delete oldest files when exceeded |
+| `idle_minutes` | 5 | Presence shows `idle` after this many minutes with no heartbeat |
+| `offline_minutes` | 30 | Presence shows `offline` after this many minutes with no heartbeat |
 | `stale_agent_hours` | 24 | Mark agents stale |
 | `dashboard_refresh_seconds` | 15 | Auto-refresh interval |
 | `rotation_enabled` | true | Enable/disable rotation |
