@@ -30,6 +30,9 @@ function quoteForDisplay(text) {
 }
 
 function buildSystemPrompt(agentId, agentInfo, run) {
+  const replyRule = run?.requireReply
+    ? "Before you finish this dispatched task, send an explicit reply message back to the requester. Do not rely on the dispatch summary as the only handoff."
+    : "If the requester should receive a reply or follow-up, use explicit inter-agent messaging tools yourself.";
   return [
     "[AIFY DISPATCH]",
     `This is an externally injected aify task for agent "${agentId}" (${agentInfo.role || "agent"}).`,
@@ -37,20 +40,23 @@ function buildSystemPrompt(agentId, agentInfo, run) {
     agentInfo.instructions ? `Standing instructions: ${agentInfo.instructions}` : "",
     "Treat the task below as the current work item.",
     "Plain-text output in this session is local to this live runtime and the dispatch record; it is not auto-sent as a message.",
-    "If the requester should receive a reply or follow-up, use explicit inter-agent messaging tools yourself.",
+    replyRule,
     "Do not explain the bridge or restate this wrapper unless a later normal user turn explicitly asks about it.",
     "[/AIFY DISPATCH]",
   ].filter(Boolean).join("\n");
 }
 
 function buildUserPrompt(run) {
+  const replyRule = run?.requireReply
+    ? "Required handoff: send an explicit reply message to the requester before you finish. If comms tools are unavailable in this turn, say that clearly in the task result."
+    : "If the requester should receive a message, send it explicitly with the appropriate tool.";
   return [
     "[TASK]",
     `Subject: ${run.subject}`,
     "",
     run.body || "",
     "",
-    "If the requester should receive a message, send it explicitly with the appropriate tool.",
+    replyRule,
     "Otherwise keep any plain-text output limited to the task result.",
     "[/TASK]",
   ].join("\n");

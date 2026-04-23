@@ -31,6 +31,14 @@ Every agent registration resolves to one of these wake modes. `comms_agent_info`
 | `message-only` | No live wake path available. Messages still land in the inbox; dispatch cannot execute. |
 | `claude-needs-channel` | Claude agent is registered but no alive `claude-aify` wrapper exists on this machine. Fix: launch one. |
 
+## Managed workers are persistent identities, not persistent processes
+
+**Decision.** `comms_spawn_agent` creates a stable managed-worker registration with saved runtime state, but the underlying Codex/Claude/OpenCode process is launched per dispatch run and torn down when that run finishes, fails, times out, or is interrupted.
+
+**Why.** Keeping a long-lived hidden terminal process around for every worker would be harder to supervise, leak resources across idle periods, and make stale-worker cleanup much messier. The state we actually care about is the resumable conversation handle (`threadId`, `sessionId`, etc.), not the lifetime of a specific shell process.
+
+**Consequence.** A manager can keep a personal stable worker pool (`reviewer-worker`, `tester-worker`, etc.) throughout a project and reuse the same logical sessions between dispatches, but "killing a worker" operationally means either interrupting its active run, clearing its saved runtime state, or removing its registration — not hunting for a permanently running background TUI.
+
 ## Stale-run cleanup replaces the active-run gate
 
 **Decision.** The `/dispatch/claim` endpoint no longer returns `blockedBy: activeRun` when the active run's owner is a different bridge from the one polling. Instead, it marks the stale run as failed inline and proceeds to hand out queued work. The only `blockedBy` case that remains is the safety-net: if the active run is owned by the *same* bridge that's polling, something is wrong on the bridge side and the server blocks.
@@ -159,11 +167,11 @@ The old bridge stays alive and keeps polling (that's fine — polling is cheap) 
 
 **Consequence.** Dispatch run history for Claude resident sessions still shows `completed` immediately after successful delivery, but failed notification attempts now surface as failed runs instead of false positives. The actual "did Claude do the work" tracking remains the message/reply flow (`comms_send` → `comms_inbox` → `comms_send` back with `inReplyTo`). Interrupt/steer controls for Claude resident sessions are not supported through the dispatch run — use `comms_send` instead.
 
-## Dispatched runs do not auto-reply
+## Dispatch tracks handoff, with explicit replies preferred
 
-**Decision.** When a dispatched run completes, the server records `status` and `summary` on the run — it does not send a message back to the requester. If the requester wants a reply, the target has to explicitly call `comms_send(...)`.
+**Decision.** `comms_dispatch` requires a reply handoff by default, and triggered `comms_send(type="request")` does too unless `requireReply=false` is passed. Agents are still expected to send their own explicit `comms_send(..., inReplyTo=...)` reply. If a required reply is still missing when the run ends, the bridge mirrors the run result back to the requester as a fallback inbox handoff.
 
-**Why.** Auto-reply on completion sounds convenient but creates two problems: (1) the "summary" is often just a short status line that adds noise to the requester's inbox, and (2) it hides the choice of what to report. Forcing the target to call `comms_send` explicitly means the target decides what's worth reporting and the requester's inbox only carries intentional replies.
+**Why.** Pure run summaries were too easy to miss in real manager/worker loops: work finished, but the requester saw an empty inbox and the lane looked dead until someone manually polled `comms_run_status`. Fully automatic replies were also too blunt because the bridge cannot reliably decide what the agent meant to report. The compromise is: require a real reply for work handoff, prefer an intentional agent-authored message, but refuse to let the lane silently stall if that handoff never happens.
 
 ## Channel messages land in inbox
 

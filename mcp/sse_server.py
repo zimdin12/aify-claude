@@ -244,8 +244,9 @@ async def comms_send(
     priority: str = "normal",
     trigger: bool = True,
     silent: bool = False,
+    requireReply: bool | None = None,
 ) -> str:
-    """Send a message to an agent by ID or to all agents with a given role. By default this also requests active work on the target; use silent=true for inbox-only delivery."""
+    """Send a message to an agent by ID or to all agents with a given role. By default this also requests active work on the target; use silent=true for inbox-only delivery. Triggered request-type sends expect a reply by default unless you override requireReply."""
     if not to and not toRole:
         return "Error: need 'to' or 'toRole'"
     should_trigger = False if silent else trigger is not False
@@ -256,6 +257,7 @@ async def comms_send(
         "body": body,
         "priority": priority,
         "trigger": should_trigger,
+        "requireReply": requireReply,
     }
     if to:
         data["to"] = to
@@ -272,7 +274,7 @@ async def comms_send(
         note = f"Sent + queued dispatch for {', '.join(queued) if queued else 'no launchable recipients'}."
         if skipped:
             note += f" Not started: {'; '.join(skipped)}."
-        note += " Use comms_run_status(...) to inspect progress. No reply message will be sent unless the target sends one explicitly."
+        note += " Use comms_run_status(...) to inspect progress. Request-type triggered sends expect an explicit reply by default, and the bridge mirrors the result if none is sent."
         return note
     return f"Sent ({r['messageId']}) to {', '.join(r['recipients'])}. Subject: {subject}"
 
@@ -287,8 +289,9 @@ async def comms_dispatch(
     toRole: str = "",
     inReplyTo: str = "",
     mode: str = "start_if_possible",
+    requireReply: bool | None = None,
 ) -> str:
-    """Queue active work for another agent. SSE clients can request dispatch, but cannot execute dispatch runs themselves."""
+    """Queue active work for another agent. SSE clients can request dispatch, but cannot execute dispatch runs themselves. Direct dispatch expects a reply by default unless requireReply=false."""
     if not to and not toRole:
         return "Error: need 'to' or 'toRole'"
     data = {
@@ -298,6 +301,7 @@ async def comms_dispatch(
         "body": body,
         "mode": mode,
         "createMessage": True,
+        "requireReply": requireReply,
     }
     if to:
         data["to"] = to
@@ -314,7 +318,10 @@ async def comms_dispatch(
     if not_started:
         lines.append("Not started:")
         lines.extend([f"- {item['targetAgentId']}: {item['reason']}" for item in not_started])
-    return "\n".join(lines) if lines else "No dispatch runs were created."
+    if not lines:
+        return "No dispatch runs were created."
+    lines.extend(["", "Use comms_run_status(...) to inspect progress. Direct dispatch expects an explicit reply by default, and the bridge mirrors the result if none is sent."])
+    return "\n".join(lines)
 
 
 @mcp_server.tool()
@@ -324,9 +331,18 @@ async def comms_run_status(runId: str) -> str:
     run = r.get("run")
     if not run:
         return f"Run not found: {runId}"
+    if not run.get("requireReply"):
+        reply_summary = "reply not required"
+    elif run.get("resultMessageId"):
+        reply_summary = f"reply sent ({run['resultMessageId']})"
+    elif run.get("replyPending"):
+        reply_summary = "reply pending"
+    else:
+        reply_summary = "reply expected"
     lines = [
         f"{run['id']} -> {run['targetAgentId']}",
         f"Status: {run['status']}",
+        f"Reply: {reply_summary}",
         f"Runtime: {run.get('runtime') or 'unknown'}",
         f"Subject: {run.get('subject', '')}",
         f"Requested: {run.get('requestedAt', '')}",

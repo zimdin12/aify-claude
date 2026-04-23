@@ -69,6 +69,8 @@ _RUNTIME_ALIASES = {
 }
 _LAUNCHABLE_RUNTIMES = {"claude-code", "codex", "opencode"}
 _SESSION_MODES = {"resident", "managed"}
+_DISPATCH_TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
+_DISPATCH_ACTIVE_STATUSES = {"queued", "claimed", "running"}
 
 async def _get_ws(request: Request):
     try:
@@ -115,6 +117,74 @@ def _dedupe_preserve(values: list[str]) -> list[str]:
         seen.add(value)
         result.append(value)
     return result
+
+
+def _dispatch_requires_reply(explicit: Optional[bool], *, default: bool) -> bool:
+    if explicit is None:
+        return bool(default)
+    return bool(explicit)
+
+
+def _row_require_reply(row) -> bool:
+    return bool(int((row["require_reply"] if row and "require_reply" in row.keys() else 0) or 0))
+
+
+def _dispatch_reply_state(row) -> str:
+    if not _row_require_reply(row):
+        return "not_required"
+    if str((row["result_message_id"] if row else "") or "").strip():
+        return "sent"
+    status = str((row["status"] if row else "") or "").strip().lower()
+    if status in _DISPATCH_TERMINAL_STATUSES:
+        return "pending"
+    return "awaiting"
+
+
+def _dispatch_reply_pending(row) -> bool:
+    return _dispatch_reply_state(row) == "pending"
+
+
+def _serialize_dispatch_run_row(row, *, blocked_by=None, include_body: bool = False, include_events=None, include_controls=None) -> dict[str, Any]:
+    payload = {
+        "id": row["id"],
+        "messageId": row["message_id"],
+        "from": row["from_agent"],
+        "targetAgentId": row["target_agent"],
+        "status": row["status"],
+        "mode": row["dispatch_mode"],
+        "executionMode": row["execution_mode"] or "managed",
+        "runtime": row["runtime"] or "",
+        "claimBridgeId": row["claim_bridge_id"] or "",
+        "requestedRuntime": row["requested_runtime"] or "",
+        "subject": row["subject"],
+        "summary": row["summary"] or "",
+        "error": row["error_text"] or "",
+        "resultMessageId": row["result_message_id"] or "",
+        "requireReply": _row_require_reply(row),
+        "replyState": _dispatch_reply_state(row),
+        "replyPending": _dispatch_reply_pending(row),
+        "requestedAt": row["requested_at"],
+        "claimedAt": row["claimed_at"],
+        "startedAt": row["started_at"],
+        "finishedAt": row["finished_at"],
+        "blockedByActiveRun": blocked_by,
+    }
+    if include_body:
+        payload.update(
+            {
+                "type": row["message_type"],
+                "body": row["body"],
+                "priority": row["priority"],
+                "inReplyTo": row["in_reply_to"],
+                "externalThreadId": row["external_thread_id"] or "",
+                "externalTurnId": row["external_turn_id"] or "",
+            }
+        )
+    if include_events is not None:
+        payload["events"] = include_events
+    if include_controls is not None:
+        payload["controls"] = include_controls
+    return payload
 
 
 def _has_codex_live_app_server(runtime_config: Optional[dict[str, Any]] = None) -> bool:
@@ -913,6 +983,7 @@ async def _create_dispatch_runs(
     message_id: Optional[str] = None,
     source_message_ids: Optional[dict[str, str]] = None,
     steer: bool = False,
+    require_reply: bool = False,
 ):
     runs = []
     requested_at = _now()
@@ -944,6 +1015,7 @@ async def _create_dispatch_runs(
                     "targetAgentId": recipient_id,
                     "status": "steered",
                     "steered": True,
+                    "requireReply": require_reply,
                     "controlId": control_id,
                     "steeredIntoActiveRun": {
                         "runId": active_run["runId"],
@@ -1018,7 +1090,7 @@ async def _create_dispatch_runs(
             await db.execute(
                 """
                 UPDATE dispatch_runs
-                SET subject = ?, body = ?, priority = ?, dispatch_mode = ?, message_type = ?
+                SET subject = ?, body = ?, priority = ?, dispatch_mode = ?, message_type = ?, require_reply = ?
                 WHERE id = ?
                 """,
                 (
@@ -1027,6 +1099,7 @@ async def _create_dispatch_runs(
                     _stronger_priority(mergeable_run["priority"], priority),
                     "require_start" if mergeable_run["dispatch_mode"] == "require_start" or dispatch_mode == "require_start" else mergeable_run["dispatch_mode"],
                     message_type,
+                    1 if (bool(mergeable_run["require_reply"]) or require_reply) else 0,
                     mergeable_run["id"],
                 ),
             )
@@ -1042,6 +1115,7 @@ async def _create_dispatch_runs(
                 "status": "queued",
                 "merged": True,
                 "mergedCount": merged_count,
+                "requireReply": bool(mergeable_run["require_reply"]) or require_reply,
             })
             continue
 
@@ -1050,16 +1124,16 @@ async def _create_dispatch_runs(
             """
             INSERT INTO dispatch_runs (
                 id, message_id, from_agent, target_agent, dispatch_mode, execution_mode, requested_runtime,
-                message_type, subject, body, priority, in_reply_to, status, requested_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                message_type, subject, body, priority, in_reply_to, status, require_reply, requested_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 run_id, message_id, from_agent, recipient_id, dispatch_mode, execution_mode, requested_runtime or "",
-                message_type, subject, body, priority, in_reply_to, "queued", requested_at
+                message_type, subject, body, priority, in_reply_to, "queued", 1 if require_reply else 0, requested_at
             )
         )
         await _append_dispatch_event(db, run_id, "queued", f"{message_type}: {subject}")
-        runs.append({"runId": run_id, "targetAgentId": recipient_id, "status": "queued"})
+        runs.append({"runId": run_id, "targetAgentId": recipient_id, "status": "queued", "requireReply": require_reply})
     return runs
 
 
@@ -1080,6 +1154,50 @@ async def _resolve_reply_parent_message_id(db, reply_id: Optional[str]) -> tuple
         return resolved, True
 
     return None, False
+
+
+def _primary_result_message_id(message_id: str, recipients: list[str]) -> str:
+    if len(recipients) == 1:
+        return message_id
+    if not recipients:
+        return message_id
+    return f"{message_id}-{recipients[0]}"
+
+
+async def _link_reply_message_to_dispatch_run(
+    db,
+    *,
+    from_agent: str,
+    resolved_in_reply_to: str,
+    reply_message_id: str,
+    reply_type: str,
+    reply_body: str,
+) -> bool:
+    run_cursor = await db.execute(
+        """
+        SELECT * FROM dispatch_runs
+        WHERE target_agent = ? AND message_id = ? AND result_message_id = ''
+        ORDER BY requested_at DESC
+        LIMIT 1
+        """,
+        (from_agent, resolved_in_reply_to),
+    )
+    replied_run = await run_cursor.fetchone()
+    if not replied_run:
+        return False
+
+    current_status = str(replied_run["status"] or "").strip().lower()
+    await db.execute(
+        "UPDATE dispatch_runs SET result_message_id = ? WHERE id = ?",
+        (reply_message_id, replied_run["id"]),
+    )
+    handoff_note = (
+        f"Result reply linked after run completion from {from_agent}"
+        if current_status in _DISPATCH_TERMINAL_STATUSES
+        else f"Result reply recorded from {from_agent}"
+    )
+    await _append_dispatch_event(db, replied_run["id"], "handoff", handoff_note)
+    return True
 
 # ─── Root ────────────────────────────────────────────────────────────────────
 
@@ -1441,6 +1559,8 @@ async def send_message(req: MessageSend, request: Request):
         if not recipients:
             return {"ok": False, "error": "No recipients found", "recipients": []}
 
+        linked_result_message_id = _primary_result_message_id(msg_id, recipients)
+
         for r in recipients:
             recipient_message_id = f"{msg_id}-{r}" if len(recipients) > 1 else msg_id
             await db.execute(
@@ -1450,47 +1570,19 @@ async def send_message(req: MessageSend, request: Request):
             )
 
         if resolved_in_reply_to:
-            run_cursor = await db.execute(
-                """
-                SELECT * FROM dispatch_runs
-                WHERE target_agent = ? AND message_id = ? AND execution_mode = 'resident' AND status IN ('claimed', 'running')
-                ORDER BY requested_at DESC
-                LIMIT 1
-                """,
-                (req.from_agent, resolved_in_reply_to)
+            await _link_reply_message_to_dispatch_run(
+                db,
+                from_agent=req.from_agent,
+                resolved_in_reply_to=resolved_in_reply_to,
+                reply_message_id=linked_result_message_id,
+                reply_type=req.type,
+                reply_body=req.body,
             )
-            replied_run = await run_cursor.fetchone()
-            if replied_run:
-                run_status = "failed" if req.type == "error" else "completed"
-                await db.execute(
-                    """
-                    UPDATE dispatch_runs
-                    SET status = ?, summary = ?, error_text = ?, result_message_id = ?, finished_at = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        run_status,
-                        req.body if run_status == "completed" else replied_run["summary"],
-                        req.body if run_status == "failed" else "",
-                        msg_id if len(recipients) == 1 else f"{msg_id}-{recipients[0]}",
-                        _now(),
-                        replied_run["id"],
-                    )
-                )
-                await _append_dispatch_event(
-                    db,
-                    replied_run["id"],
-                    "completed" if run_status == "completed" else "failed",
-                    f"Resident reply from {req.from_agent}",
-                )
-                await db.execute(
-                    "UPDATE agents SET status = 'idle', last_seen = ? WHERE id = ?",
-                    (_now(), req.from_agent)
-                )
 
         dispatch_runs = []
         not_started = []
         if req.trigger:
+            require_reply = _dispatch_requires_reply(req.requireReply, default=req.type == "request")
             source_message_ids = {
                 recipient_id: (f"{msg_id}-{recipient_id}" if len(recipients) > 1 else msg_id)
                 for recipient_id in recipients
@@ -1522,6 +1614,7 @@ async def send_message(req: MessageSend, request: Request):
                 message_id=msg_id if len(recipients) == 1 else None,
                 source_message_ids=source_message_ids,
                 steer=req.steer,
+                require_reply=require_reply,
             )
             dispatch_runs = await _finalize_dispatch_runs(db, dispatch_runs, launchable_recipients, not_started)
 
@@ -1937,6 +2030,7 @@ async def create_dispatch(req: DispatchRequest, request: Request):
 
         runs = []
         if req.mode != "message_only" and launchable_recipients:
+            require_reply = _dispatch_requires_reply(req.requireReply, default=True)
             runs = await _create_dispatch_runs(
                 db,
                 [recipient_id for recipient_id, _ in launchable_recipients],
@@ -1952,6 +2046,7 @@ async def create_dispatch(req: DispatchRequest, request: Request):
                 message_id=message_id if len(recipients) == 1 else None,
                 source_message_ids=source_message_ids,
                 steer=req.steer,
+                require_reply=require_reply,
             )
             runs = await _finalize_dispatch_runs(db, runs, launchable_recipients, not_started)
 
@@ -2153,6 +2248,7 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
                 "status": "claimed",
                 "mode": selected_run["dispatch_mode"],
                 "executionMode": selected_run["execution_mode"] or "managed",
+                "requireReply": _row_require_reply(selected_run),
                 "claimBridgeId": req.bridgeId or "",
                 "requestedRuntime": selected_run["requested_runtime"] or None,
                 "claimedAt": claimed_at,
@@ -2191,26 +2287,7 @@ async def list_dispatch_runs(
             blocked_by = None
             if row["status"] == "queued":
                 blocked_by = await _get_blocking_active_run(db, row["target_agent"], row["id"])
-            runs.append({
-                "id": row["id"],
-                "messageId": row["message_id"],
-                "from": row["from_agent"],
-                "targetAgentId": row["target_agent"],
-                "status": row["status"],
-                "mode": row["dispatch_mode"],
-                "executionMode": row["execution_mode"] or "managed",
-                "runtime": row["runtime"] or "",
-                "claimBridgeId": row["claim_bridge_id"] or "",
-                "requestedRuntime": row["requested_runtime"] or "",
-                "subject": row["subject"],
-                "summary": row["summary"] or "",
-                "error": row["error_text"] or "",
-                "requestedAt": row["requested_at"],
-                "claimedAt": row["claimed_at"],
-                "startedAt": row["started_at"],
-                "finishedAt": row["finished_at"],
-                "blockedByActiveRun": blocked_by,
-            })
+            runs.append(_serialize_dispatch_run_row(row, blocked_by=blocked_by))
         return {"runs": runs}
     finally:
         await db.close()
@@ -2257,35 +2334,13 @@ async def get_dispatch_run(run_id: str, request: Request):
         if row["status"] == "queued":
             blocked_by = await _get_blocking_active_run(db, row["target_agent"], row["id"])
         return {
-            "run": {
-                "id": row["id"],
-                "messageId": row["message_id"],
-                "from": row["from_agent"],
-                "targetAgentId": row["target_agent"],
-                "type": row["message_type"],
-                "subject": row["subject"],
-                "body": row["body"],
-                "priority": row["priority"],
-                "inReplyTo": row["in_reply_to"],
-                "status": row["status"],
-                "mode": row["dispatch_mode"],
-                "executionMode": row["execution_mode"] or "managed",
-                "runtime": row["runtime"] or "",
-                "claimBridgeId": row["claim_bridge_id"] or "",
-                "requestedRuntime": row["requested_runtime"] or "",
-                "summary": row["summary"] or "",
-                "error": row["error_text"] or "",
-                "resultMessageId": row["result_message_id"] or "",
-                "externalThreadId": row["external_thread_id"] or "",
-                "externalTurnId": row["external_turn_id"] or "",
-                "requestedAt": row["requested_at"],
-                "claimedAt": row["claimed_at"],
-                "startedAt": row["started_at"],
-                "finishedAt": row["finished_at"],
-                "blockedByActiveRun": blocked_by,
-                "events": events,
-                "controls": controls,
-            }
+            "run": _serialize_dispatch_run_row(
+                row,
+                blocked_by=blocked_by,
+                include_body=True,
+                include_events=events,
+                include_controls=controls,
+            )
         }
     finally:
         await db.close()
@@ -2310,7 +2365,7 @@ async def update_dispatch_run(run_id: str, req: DispatchRunUpdate, request: Requ
             if req.status == "running" and not row["started_at"]:
                 updates.append("started_at = ?")
                 params.append(now)
-            if req.status in ("completed", "failed", "cancelled"):
+            if req.status in _DISPATCH_TERMINAL_STATUSES:
                 updates.append("finished_at = ?")
                 params.append(now)
         if req.summary is not None:
@@ -2320,8 +2375,10 @@ async def update_dispatch_run(run_id: str, req: DispatchRunUpdate, request: Requ
             updates.append("error_text = ?")
             params.append(req.error)
         if req.resultMessageId is not None:
-            updates.append("result_message_id = ?")
-            params.append(req.resultMessageId)
+            normalized_result_message_id = str(req.resultMessageId or "").strip()
+            if normalized_result_message_id or not str(row["result_message_id"] or "").strip():
+                updates.append("result_message_id = ?")
+                params.append(normalized_result_message_id)
         if req.externalThreadId is not None:
             updates.append("external_thread_id = ?")
             params.append(req.externalThreadId)
@@ -2854,6 +2911,7 @@ async def send_channel_message(name: str, req: ChannelMessage, request: Request)
                 message_id=inbox_message_ids.get(recipients[0]) if len(recipients) == 1 else None,
                 source_message_ids=inbox_message_ids,
                 steer=req.steer,
+                require_reply=False,
             )
             dispatch_runs = await _finalize_dispatch_runs(db, dispatch_runs, launchable_recipients, not_started)
 
@@ -3003,6 +3061,16 @@ async def get_stats(request: Request):
             """
         )
         dispatch_by_status = {row["status"]: row["cnt"] for row in await dispatch_c.fetchall()}
+        reply_pending_c = await db.execute(
+            """
+            SELECT COUNT(*)
+            FROM dispatch_runs
+            WHERE require_reply = 1
+              AND status IN ('completed', 'failed', 'cancelled')
+              AND COALESCE(result_message_id, '') = ''
+            """
+        )
+        reply_pending = (await reply_pending_c.fetchone())[0]
 
         return {
             "agents": agents,
@@ -3018,6 +3086,7 @@ async def get_stats(request: Request):
             "shared_size_mb": round(shared_row["total_size"] / 1048576, 2),
             "dispatch_runs_total": sum(dispatch_by_status.values()),
             "dispatch_runs_by_status": dispatch_by_status,
+            "dispatch_reply_pending": reply_pending,
         }
     finally:
         await db.close()

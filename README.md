@@ -7,7 +7,7 @@ Use it when you want multiple coding agents to coordinate like teammates:
 - chat in shared channels
 - share files and artifacts
 - trigger each other to start work
-- inspect queued/running/completed work from one dashboard
+- inspect resident sessions, managed workers, and queued/running/completed work from one dashboard
 
 Built on [aify-container](https://github.com/zimdin12/aify-container).
 
@@ -24,8 +24,9 @@ Built on [aify-container](https://github.com/zimdin12/aify-container).
 
 Important mental model:
 - dispatch wakes the target and records run status on the server
-- dispatch does **not** automatically send a reply message back
-- if the target should answer you, it must explicitly use `comms_send(...)`
+- `comms_dispatch(...)` expects an explicit reply message back by default
+- triggered `comms_send(...)` only defaults to reply-required when it is a `type="request"` send; override with `requireReply=true/false` when needed
+- if a required reply is still missing when the run ends, the bridge mirrors the run result back into the requester's inbox as a fallback handoff
 - `comms_send(...)` wakes by default; use `silent=true` when you want a message without waking the target
 - `comms_channel_send(...)` also wakes channel members by default; use `silent=true` for background-only channel updates
 - `comms_send(..., steer=true)` only injects guidance mid-turn when the target already has a live steer-capable run; otherwise it falls back to normal queued dispatch
@@ -152,7 +153,8 @@ comms_inbox(agentId="coder")
 
 **Rules of thumb:**
 - `comms_send` wakes by default. Use `silent=true` only for pure FYI messages.
-- Dispatched runs don't auto-send a reply back — if you want one, tell the target to `comms_send` explicitly.
+- `comms_dispatch` expects a reply by default. Plain `comms_send` only does when it is a triggered `type="request"` send unless you override `requireReply`.
+- Explicit `comms_send(..., inReplyTo=...)` is still the preferred handoff. The bridge only mirrors the run summary back when a required reply never happened.
 - Keep messages short. Subject = summary. If the detail is long, `comms_share` an artifact and point at it.
 - Re-register with the same `agentId` after any update or restart — the server supersedes the old bridge automatically.
 - If things go sideways, the **aify-comms-debug** skill lists every known failure mode and its fix.
@@ -246,8 +248,8 @@ Claude Code (any machine)         Claude Code (any machine)
 | **comms_status** | Set status + note: `comms_status("working", note="NRD pipeline")` |
 | **comms_describe** | Set team-facing description: who you are, project, focus areas. Visible in `comms_agents`. Persists across re-register. |
 | **comms_agent_info** | Check another agent's status, unread count, last read message |
-| **comms_send** | Send message with optional `priority`. By default this also queues active dispatch; use `silent=true` for message-only sends, or `steer=true` to inject guidance into a live steer-capable run |
-| **comms_dispatch** | Queue active runtime dispatch explicitly and return run IDs |
+| **comms_send** | Send message with optional `priority`. By default this also queues active dispatch; use `silent=true` for message-only sends, `steer=true` to inject guidance into a live steer-capable run, and `requireReply=` to override reply-required handoff behavior |
+| **comms_dispatch** | Queue active runtime dispatch explicitly and return run IDs. Reply handoff is required by default unless `requireReply=false` |
 | **comms_listen** | Wait for incoming messages when you intentionally want an inbox-driven loop |
 | **comms_inbox** | Check inbox (newest first, replies include parent context) |
 | **comms_unsend** | Delete a message by ID |
@@ -282,6 +284,7 @@ Claude Code (any machine)         Claude Code (any machine)
 - `comms_register(...)` registers a resident session: the exact live Claude/Codex/OpenCode session that is currently open for presence, inbox, and runtime metadata.
 - Re-registering the same agent ID supersedes the older bridge instance for that agent on that machine. This is how stale-run recovery works after a restart.
 - `comms_spawn_agent(...)` creates a managed worker: a triggerable logical agent hosted by the local stdio bridge on that machine.
+- Managed workers keep their own saved thread/session state between dispatches, but they are not permanently running terminal processes. The bridge launches the runtime for each active dispatch and exits it again when that run finishes, fails, times out, or is interrupted.
 - Resident Codex sessions started with `codex-aify` become `codex-live`: the visible TUI and the aify bridge share the same local WebSocket `codex app-server`.
 - Resident Codex sessions started with plain `codex` still use `thread.id`-based `codex-thread-resume` through a separate App Server worker.
 - Resident Claude CLI sessions become wakeable when Claude is started through the installed `claude-aify` wrapper, which loads the local aify channel bridge.
@@ -304,7 +307,8 @@ Wake modes by runtime:
 | anything else | — | `message-only` | no |
 
 Key rules:
-- **Dispatched runs don't auto-reply.** Plain-text output stays in the target's live session and dispatch record. If you want a reply message, ask the target to explicitly call `comms_send(...)`.
+- **Dispatch tracks handoff, not just execution.** `comms_dispatch` requires a reply by default, and triggered `comms_send(type="request")` does too unless overridden. Plain-text output still stays in the target's live session and dispatch record, but the run now also tracks whether a reply message was actually sent.
+- **Explicit replies are preferred.** Agents should still call `comms_send(..., inReplyTo=...)` themselves. If a required reply is missing when the run ends, the bridge mirrors the run result back to the requester as a fallback so the lane does not silently stall.
 - **One active run per agent.** Later dispatches from the same sender merge into one buffered run (cap: 10 items) that starts after the current one finishes. Past the cap, dispatches return `reason: "buffer_full"` in `notStarted` with the recipient's status — wait, `comms_run_interrupt`, or `comms_agent_info` before retrying. Inbox messages still arrive immediately.
 - **Steer is message-backed, not magical.** `comms_send(..., steer=true)` still writes the inbox message first. On Codex it injects mid-turn only if a live steer-capable run exists; otherwise it falls back to normal queueing. If the only active run is stale or superseded, the server fails that run first and then queues the new work normally.
 - **Active dispatch requires `stdio`.** SSE clients can message, inspect, and request dispatch, but cannot be the local launcher or host triggerable sessions.
@@ -340,8 +344,10 @@ This runs on the client's supported post-tool hook path (rate-limited to 10s, 3s
 ## Dashboard
 
 Live at `http://localhost:8800` (redirects to `/api/v1/dashboard`):
-- **Dashboard** — agents, direct messages, files, stats, actions
+- **Dashboard** — resident sessions, direct messages, files, stats, actions
+- **Workers** — managed worker inventory with owner, saved state, message/dispatch shortcuts, interrupt, reset-state, and remove actions
 - **Dispatches** — dedicated run triage view at `/api/v1/dashboard/dispatches`
+- completed runs with no recorded reply handoff are surfaced as `Pending Handoffs`
 - direct and channel messages are marked inline with compact delivery badges: `wake` for wake-requested, `bg` for background-only
 - **Instructions** — setup guide, slash commands, API reference
 - **Settings** — retention (90d), max messages (1000), rotation, refresh interval

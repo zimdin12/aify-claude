@@ -375,6 +375,71 @@ function formatQueuedRun(run = {}) {
   return text;
 }
 
+function replyExpectationSummary(run = {}) {
+  if (!run.requireReply) return "reply not required";
+  if (run.resultMessageId) return `reply sent (${run.resultMessageId})`;
+  if (run.replyPending) return "reply pending";
+  return "reply expected";
+}
+
+function autoReplySubjectForRun(run = {}, terminalStatus = "completed") {
+  const subject = String(run.subject || run.id || "dispatch result").trim();
+  if (terminalStatus === "failed") return `[FAILED] ${subject}`;
+  if (terminalStatus === "cancelled") return `[CANCELLED] ${subject}`;
+  return `Re: ${subject}`;
+}
+
+function autoReplyBodyForRun(run = {}, terminalStatus = "completed", detailText = "") {
+  const intro =
+    terminalStatus === "failed"
+      ? "Auto-mirrored dispatch failure because no explicit reply message was sent during the run."
+      : terminalStatus === "cancelled"
+        ? "Auto-mirrored dispatch cancellation because no explicit reply message was sent during the run."
+        : "Auto-mirrored dispatch result because no explicit reply message was sent during the run.";
+  const detail = String(detailText || "").trim() ||
+    (terminalStatus === "failed" ? "Run failed." : terminalStatus === "cancelled" ? "Run cancelled." : "Run completed.");
+  return `${intro}\n\n${detail}`;
+}
+
+async function ensureRequiredReplyHandoff(agentId, run = {}, terminalStatus = "completed", detailText = "") {
+  if (!run?.id || !run?.from) return;
+  try {
+    const latest = await httpCall("GET", `/dispatch/runs/${encodeURIComponent(run.id)}`);
+    const current = latest?.run || {};
+    if (!current.requireReply || current.resultMessageId) return;
+
+    const body = {
+      from_agent: agentId,
+      to: run.from,
+      type: terminalStatus === "failed" ? "error" : "response",
+      subject: autoReplySubjectForRun(run, terminalStatus),
+      body: autoReplyBodyForRun(run, terminalStatus, detailText),
+      priority: run.priority || "normal",
+      trigger: false,
+    };
+    const replyParent = current.messageId || current.inReplyTo || "";
+    if (replyParent) body.inReplyTo = replyParent;
+
+    const sent = await httpCall("POST", "/messages/send", body);
+    await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, {
+      resultMessageId: sent?.messageId || "",
+      appendEvent: `Auto-mirrored result to ${run.from} because no explicit reply message was sent during the run.`,
+      eventType: "handoff",
+    });
+  } catch (error) {
+    try {
+      const latest = await httpCall("GET", `/dispatch/runs/${encodeURIComponent(run.id)}`);
+      if (latest?.run?.resultMessageId) return;
+      await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, {
+        appendEvent: `Run ended without an explicit reply. Auto-mirror to ${run.from} failed: ${error?.message || error}`,
+        eventType: "handoff",
+      });
+    } catch {
+      // best effort
+    }
+  }
+}
+
 // ── Local filesystem helpers ─────────────────────────────────────────────────
 
 function readAgents() {
@@ -672,17 +737,18 @@ async function runDispatchLoop() {
       controller.promise
         .then(async (result) => {
           const summary = result.summary || "";
+          const terminalStatus = result.status === "cancelled" ? "cancelled" : "completed";
           await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, {
-            status: result.status === "cancelled" ? "cancelled" : "completed",
+            status: terminalStatus,
             summary,
-            resultMessageId: "",
             agentStatus: "idle",
             appendEvent:
               result.status === "cancelled"
-                ? "Run cancelled. No automatic reply message was sent."
-                : "Run completed successfully. No automatic reply message was sent.",
-            eventType: result.status === "cancelled" ? "cancelled" : "completed",
+                ? "Run cancelled."
+                : "Run completed successfully.",
+            eventType: terminalStatus,
           });
+          await ensureRequiredReplyHandoff(agentId, run, terminalStatus, summary);
           if (result.runtimeState) {
             state.info.runtimeState = { ...(state.info.runtimeState || {}), ...result.runtimeState };
             await httpCall("PATCH", `/agents/${encodeURIComponent(agentId)}/runtime-state`, {
@@ -696,11 +762,11 @@ async function runDispatchLoop() {
             await httpCall("PATCH", `/dispatch/runs/${encodeURIComponent(run.id)}`, {
               status: "failed",
               error: message,
-              resultMessageId: "",
               agentStatus: "idle",
-              appendEvent: `${message}\nNo automatic reply message was sent.`,
+              appendEvent: message,
               eventType: "failed",
             });
+            await ensureRequiredReplyHandoff(agentId, run, "failed", message);
           } catch (inner) {
             console.error("[aify] failed to report dispatch failure:", inner);
           }
@@ -1225,7 +1291,8 @@ server.tool(
   "Send a message to an agent by ID, or to all agents with a given role. " +
     "By default this also requests active work on the target agent. Pass silent=true for a message-only send. " +
     "If the target is already working, later dispatches from the same sender are buffered into one pending run that starts after the current run finishes instead of piling up as many separate queued runs. " +
-    "Resident sessions trigger only when that exact runtime/session handle supports resident execution; managed workers remain the detached fallback.",
+    "Resident sessions trigger only when that exact runtime/session handle supports resident execution; managed workers remain the detached fallback. " +
+    "Triggered request-type sends expect an explicit reply message by default; pass requireReply=true or false to override.",
   {
     from: z.string().describe("Your agent ID"),
     to: z.string().optional().describe("Target agent ID"),
@@ -1240,8 +1307,9 @@ server.tool(
     trigger: z.boolean().optional().describe("Legacy override for active dispatch behavior"),
     silent: z.boolean().optional().describe("When true, send only a message and do not request active dispatch"),
     steer: z.boolean().optional().describe("When true and target is busy, deliver between tool calls instead of queuing for after current work"),
+    requireReply: z.boolean().optional().describe("Override whether this triggered send should produce a reply message; request-type sends default to true"),
   },
-  async ({ from, to, toRole, type, subject, body, priority, inReplyTo, trigger, silent, steer }) => {
+  async ({ from, to, toRole, type, subject, body, priority, inReplyTo, trigger, silent, steer, requireReply }) => {
     if (!to && !toRole) {
       return { content: [{ type: "text", text: "Error: need 'to' or 'toRole'" }], isError: true };
     }
@@ -1250,7 +1318,7 @@ server.tool(
     // -- Remote mode --
     if (IS_REMOTE) {
       const r = await httpCall("POST", "/messages/send", {
-        from_agent: from, to, toRole, type, subject, body, priority: priority || "normal", inReplyTo, trigger: shouldTrigger, steer: steer || false,
+        from_agent: from, to, toRole, type, subject, body, priority: priority || "normal", inReplyTo, trigger: shouldTrigger, steer: steer || false, requireReply,
       });
       if (!r.ok) return { content: [{ type: "text", text: r.error || "No recipients found." }] };
 
@@ -1261,7 +1329,7 @@ server.tool(
           content: [{
             type: "text",
             text:
-              `Sent. Dispatch handling: ${queued.join(", ") || "no launchable recipients"}. Use comms_run_status(...) to inspect progress. No reply message will be sent unless the target sends one explicitly.` +
+              `Sent. Dispatch handling: ${queued.join(", ") || "no launchable recipients"}. Use comms_run_status(...) to inspect progress. Request-type triggered sends expect an explicit reply by default; the bridge mirrors the result back if none is sent.` +
               (skipped.length ? `\nNot started: ${skipped.join("; ")}` : ""),
           }],
         };
@@ -1331,7 +1399,7 @@ server.tool(
         content: [{
           type: "text",
           text:
-            `Sent + triggered locally for ${started.join(", ") || "no launchable recipients"}. No reply message will be sent unless the target sends one explicitly.` +
+            `Sent + triggered locally for ${started.join(", ") || "no launchable recipients"}. Reply handoff tracking is only available in remote server mode.` +
             (skipped.length ? `\nSkipped: ${skipped.join(", ")}` : ""),
         }],
       };
@@ -1345,7 +1413,7 @@ server.tool(
 
 server.tool(
   "comms_dispatch",
-  "Send a task and queue active runtime dispatch for a triggerable resident session or managed worker.",
+  "Send a task and queue active runtime dispatch for a triggerable resident session or managed worker. Direct dispatch expects a reply message by default; pass requireReply=false for fire-and-forget work.",
   {
     from: z.string().describe("Your agent ID"),
     to: z.string().optional().describe("Target agent ID"),
@@ -1358,8 +1426,9 @@ server.tool(
     priority: z.enum(["normal", "high", "urgent"]).optional().describe("Message priority (default: normal)"),
     inReplyTo: z.string().optional().describe("Message ID this replies to"),
     mode: z.enum(["message_only", "start_if_possible", "require_start"]).optional().describe("Dispatch behavior"),
+    requireReply: z.boolean().optional().describe("Override whether this run should produce a reply message; active dispatch defaults to true"),
   },
-  async ({ from, to, toRole, type, subject, body, priority, inReplyTo, mode }) => {
+  async ({ from, to, toRole, type, subject, body, priority, inReplyTo, mode, requireReply }) => {
     if (!to && !toRole) {
       return { content: [{ type: "text", text: "Error: need 'to' or 'toRole'" }], isError: true };
     }
@@ -1382,6 +1451,7 @@ server.tool(
       inReplyTo,
       mode: mode || "start_if_possible",
       createMessage: true,
+      requireReply,
     });
 
     if (!r.ok) {
@@ -1398,7 +1468,7 @@ server.tool(
         text:
           `Dispatch handling:\n${lines.join("\n") || "- none"}` +
           (skipped.length ? `\n\nNot started:\n${skipped.join("\n")}` : "") +
-          `\n\nUse comms_run_status(...) to inspect progress. No reply message will be sent unless the target sends one explicitly.`,
+          `\n\nUse comms_run_status(...) to inspect progress. Explicit replies are expected by default for direct dispatch; if none is sent, the bridge mirrors the run result back.`,
       }],
     };
   }
@@ -1427,6 +1497,7 @@ server.tool(
         text:
           `${run.id} -> ${run.targetAgentId}\n` +
           `Status: ${run.status}\n` +
+          `Reply: ${replyExpectationSummary(run)}\n` +
           `Runtime: ${run.runtime || "unknown"}\n` +
           `Subject: ${run.subject}\n` +
           `Requested: ${run.requestedAt}\n` +

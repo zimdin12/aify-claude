@@ -93,8 +93,8 @@ Gotchas regardless of runtime:
 | `comms_status` | Set status + optional note: `comms_status("working", note="NRD pipeline")`. |
 | `comms_describe` | Set your team-facing description: who you are, project, focus areas. Visible in `comms_agents`. Persists across re-register. |
 | `comms_agent_info` | Check another agent's status, unread count, and last message they read. |
-| `comms_send` | DM by ID (`to`) or role (`toRole`). By default it also asks the recipient runtime to start working immediately; use `silent=true` for inbox-only delivery, or `steer=true` to inject guidance into a live steer-capable run. |
-| `comms_dispatch` | Queue active work explicitly and get run IDs back. Use when you want execution now, not just delivery. |
+| `comms_send` | DM by ID (`to`) or role (`toRole`). By default it also asks the recipient runtime to start working immediately; use `silent=true` for inbox-only delivery, `steer=true` to inject guidance into a live steer-capable run, and `requireReply=` to override reply-required handoff behavior. |
+| `comms_dispatch` | Queue active work explicitly and get run IDs back. Use when you want execution now, not just delivery. Reply handoff is required by default unless `requireReply=false`. |
 | `comms_listen` | **Wait for messages.** Blocks until a message arrives. Call when idle instead of polling. |
 | `comms_inbox` | Check inbox. Returns unread, newest first. Replies include parent context. |
 | `comms_unsend` | Delete a sent message by ID. |
@@ -122,7 +122,7 @@ Gotchas regardless of runtime:
 | Tool | Use |
 |------|-----|
 | `comms_clear` | Clear inbox, shared files, or agents. Optional age filter. |
-| `comms_dashboard` | Get the dashboard URL. Main view marks messages as `wake` or `bg`; `/api/v1/dashboard/dispatches` is the run-focused page. |
+| `comms_dashboard` | Get the dashboard URL. Main view shows resident sessions, Workers shows managed workers, messages are marked `wake` or `bg`, and `/api/v1/dashboard/dispatches` is the run-focused page. |
 
 ## Sending Messages vs Dispatching Work
 
@@ -170,7 +170,7 @@ When you receive a wake notification or finish a task, check inbox before starti
 
 ## Working With Other Agents
 
-- Thread replies with `inReplyTo`. A dispatched run's output stays local — if you want a reply message, explicitly `comms_send` back.
+- Thread replies with `inReplyTo`. `comms_dispatch` requires a reply by default, and triggered `comms_send(type="request")` does too unless you override `requireReply`. Explicit `comms_send` replies are still preferred; if a required reply never arrives, the bridge mirrors the run result back as a fallback handoff.
 - `comms_channel_send` for group wakeups, `comms_share` for long output (logs, screenshots, patches, reports).
 - `comms_run_interrupt` to stop an active run. `comms_send(steer=true)` to inject guidance mid-turn.
 - Before diagnosing another agent's issues, call `comms_agent_info` first — don't guess.

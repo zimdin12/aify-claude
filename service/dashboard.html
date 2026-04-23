@@ -37,28 +37,37 @@ th{background:#21262d;color:#8b949e;text-align:left;padding:8px 12px;font-size:.
 td{padding:8px 14px;border-top:1px solid #21262d;font-size:.85em;vertical-align:top}
 tr:hover{background:#1c2128}
 .agents-grid,.runs-grid{table-layout:fixed}
-.agents-grid th:nth-child(1),.agents-grid td:nth-child(1){width:13%}
-.agents-grid th:nth-child(2),.agents-grid td:nth-child(2){width:8%}
-.agents-grid th:nth-child(3),.agents-grid td:nth-child(3){width:17%}
-.agents-grid th:nth-child(4),.agents-grid td:nth-child(4){width:11%}
-.agents-grid th:nth-child(5),.agents-grid td:nth-child(5){width:10%}
-.agents-grid th:nth-child(6),.agents-grid td:nth-child(6){width:22%}
-.agents-grid th:nth-child(7),.agents-grid td:nth-child(7){width:13%}
+.agents-grid th:nth-child(1),.agents-grid td:nth-child(1){width:11%}
+.agents-grid th:nth-child(2),.agents-grid td:nth-child(2){width:6%}
+.agents-grid th:nth-child(3),.agents-grid td:nth-child(3){width:13%}
+.agents-grid th:nth-child(4),.agents-grid td:nth-child(4){width:9%}
+.agents-grid th:nth-child(5),.agents-grid td:nth-child(5){width:8%}
+.agents-grid th:nth-child(6),.agents-grid td:nth-child(6){width:15%}
+.agents-grid th:nth-child(7),.agents-grid td:nth-child(7){width:12%}
 .agents-grid th:nth-child(8),.agents-grid td:nth-child(8){width:5%}
-.agents-grid th:nth-child(9),.agents-grid td:nth-child(9){width:11%}
+.agents-grid th:nth-child(9),.agents-grid td:nth-child(9){width:8%}
 .agents-grid th:nth-child(10),.agents-grid td:nth-child(10){width:80px}
-.runs-grid th:nth-child(1),.runs-grid td:nth-child(1){width:145px}
-.runs-grid th:nth-child(2),.runs-grid td:nth-child(2){width:170px}
-.runs-grid th:nth-child(3),.runs-grid td:nth-child(3){width:90px}
-.runs-grid th:nth-child(4),.runs-grid td:nth-child(4){width:130px}
-.runs-grid th:nth-child(5),.runs-grid td:nth-child(5){width:110px}
-.runs-grid th:nth-child(6),.runs-grid td:nth-child(6){width:24%}
-.runs-grid th:nth-child(7),.runs-grid td:nth-child(7){width:28%}
-.runs-grid th:nth-child(8),.runs-grid td:nth-child(8){width:130px}
+.runs-grid th:nth-child(1),.runs-grid td:nth-child(1){width:120px}
+.runs-grid th:nth-child(2),.runs-grid td:nth-child(2){width:150px}
+.runs-grid th:nth-child(3),.runs-grid td:nth-child(3){width:85px}
+.runs-grid th:nth-child(4),.runs-grid td:nth-child(4){width:110px}
+.runs-grid th:nth-child(5),.runs-grid td:nth-child(5){width:100px}
+.runs-grid th:nth-child(6),.runs-grid td:nth-child(6){width:14%}
+.runs-grid th:nth-child(7),.runs-grid td:nth-child(7){width:16%}
+.runs-grid th:nth-child(8),.runs-grid td:nth-child(8){width:120px}
 .t{color:#8b949e;font-size:.82em;white-space:nowrap}
-.clip-1,.clip-2{display:block;max-width:100%;overflow:hidden}
+.clip-1,.clip-2{display:block;width:100%;max-width:100%;min-width:0;overflow:hidden}
 .clip-1{white-space:nowrap;text-overflow:ellipsis}
 .clip-2{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;word-break:break-word;line-height:1.35;max-height:calc(1.35em * 2)}
+.agents-grid td,.runs-grid td{overflow:hidden}
+.status-cell{display:flex;align-items:center;gap:6px;min-width:0}
+.status-text,.dispatch-text,.runtime-text,.session-text,.wake-text,.run-route,.run-mode,.run-runtime,.run-summary{display:block;width:100%;min-width:0;overflow:hidden}
+.status-text,.dispatch-text,.runtime-text,.session-text,.wake-text,.run-route,.run-mode,.run-runtime{white-space:nowrap;text-overflow:ellipsis}
+.status-note-badge{flex:0 0 auto;background:#30363d;color:#8b949e;border-radius:999px;padding:0 6px;font-size:.72em;line-height:18px;cursor:help}
+.handoff-badge{display:inline-flex;align-items:center;border-radius:999px;padding:0 6px;font-size:.72em;line-height:18px;white-space:nowrap}
+.handoff-pending{background:#d2992233;color:#d29922}
+.handoff-sent{background:#23863633;color:#3fb950}
+.run-status-stack{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
 .mu{background:#12201f}.mu td:first-child::before{content:"\25CF ";color:#3fb950}
 .rb{background:#1f6feb33;color:#58a6ff;padding:2px 8px;border-radius:12px;font-size:.8em}
 .tb{padding:2px 8px;border-radius:12px;font-size:.78em;font-weight:500}
@@ -135,9 +144,13 @@ tr:hover{background:#1c2128}
 .run-controls{display:flex;gap:6px;flex-wrap:wrap}
 .banner{background:#1f2937;border:1px solid #30363d;color:#d29922;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:.85em}
 .banner-row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
-.dispatch-subject{display:flex;flex-direction:column;gap:4px}
+.dispatch-subject{display:flex;flex-direction:column;gap:4px;min-width:0}
 .dispatch-id{color:#484f58;font-size:.72em}
 .dispatch-id.clip-1{max-width:100%}
+.worker-note{color:#8b949e;font-size:.85em;line-height:1.45;margin:-4px 0 12px}
+.worker-state{display:flex;flex-direction:column;gap:4px;min-width:0}
+.worker-state-main{color:#c9d1d9}
+.worker-state-meta{color:#8b949e;font-size:.78em}
 </style>
 </head>
 <body>
@@ -148,6 +161,7 @@ tr:hover{background:#1c2128}
   <div class="ver">v3.6.6</div>
   <div class="nav">
     <a onclick="showPage('dashboard')" id="nav-dashboard" class="active">Dashboard</a>
+    <a onclick="showPage('workers')" id="nav-workers">Workers</a>
     <a onclick="showPage('dispatches')" id="nav-dispatches">Dispatches</a>
     <a onclick="showPage('channels')" id="nav-channels">Channels</a>
     <a onclick="showPage('files')" id="nav-files">Files</a>
@@ -169,7 +183,7 @@ tr:hover{background:#1c2128}
     <div class="stats" id="stats-cards"></div>
     <div id="dashboard-banner"></div>
 
-    <h3>Agents</h3>
+    <h3>Resident Sessions</h3>
     <div id="agents-table"></div>
 
     <div class="send-form">
@@ -221,6 +235,14 @@ tr:hover{background:#1c2128}
       <button class="btn" onclick="runRotation()">Run Rotation</button>
       <button class="btn btn-danger" onclick="clearAll()">Clear All Data</button>
     </div>
+  </div>
+
+  <!-- ============ MANAGED WORKERS ============ -->
+  <div class="page" id="page-workers">
+    <h2>Managed Workers</h2>
+    <p class="worker-note">Managed workers are reusable agent identities. Their runtime process is launched per dispatch, then exits. Use <b>Interrupt</b> to stop the current run, <b>Reset State</b> to clear the saved thread/session, and <b>Remove</b> to unregister the worker.</p>
+    <div class="stats" id="worker-stats"></div>
+    <div id="workers-table"></div>
   </div>
 
   <!-- ============ DISPATCHES ============ -->
@@ -393,6 +415,9 @@ window._allMsgs = [];
 window._filteredMsgs = [];
 window._allRuns = [];
 window._filteredRuns = [];
+window._allAgents = [];
+window._residentAgents = [];
+window._managedWorkers = [];
 
 function apiFetch(url, opts = {}) {
   opts.headers = {..._authHeaders, ...(opts.headers || {})};
@@ -447,6 +472,79 @@ function deliveryBadge(dispatchRequested) {
     : '<span class="mb mb-background">bg</span>';
 }
 
+function isManagedWorker(info) {
+  return (info?.sessionMode || 'resident') === 'managed';
+}
+
+function agentDisplayStatus(info) {
+  const displayStatus = info?.status || 'idle';
+  const rawStatus = info?.statusRaw || displayStatus.split(':')[0].trim() || 'idle';
+  const statusNote = info?.statusNote || '';
+  return {displayStatus, rawStatus, statusKind: rawStatus.toLowerCase(), statusNote};
+}
+
+function agentWorkText(info) {
+  if (info?.dispatchState?.activeRun) {
+    const run = info.dispatchState.activeRun;
+    return `active ${run.runId}${run.subject ? `: ${run.subject}` : ''}${info.dispatchState.queuedRuns ? ` (+${info.dispatchState.queuedRuns} queued)` : ''}`;
+  }
+  if (info?.dispatchState?.queuedRuns) {
+    return `${info.dispatchState.queuedRuns} queued`;
+  }
+  return '';
+}
+
+function agentRuntimeLabel(info) {
+  return `${info.runtime || 'generic'}${info.machineId ? ' @ ' + info.machineId : ''}`;
+}
+
+function agentSessionLabel(info) {
+  return `${info.sessionMode || 'resident'}${info.managedBy ? ' by ' + info.managedBy : ''}`;
+}
+
+function renderPresenceCell(info) {
+  const {displayStatus, rawStatus, statusKind, statusNote} = agentDisplayStatus(info);
+  return `<td${titleAttr(statusNote || displayStatus)}><span class="status-cell"><span class="st-${statusKind} status-text">${esc(rawStatus)}</span>${statusNote ? `<span class="status-note-badge" title="${esc(statusNote)}">note</span>` : ''}</span></td>`;
+}
+
+function workerStateLabel(info) {
+  const state = info?.runtimeState || {};
+  if (state.threadId) return {main: `thread ${state.threadId}`, meta: 'Codex/OpenCode thread will be resumed on next run'};
+  if (state.sessionId) return {main: `session ${state.sessionId}`, meta: 'Claude/OpenCode session will be resumed on next run'};
+  if (info?.sessionHandle) return {main: `handle ${info.sessionHandle}`, meta: 'Bound live handle'};
+  return {main: 'fresh on next run', meta: 'No saved thread/session state'};
+}
+
+function latestRunForAgent(agentId) {
+  return (window._allRuns || []).find(run => run.targetAgentId === agentId) || null;
+}
+
+function runHandoffLabel(run) {
+  if (!run?.requireReply) return '';
+  if (run?.replyPending) return 'handoff pending';
+  if (run?.resultMessageId) return 'handoff sent';
+  if (run?.status === 'completed' || run?.status === 'failed' || run?.status === 'cancelled') return 'reply expected';
+  return '';
+}
+
+function renderHandoffBadge(run) {
+  const label = runHandoffLabel(run);
+  if (!label) return '';
+  const klass = run?.replyPending ? 'handoff-pending' : 'handoff-sent';
+  const detail = run?.resultMessageId ? `${label}: ${run.resultMessageId}` : label;
+  return `<span class="handoff-badge ${klass}"${titleAttr(detail)}>${esc(label)}</span>`;
+}
+
+function recentCompletionLabel(agentId) {
+  const run = latestRunForAgent(agentId);
+  if (!run) return '';
+  const handoff = runHandoffLabel(run);
+  if (run.status === 'completed') return `last completed: ${run.subject || run.id}${handoff ? ` (${handoff})` : ''}`;
+  if (run.status === 'failed') return `last failed: ${run.subject || run.id}${handoff ? ` (${handoff})` : ''}`;
+  if (run.status === 'cancelled') return `last cancelled: ${run.subject || run.id}${handoff ? ` (${handoff})` : ''}`;
+  return '';
+}
+
 function syncSelectOptions(selectId, defaultLabel, values) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
@@ -464,35 +562,81 @@ function renderDispatchStats(statsRes) {
     `<div class="sc"><div class="n">${byStatus.claimed || 0}</div><div class="l">Claimed</div></div>` +
     `<div class="sc"><div class="n">${byStatus.completed || 0}</div><div class="l">Completed</div></div>` +
     `<div class="sc${(byStatus.failed || 0) ? ' warn' : ''}"><div class="n">${byStatus.failed || 0}</div><div class="l">Failed</div></div>` +
-    `<div class="sc"><div class="n">${byStatus.cancelled || 0}</div><div class="l">Cancelled</div></div>`;
+    `<div class="sc"><div class="n">${byStatus.cancelled || 0}</div><div class="l">Cancelled</div></div>` +
+    `<div class="sc${statsRes.dispatch_reply_pending ? ' warn' : ''}"><div class="n">${statsRes.dispatch_reply_pending || 0}</div><div class="l">Pending Handoffs</div></div>`;
 }
 
 function renderAgents(agents) {
   if (!agents.length) {
-    document.getElementById('agents-table').innerHTML = '<p class="em">No agents registered.</p>';
+    document.getElementById('agents-table').innerHTML = '<p class="em">No resident sessions registered.</p>';
     return;
   }
-  let html = '<table class="agents-grid"><thead><tr><th>ID</th><th>Role</th><th>Status</th><th>Session</th><th>Wake</th><th>Dispatch</th><th>Runtime</th><th>Unread</th><th>Last Seen</th><th></th></tr></thead><tbody>';
+  let html = '<table class="agents-grid"><thead><tr><th>ID</th><th>Role</th><th>Presence</th><th>Session</th><th>Wake</th><th>Work</th><th>Runtime</th><th>Unread</th><th>Last Seen</th><th></th></tr></thead><tbody>';
   for (const [id, info] of agents) {
-    const rawStatus = info.status || 'idle';
-    const statusKind = (info.statusRaw || rawStatus.split(':')[0].trim() || 'idle').toLowerCase();
-    const runtime = `${info.runtime || 'generic'}${info.machineId ? ' @ ' + info.machineId : ''}`;
-    const session = `${info.sessionMode || 'resident'}${info.managedBy ? ' by ' + info.managedBy : ''}`;
+    const runtime = agentRuntimeLabel(info);
+    const session = agentSessionLabel(info);
     const wake = info.wakeMode || 'message-only';
-    const dispatch = info.dispatchState?.activeRun
-      ? `active ${info.dispatchState.activeRun.runId}${info.dispatchState.activeRun.subject ? `: ${info.dispatchState.activeRun.subject}` : ''}${info.dispatchState.queuedRuns ? ` (+${info.dispatchState.queuedRuns} queued)` : ''}`
-      : (info.dispatchState?.queuedRuns ? `${info.dispatchState.queuedRuns} queued` : '');
+    const dispatch = agentWorkText(info) || recentCompletionLabel(id);
     html += `<tr><td><b>${esc(id)}</b></td><td><span class="rb">${esc(info.role)}</span></td>` +
-      `<td${titleAttr(rawStatus)}><span class="st-${statusKind} clip-2">${esc(rawStatus)}</span></td>` +
-      `<td class="t"${titleAttr(session)}><span class="clip-1">${esc(session)}</span></td>` +
-      `<td class="t"${titleAttr(wake)}><span class="clip-1">${esc(wake)}</span></td>` +
-      `<td class="t"${titleAttr(dispatch)}><span class="clip-2">${esc(dispatch)}</span></td>` +
-      `<td class="t"${titleAttr(runtime)}><span class="clip-2">${esc(runtime)}</span></td>` +
+      renderPresenceCell(info) +
+      `<td class="t"${titleAttr(session)}><span class="session-text">${esc(session)}</span></td>` +
+      `<td class="t"${titleAttr(wake)}><span class="wake-text">${esc(wake)}</span></td>` +
+      `<td class="t"${titleAttr(dispatch)}><span class="dispatch-text">${esc(dispatch)}</span></td>` +
+      `<td class="t"${titleAttr(runtime)}><span class="runtime-text">${esc(runtime)}</span></td>` +
       `<td>${info.unread || 0}</td><td class="t">${esc(info.lastSeen)}</td>` +
       `<td><button class="btn btn-sm btn-danger" onclick="deleteAgent('${esc(id)}')">Remove</button></td></tr>`;
   }
   html += '</tbody></table>';
   document.getElementById('agents-table').innerHTML = html;
+}
+
+function renderWorkerStats(workers) {
+  const activeRuns = workers.filter(([, info]) => !!info.dispatchState?.activeRun).length;
+  const queued = workers.reduce((sum, [, info]) => sum + Number(info.dispatchState?.queuedRuns || 0), 0);
+  const savedState = workers.filter(([, info]) => {
+    const state = info.runtimeState || {};
+    return !!(state.threadId || state.sessionId || info.sessionHandle);
+  }).length;
+  const unread = workers.reduce((sum, [, info]) => sum + Number(info.unread || 0), 0);
+  document.getElementById('worker-stats').innerHTML =
+    `<div class="sc"><div class="n">${workers.length}</div><div class="l">Workers</div></div>` +
+    `<div class="sc"><div class="n">${activeRuns}</div><div class="l">Active Runs</div></div>` +
+    `<div class="sc"><div class="n">${queued}</div><div class="l">Queued</div></div>` +
+    `<div class="sc"><div class="n">${savedState}</div><div class="l">Saved State</div></div>` +
+    `<div class="sc${unread ? ' warn' : ''}"><div class="n">${unread}</div><div class="l">Unread</div></div>`;
+}
+
+function renderWorkers(workers) {
+  renderWorkerStats(workers);
+  if (!workers.length) {
+    document.getElementById('workers-table').innerHTML = '<p class="em">No managed workers registered.</p>';
+    return;
+  }
+  let html = '<table class="agents-grid"><thead><tr><th>ID</th><th>Owner</th><th>Presence</th><th>Wake</th><th>Work</th><th>State</th><th>Runtime</th><th>Unread</th><th>Last Seen</th><th></th></tr></thead><tbody>';
+  for (const [id, info] of workers) {
+    const work = agentWorkText(info) || recentCompletionLabel(id);
+    const state = workerStateLabel(info);
+    const runtime = agentRuntimeLabel(info);
+    const wake = info.wakeMode || 'managed-worker';
+    const activeRunId = info.dispatchState?.activeRun?.runId || '';
+    html += `<tr><td><b>${esc(id)}</b></td>` +
+      `<td class="t"${titleAttr(info.managedBy || '')}><span class="session-text">${esc(info.managedBy || '')}</span></td>` +
+      renderPresenceCell(info) +
+      `<td class="t"${titleAttr(wake)}><span class="wake-text">${esc(wake)}</span></td>` +
+      `<td class="t"${titleAttr(work)}><span class="dispatch-text">${esc(work)}</span></td>` +
+      `<td${titleAttr(`${state.main}${state.meta ? ' — ' + state.meta : ''}`)}><div class="worker-state"><span class="worker-state-main clip-1">${esc(state.main)}</span><span class="worker-state-meta clip-1">${esc(state.meta)}</span></div></td>` +
+      `<td class="t"${titleAttr(runtime)}><span class="runtime-text">${esc(runtime)}</span></td>` +
+      `<td>${info.unread || 0}</td><td class="t">${esc(info.lastSeen)}</td>` +
+      `<td><div class="run-controls">` +
+      `<button class="btn btn-sm" onclick="prefillWorkerMessage('${esc(id)}','message')">Message</button>` +
+      `<button class="btn btn-sm" onclick="prefillWorkerMessage('${esc(id)}','dispatch')">Dispatch</button>` +
+      (activeRunId ? `<button class="btn btn-sm btn-danger" onclick="interruptRun('${esc(activeRunId)}')">Interrupt</button>` : '') +
+      `<button class="btn btn-sm" onclick="resetWorkerState('${esc(id)}')">Reset State</button>` +
+      `<button class="btn btn-sm btn-danger" onclick="deleteAgent('${esc(id)}')">Remove</button>` +
+      `</div></td></tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('workers-table').innerHTML = html;
 }
 
 // ─── Dashboard ──────────────────────────────
@@ -506,10 +650,18 @@ async function refreshDashboard() {
     ]);
     const runs = runsRes.runs || [];
     window._allRuns = runs;
+    const agents = Object.entries(agentsRes.agents || {});
+    const residentAgents = agents.filter(([, info]) => !isManagedWorker(info));
+    const managedWorkers = agents.filter(([, info]) => isManagedWorker(info));
+    window._allAgents = agents;
+    window._residentAgents = residentAgents;
+    window._managedWorkers = managedWorkers;
 
     document.getElementById('stats-cards').innerHTML =
-      `<div class="sc"><div class="n">${statsRes.agents}</div><div class="l">Agents</div></div>` +
+      `<div class="sc"><div class="n">${residentAgents.length}</div><div class="l">Resident Sessions</div></div>` +
+      `<div class="sc"><div class="n">${managedWorkers.length}</div><div class="l">Managed Workers</div></div>` +
       `<div class="sc${statsRes.unread_messages ? ' warn' : ''}"><div class="n">${statsRes.unread_messages}</div><div class="l">Unread</div></div>` +
+      `<div class="sc${statsRes.dispatch_reply_pending ? ' warn' : ''}"><div class="n">${statsRes.dispatch_reply_pending || 0}</div><div class="l">Pending Handoffs</div></div>` +
       `<div class="sc"><div class="n">${statsRes.total_messages}</div><div class="l">Messages</div></div>` +
       `<div class="sc"><div class="n">${statsRes.messages_today}</div><div class="l">Today</div></div>` +
       `<div class="sc"><div class="n">${statsRes.shared_files}</div><div class="l">Files</div></div>` +
@@ -525,11 +677,17 @@ async function refreshDashboard() {
       bannerParts.push(`${statsRes.orphan_unread_messages} unread message(s) belong to removed agents and are not shown in the visible inbox tables.`);
       orphanAction = `<button class="btn btn-sm" onclick="purgeOrphanUnread()">Clear orphan unread</button>`;
     }
+    if (managedWorkers.length) {
+      bannerParts.push(`${managedWorkers.length} managed worker(s) are shown on the Workers page. Presence means the worker identity exists; actual runtime processes only exist during active dispatches.`);
+    }
+    if (statsRes.dispatch_reply_pending) {
+      bannerParts.push(`${statsRes.dispatch_reply_pending} completed run(s) still have no recorded handoff reply. These are the ones that feel "done but nobody was told".`);
+    }
     document.getElementById('dashboard-banner').innerHTML =
       bannerParts.length ? `<div class="banner"><div class="banner-row"><span>${bannerParts.join(' ')}</span>${orphanAction}</div></div>` : '';
 
-    const agents = Object.entries(agentsRes.agents || {});
-    renderAgents(agents);
+    renderAgents(residentAgents);
+    renderWorkers(managedWorkers);
     const agentIds = agents.map(([id]) => id);
     syncSelectOptions('af1', 'From: All', agentIds.concat('dashboard'));
     syncSelectOptions('af2', 'To: All', agentIds.concat('dashboard'));
@@ -579,11 +737,11 @@ function renderRuns(runs, containerId = 'dispatch-runs-table') {
     const mode = `${run.executionMode || 'managed'} / ${run.mode || 'start_if_possible'}`;
     html += `<tr>` +
       `<td class="t">${esc(run.requestedAt || '')}</td>` +
-      `<td class="t"${titleAttr(`${run.from} → ${run.targetAgentId}`)}><span class="clip-2">${esc(run.from)} &nbsp;&rarr;&nbsp; ${esc(run.targetAgentId)}</span></td>` +
-      `<td><span class="st-${esc(status)}">${esc(status)}</span></td>` +
-      `<td${titleAttr(mode)}><span class="clip-2">${esc(mode)}</span></td>` +
-      `<td${titleAttr(run.runtime || run.requestedRuntime || '')}><span class="clip-2">${esc(run.runtime || run.requestedRuntime || '')}</span></td>` +
-      `<td><div class="dispatch-subject"${titleAttr(run.subject || '')}><b class="clip-2">${esc(run.subject || '')}</b><span class="dispatch-id clip-1"${titleAttr(run.id || '')}>${esc(run.id || '')}</span></div></td>` +
+      `<td class="t"${titleAttr(`${run.from} → ${run.targetAgentId}`)}><span class="run-route">${esc(run.from)} &nbsp;&rarr;&nbsp; ${esc(run.targetAgentId)}</span></td>` +
+      `<td><div class="run-status-stack"><span class="st-${esc(status)}">${esc(status)}</span>${renderHandoffBadge(run)}</div></td>` +
+      `<td${titleAttr(mode)}><span class="run-mode">${esc(mode)}</span></td>` +
+      `<td${titleAttr(run.runtime || run.requestedRuntime || '')}><span class="run-runtime">${esc(run.runtime || run.requestedRuntime || '')}</span></td>` +
+      `<td><div class="dispatch-subject"${titleAttr(run.subject || '')}><b class="clip-1">${esc(run.subject || '')}</b><span class="dispatch-id clip-1"${titleAttr(run.id || '')}>${esc(run.id || '')}</span></div></td>` +
       `<td><div class="run-summary clip-2"${titleAttr(summary)}>${esc(summary)}</div></td>` +
       `<td><div class="run-controls">` +
         `<button class="btn btn-sm" onclick="viewRun('${esc(run.id)}')">View</button>` +
@@ -603,7 +761,7 @@ async function viewRun(runId) {
     const events = (run.events || []).slice(-10).map(e => `${e.createdAt} [${e.type}] ${e.body || ''}`).join('\n');
     const controls = (run.controls || []).slice(-10).map(c => `${c.requestedAt} [${c.action}/${c.status}] ${c.from || 'unknown'}${c.response ? ' -> ' + c.response : ''}`).join('\n');
     alert(
-      `Run: ${run.id}\nStatus: ${run.status}\nExecution: ${run.executionMode || 'managed'}\nRuntime: ${run.runtime || 'unknown'}\nSubject: ${run.subject || ''}\n\n` +
+      `Run: ${run.id}\nStatus: ${run.status}\nReply: ${runHandoffLabel(run) || 'not required'}\nExecution: ${run.executionMode || 'managed'}\nRuntime: ${run.runtime || 'unknown'}\nSubject: ${run.subject || ''}\n\n` +
       (run.blockedByActiveRun ? `Blocked by: ${run.blockedByActiveRun.runId}${run.blockedByActiveRun.subject ? ' (' + run.blockedByActiveRun.subject + ')' : ''}\n\n` : '') +
       (run.summary ? `Summary:\n${run.summary}\n\n` : '') +
       (run.error ? `Error:\n${run.error}\n\n` : '') +
@@ -909,6 +1067,34 @@ async function sendMessage() {
     document.getElementById('send-body').value = '';
     refreshDashboard();
   } else toast(r.error || 'Send failed', '#f85149');
+}
+
+function prefillWorkerMessage(agentId, mode) {
+  document.getElementById('send-to').value = agentId;
+  document.getElementById('send-mode').value = mode === 'dispatch' ? 'start_if_possible' : 'message';
+  document.getElementById('send-type').value = mode === 'dispatch' ? 'request' : 'info';
+  showPage('dashboard');
+  document.getElementById('send-subject').focus();
+  toast(`${mode === 'dispatch' ? 'Dispatch' : 'Message'} form prefilled for ${agentId}`);
+}
+
+async function resetWorkerState(agentId) {
+  if (!confirm(`Reset saved thread/session state for worker "${agentId}"?`)) return;
+  try {
+    const res = await apiFetch(API + `/agents/${encodeURIComponent(agentId)}/runtime-state`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({runtimeState: {}}),
+    }).then(r => r.json());
+    if (res.ok) {
+      toast(`Reset saved state for ${agentId}`);
+      refreshDashboard();
+    } else {
+      toast(res.detail || res.error || 'Reset failed', '#f85149');
+    }
+  } catch (e) {
+    toast('Reset failed', '#f85149');
+  }
 }
 
 async function spawnAgent() {

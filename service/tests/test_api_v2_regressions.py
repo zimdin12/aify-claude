@@ -47,6 +47,11 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
+    def _dispatch(self, **payload):
+        response = self.client.post("/api/v1/dispatch", json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
     def _fetchone(self, query: str, params=()):
         async def _run():
             db = await get_db()
@@ -194,3 +199,138 @@ class ApiV2RegressionTests(unittest.TestCase):
         )
         self.assertEqual(windows_bad.status_code, 400, windows_bad.text)
         self.assertIn("Invalid cwd", windows_bad.text)
+
+    def test_dispatch_requires_reply_and_marks_completed_run_pending_without_handoff(self):
+        self._register("lead", runtime="codex", sessionMode="managed")
+        self._register("coder", runtime="codex", sessionMode="managed")
+
+        created = self._dispatch(
+            from_agent="lead",
+            to="coder",
+            type="request",
+            subject="slice",
+            body="implement it",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        run_id = created["runs"][0]["runId"]
+
+        initial = self.client.get(f"/api/v1/dispatch/runs/{run_id}")
+        self.assertEqual(initial.status_code, 200, initial.text)
+        self.assertTrue(initial.json()["run"]["requireReply"])
+        self.assertEqual(initial.json()["run"]["replyState"], "awaiting")
+        self.assertFalse(initial.json()["run"]["replyPending"])
+
+        completed = self.client.patch(
+            f"/api/v1/dispatch/runs/{run_id}",
+            json={"status": "completed", "summary": "done"},
+        )
+        self.assertEqual(completed.status_code, 200, completed.text)
+
+        final = self.client.get(f"/api/v1/dispatch/runs/{run_id}")
+        self.assertEqual(final.status_code, 200, final.text)
+        self.assertTrue(final.json()["run"]["requireReply"])
+        self.assertEqual(final.json()["run"]["replyState"], "pending")
+        self.assertTrue(final.json()["run"]["replyPending"])
+
+    def test_completed_run_late_reply_links_result_message_id(self):
+        self._register("lead", runtime="codex", sessionMode="managed")
+        self._register("coder", runtime="codex", sessionMode="managed")
+
+        created = self._dispatch(
+            from_agent="lead",
+            to="coder",
+            type="request",
+            subject="slice",
+            body="implement it",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        run_id = created["runs"][0]["runId"]
+        source_message_id = created["messageId"]
+
+        completed = self.client.patch(
+            f"/api/v1/dispatch/runs/{run_id}",
+            json={"status": "completed", "summary": "done"},
+        )
+        self.assertEqual(completed.status_code, 200, completed.text)
+
+        reply = self._send_message(
+            from_agent="coder",
+            to="lead",
+            type="response",
+            subject="done",
+            body="ship it",
+            inReplyTo=source_message_id,
+            trigger=False,
+        )
+
+        final = self.client.get(f"/api/v1/dispatch/runs/{run_id}")
+        self.assertEqual(final.status_code, 200, final.text)
+        self.assertEqual(final.json()["run"]["status"], "completed")
+        self.assertEqual(final.json()["run"]["resultMessageId"], reply["messageId"])
+        self.assertEqual(final.json()["run"]["replyState"], "sent")
+        self.assertFalse(final.json()["run"]["replyPending"])
+
+    def test_reply_during_running_run_records_handoff_without_finishing_run(self):
+        self._register("lead", runtime="codex", sessionMode="managed")
+        self._register("coder", runtime="codex", sessionMode="managed")
+
+        created = self._dispatch(
+            from_agent="lead",
+            to="coder",
+            type="request",
+            subject="slice",
+            body="implement it",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        run_id = created["runs"][0]["runId"]
+        source_message_id = created["messageId"]
+
+        started = self.client.patch(
+            f"/api/v1/dispatch/runs/{run_id}",
+            json={"status": "running"},
+        )
+        self.assertEqual(started.status_code, 200, started.text)
+
+        reply = self._send_message(
+            from_agent="coder",
+            to="lead",
+            type="response",
+            subject="status",
+            body="still working",
+            inReplyTo=source_message_id,
+            trigger=False,
+        )
+
+        mid_run = self.client.get(f"/api/v1/dispatch/runs/{run_id}")
+        self.assertEqual(mid_run.status_code, 200, mid_run.text)
+        self.assertEqual(mid_run.json()["run"]["status"], "running")
+        self.assertEqual(mid_run.json()["run"]["resultMessageId"], reply["messageId"])
+        self.assertEqual(mid_run.json()["run"]["replyState"], "sent")
+        self.assertFalse(mid_run.json()["run"]["replyPending"])
+
+    def test_triggered_response_send_does_not_require_another_reply(self):
+        self._register("lead", runtime="codex", sessionMode="managed")
+        self._register("coder", runtime="codex", sessionMode="managed")
+
+        request_send = self._send_message(
+            from_agent="lead",
+            to="coder",
+            type="request",
+            subject="work",
+            body="please do it",
+            trigger=True,
+        )
+        self.assertTrue(request_send["dispatchRuns"][0]["requireReply"])
+
+        response_send = self._send_message(
+            from_agent="coder",
+            to="lead",
+            type="response",
+            subject="done",
+            body="finished",
+            trigger=True,
+        )
+        self.assertFalse(response_send["dispatchRuns"][0]["requireReply"])

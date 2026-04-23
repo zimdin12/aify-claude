@@ -43,6 +43,7 @@ class MessageSend(BaseModel):
     inReplyTo: Optional[str] = None
     trigger: bool = False
     steer: bool = False
+    requireReply: Optional[bool] = None
 
 
 class AgentRuntimeStateUpdate(BaseModel):
@@ -79,6 +80,7 @@ class DispatchRequest(BaseModel):
     createMessage: bool = True
     requestedRuntime: Optional[str] = None
     steer: bool = False
+    requireReply: Optional[bool] = None
 
 
 class DispatchClaimRequest(BaseModel):
