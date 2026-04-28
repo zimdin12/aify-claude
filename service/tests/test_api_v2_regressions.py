@@ -443,6 +443,70 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(spec["environment_id"], "linux:new-host:default")
         self.assertEqual(spec["workspace"], "/newroot/project")
 
+    def test_managed_dispatch_claim_rejects_stale_environment_bridge(self):
+        self._heartbeat_environment(id="linux:test-host:default", bridgeId="bridge-current")
+        created = self.client.post(
+            "/api/v1/spawn-requests",
+            json={
+                "createdBy": "dashboard",
+                "environmentId": "linux:test-host:default",
+                "agentId": "managed-stale-bridge",
+                "role": "coder",
+                "runtime": "codex",
+                "workspace": "/workspace/project",
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        spawn_id = created.json()["spawnRequest"]["id"]
+        claim = self.client.post(
+            "/api/v1/spawn-requests/claim",
+            json={"environmentId": "linux:test-host:default", "bridgeId": "bridge-current", "machineId": "linux:test-host"},
+        )
+        self.assertEqual(claim.status_code, 200, claim.text)
+        running = self.client.patch(
+            f"/api/v1/spawn-requests/{spawn_id}",
+            json={"status": "running", "bridgeId": "bridge-current", "sessionHandle": "thread-1"},
+        )
+        self.assertEqual(running.status_code, 200, running.text)
+        dispatched = self._dispatch(
+            from_agent="dashboard",
+            to="managed-stale-bridge",
+            type="request",
+            subject="work",
+            body="do it",
+            requireReply=False,
+        )
+        self.assertEqual(dispatched["runs"][0]["status"], "queued")
+
+        # A newer environment bridge has replaced the one stored in the agent's
+        # old runtime_state. The stale managed bridge must not claim new runs.
+        self._heartbeat_environment(id="linux:test-host:default", bridgeId="bridge-new")
+        stale_claim = self.client.post(
+            "/api/v1/dispatch/claim",
+            json={
+                "agentId": "managed-stale-bridge",
+                "bridgeId": "bridge-current",
+                "machineId": "linux:test-host",
+                "executionModes": ["managed"],
+            },
+        )
+        self.assertEqual(stale_claim.status_code, 200, stale_claim.text)
+        payload = stale_claim.json()
+        self.assertIsNone(payload["run"])
+        self.assertEqual(payload["blockedBy"]["reason"], "environment_bridge_not_current")
+
+        current_claim = self.client.post(
+            "/api/v1/dispatch/claim",
+            json={
+                "agentId": "managed-stale-bridge",
+                "bridgeId": "bridge-new",
+                "machineId": "linux:test-host",
+                "executionModes": ["managed"],
+            },
+        )
+        self.assertEqual(current_claim.status_code, 200, current_claim.text)
+        self.assertEqual(current_claim.json()["run"]["id"], dispatched["runs"][0]["runId"])
+
     def test_spawn_request_targets_environment_and_matching_bridge_claims(self):
         self._heartbeat_environment()
         created = self.client.post(

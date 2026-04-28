@@ -614,9 +614,25 @@ async def _bridge_claim_block_reason(db, *, bridge_id: str, agent_id: str, agent
     if runtime not in {"codex", "opencode"}:
         return None
 
+    session_mode = _normalize_session_mode((agent_row["session_mode"] if agent_row else "") or "resident")
     runtime_state = _json_loads_or(agent_row["runtime_state"], {}) if agent_row else {}
     current_bridge_id = str(runtime_state.get("bridgeInstanceId") or "").strip()
-    if current_bridge_id and current_bridge_id != bridge_id:
+    runtime_state_environment_id = str(runtime_state.get("environmentId") or "").strip()
+    managed_environment_id = runtime_state_environment_id
+    if session_mode == "managed" and not managed_environment_id:
+        session_cursor = await db.execute(
+            """
+            SELECT environment_id
+            FROM agent_sessions
+            WHERE agent_id = ?
+            ORDER BY last_seen DESC
+            LIMIT 1
+            """,
+            (agent_id,),
+        )
+        session_row = await session_cursor.fetchone()
+        managed_environment_id = str((session_row["environment_id"] if session_row else "") or "").strip()
+    if (session_mode != "managed" or not managed_environment_id) and current_bridge_id and current_bridge_id != bridge_id:
         return {
             "reason": "bridge_not_current",
             "bridgeId": bridge_id,
@@ -624,6 +640,32 @@ async def _bridge_claim_block_reason(db, *, bridge_id: str, agent_id: str, agent
             "agentId": agent_id,
             "hint": "This bridge is not the current stdio bridge for the agent. Restart or shut down stale codex-aify/opencode-aify processes.",
         }
+
+    if session_mode == "managed":
+        environment_id = managed_environment_id
+        if environment_id:
+            env_cursor = await db.execute("SELECT bridge_id, status FROM environments WHERE id = ?", (environment_id,))
+            env_row = await env_cursor.fetchone()
+            current_environment_bridge = str((env_row["bridge_id"] if env_row else "") or "").strip()
+            env_status = str((env_row["status"] if env_row else "") or "").strip().lower()
+            if current_environment_bridge and current_environment_bridge != bridge_id:
+                return {
+                    "reason": "environment_bridge_not_current",
+                    "bridgeId": bridge_id,
+                    "currentBridgeId": current_environment_bridge,
+                    "environmentId": environment_id,
+                    "agentId": agent_id,
+                    "hint": "This managed agent belongs to an environment whose current bridge is different. Restart or kill the stale aify-comms bridge, then recover/restart the agent from Sessions.",
+                }
+            if env_status and env_status not in {"online", "degraded"}:
+                return {
+                    "reason": "environment_not_online",
+                    "bridgeId": bridge_id,
+                    "environmentId": environment_id,
+                    "environmentStatus": env_status,
+                    "agentId": agent_id,
+                    "hint": "The managed agent's environment is not online. Start the environment bridge or assign the agent to another online environment.",
+                }
 
     return None
 
