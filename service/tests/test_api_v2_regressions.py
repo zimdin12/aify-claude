@@ -822,6 +822,109 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(new_session["status"], "running")
         self.assertIsNone(new_session["ended_at"])
 
+    def test_session_recover_rejects_duplicate_pending_spawn(self):
+        self._heartbeat_environment()
+        created = self.client.post(
+            "/api/v1/spawn-requests",
+            json={
+                "createdBy": "dashboard",
+                "environmentId": "linux:test-host:default",
+                "agentId": "single-recover-coder",
+                "role": "coder",
+                "runtime": "codex",
+                "workspace": "/workspace/repo",
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        spawn_id = created.json()["spawnRequest"]["id"]
+        claim = self.client.post(
+            "/api/v1/spawn-requests/claim",
+            json={"environmentId": "linux:test-host:default", "bridgeId": "bridge-current", "machineId": "linux:test-host"},
+        )
+        self.assertEqual(claim.status_code, 200, claim.text)
+        running = self.client.patch(
+            f"/api/v1/spawn-requests/{spawn_id}",
+            json={"status": "running", "bridgeId": "bridge-current", "processId": "1234"},
+        )
+        self.assertEqual(running.status_code, 200, running.text)
+        session_id = running.json()["spawnRequest"]["sessionId"]
+
+        first_recover = self.client.post(
+            f"/api/v1/sessions/{session_id}/control",
+            json={"action": "recover", "from_agent": "dashboard", "subject": "recover worker"},
+        )
+        self.assertEqual(first_recover.status_code, 200, first_recover.text)
+        pending_spawn_id = first_recover.json()["spawnRequest"]["id"]
+
+        duplicate_recover = self.client.post(
+            f"/api/v1/sessions/{session_id}/control",
+            json={"action": "recover", "from_agent": "dashboard", "subject": "recover worker again"},
+        )
+        self.assertEqual(duplicate_recover.status_code, 409, duplicate_recover.text)
+        self.assertIn(pending_spawn_id, duplicate_recover.json()["detail"])
+        pending_spawns = self._fetchall(
+            "SELECT id FROM spawn_requests WHERE agent_id = ? AND status IN ('queued','claimed','starting')",
+            ("single-recover-coder",),
+        )
+        self.assertEqual([row["id"] for row in pending_spawns], [pending_spawn_id])
+
+    def test_session_stop_cancels_pending_recovery_and_late_bridge_running_is_rejected(self):
+        self._heartbeat_environment()
+        created = self.client.post(
+            "/api/v1/spawn-requests",
+            json={
+                "createdBy": "dashboard",
+                "environmentId": "linux:test-host:default",
+                "agentId": "cancel-recover-coder",
+                "role": "coder",
+                "runtime": "codex",
+                "workspace": "/workspace/repo",
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        spawn_id = created.json()["spawnRequest"]["id"]
+        claim = self.client.post(
+            "/api/v1/spawn-requests/claim",
+            json={"environmentId": "linux:test-host:default", "bridgeId": "bridge-current", "machineId": "linux:test-host"},
+        )
+        self.assertEqual(claim.status_code, 200, claim.text)
+        running = self.client.patch(
+            f"/api/v1/spawn-requests/{spawn_id}",
+            json={"status": "running", "bridgeId": "bridge-current", "processId": "1234"},
+        )
+        self.assertEqual(running.status_code, 200, running.text)
+        session_id = running.json()["spawnRequest"]["sessionId"]
+
+        recover = self.client.post(
+            f"/api/v1/sessions/{session_id}/control",
+            json={"action": "recover", "from_agent": "dashboard", "subject": "recover worker"},
+        )
+        self.assertEqual(recover.status_code, 200, recover.text)
+        pending_spawn_id = recover.json()["spawnRequest"]["id"]
+        claim_recover = self.client.post(
+            "/api/v1/spawn-requests/claim",
+            json={"environmentId": "linux:test-host:default", "bridgeId": "bridge-current", "machineId": "linux:test-host"},
+        )
+        self.assertEqual(claim_recover.status_code, 200, claim_recover.text)
+        self.assertEqual(claim_recover.json()["spawnRequest"]["id"], pending_spawn_id)
+
+        stopped = self.client.post(
+            f"/api/v1/sessions/{session_id}/control",
+            json={"action": "stop", "from_agent": "dashboard", "body": "stop recovery"},
+        )
+        self.assertEqual(stopped.status_code, 200, stopped.text)
+        self.assertEqual(stopped.json()["cancelledSpawns"], 1)
+        cancelled_spawn = self._fetchone("SELECT status FROM spawn_requests WHERE id = ?", (pending_spawn_id,))
+        self.assertEqual(cancelled_spawn["status"], "cancelled")
+
+        late_running = self.client.patch(
+            f"/api/v1/spawn-requests/{pending_spawn_id}",
+            json={"status": "running", "bridgeId": "bridge-current", "processId": "5678"},
+        )
+        self.assertEqual(late_running.status_code, 409, late_running.text)
+        sessions = self._fetchall("SELECT id FROM agent_sessions WHERE agent_id = ?", ("cancel-recover-coder",))
+        self.assertEqual(len(sessions), 1)
+
     def test_resident_agent_stop_control_interrupts_active_and_disables_wake(self):
         self._register("lead", role="manager", runtime="codex", sessionMode="resident", sessionHandle="lead-thread")
         self._register("resident", runtime="codex", sessionMode="resident", sessionHandle="resident-thread", bridgeId="bridge-current")

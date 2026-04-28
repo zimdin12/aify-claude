@@ -2461,6 +2461,12 @@ async def update_spawn_request(spawn_request_id: str, req: SpawnRequestUpdate, r
         row = await cursor.fetchone()
         if not row:
             raise HTTPException(404, f'Spawn request "{spawn_request_id}" not found')
+        current_status = str(row["status"] or "").strip().lower()
+        if current_status in {"failed", "cancelled"} and status_value != current_status:
+            raise HTTPException(
+                409,
+                f'Spawn request "{spawn_request_id}" is already {current_status}; late bridge update "{status_value}" was ignored.',
+            )
         if req.bridgeId and row["claimed_by_bridge_id"] and row["claimed_by_bridge_id"] != req.bridgeId:
             raise HTTPException(409, f'Spawn request "{spawn_request_id}" is claimed by another bridge')
 
@@ -2693,6 +2699,26 @@ async def control_session(session_id: str, req: SessionControlRequest, request: 
 
         spawn_request_row = None
         spawn_spec_row = None
+        cancelled_spawns = 0
+        if action in {"restart", "recover", "resume"}:
+            pending_cursor = await db.execute(
+                """
+                SELECT *
+                FROM spawn_requests
+                WHERE agent_id = ?
+                  AND status IN ('queued', 'claimed', 'starting')
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (agent_id,),
+            )
+            pending_spawn = await pending_cursor.fetchone()
+            if pending_spawn:
+                raise HTTPException(
+                    409,
+                    f'Agent "{agent_id}" already has pending spawn request "{pending_spawn["id"]}" ({pending_spawn["status"]}).',
+                )
+
         if action in {"restart", "recover", "resume"}:
             spec_id = str(session["spawn_spec_id"] or "").strip()
             if not spec_id:
@@ -2760,6 +2786,29 @@ async def control_session(session_id: str, req: SessionControlRequest, request: 
             (next_status, now, next_status, now, session_id),
         )
         if action == "stop":
+            pending_spawn_cursor = await db.execute(
+                """
+                SELECT id
+                FROM spawn_requests
+                WHERE agent_id = ?
+                  AND status IN ('queued', 'claimed', 'starting')
+                """,
+                (agent_id,),
+            )
+            for pending_spawn in await pending_spawn_cursor.fetchall():
+                await db.execute(
+                    """
+                    UPDATE spawn_requests
+                    SET status = 'cancelled',
+                        error = ?,
+                        finished_at = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                      AND status IN ('queued', 'claimed', 'starting')
+                    """,
+                    (f'Session "{session_id}" was stopped from the dashboard before spawn completed.', now, now, pending_spawn["id"]),
+                )
+                cancelled_spawns += 1
             await db.execute(
                 "UPDATE agents SET status = CASE WHEN status = 'stopped' THEN status ELSE 'offline' END, last_seen = ? WHERE id = ?",
                 (now, agent_id),
@@ -2785,6 +2834,7 @@ async def control_session(session_id: str, req: SessionControlRequest, request: 
             "action": action,
             "session": _agent_session_to_dict(updated),
             "interruptControlId": control_id,
+            "cancelledSpawns": cancelled_spawns,
             "spawnRequest": _spawn_request_to_dict(spawn_request_row, _spawn_spec_to_dict(spawn_spec_row) if spawn_spec_row else None) if spawn_request_row else None,
         }
     finally:

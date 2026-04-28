@@ -992,6 +992,9 @@ function jsArg(s) { return esc(JSON.stringify(String(s || ''))); }
 function actionButton(label, title, onclick, classes = '') {
   return `<button class="btn btn-sm ${esc(classes)}"${titleAttr(title || label)} onclick="${onclick}">${esc(label)}</button>`;
 }
+function disabledActionButton(label, title, classes = '') {
+  return `<button class="btn btn-sm ${esc(classes)}"${titleAttr(title || label)} disabled>${esc(label)}</button>`;
+}
 async function copyText(text, label = 'Copied') {
   try {
     await navigator.clipboard.writeText(text || '');
@@ -2368,8 +2371,13 @@ function renderSessions(sessions) {
     const caps = session.capabilities || {};
     const capLabels = ['nativeResume','bridgeResume','cliAttach','interrupt','streaming'].filter(key => caps[key]).map(key => key.replace(/[A-Z]/g, m => ' ' + m.toLowerCase())).join(', ');
     const activeRun = (window._allRuns || []).find(run => run.targetAgentId === session.agentId && (run.status === 'claimed' || run.status === 'running'));
+    const pendingSpawn = (window._spawnRequests || []).find(req => req.agentId === session.agentId && ['queued', 'claimed', 'starting'].includes(String(req.status || '').toLowerCase()));
     const sessionStatus = String(session.status || '').toLowerCase();
     const canStopSession = !['stopped', 'failed', 'lost', 'ended', 'completed', 'cancelled'].includes(sessionStatus);
+    const spawnControl = pendingSpawn
+      ? disabledActionButton('Spawn pending', `Pending ${pendingSpawn.status} spawn request ${pendingSpawn.id}. Stop the session to cancel it, or wait for the bridge to finish.`)
+      : actionButton('Restart', 'Queue a new spawn from this session specification', `controlSession('${esc(session.id)}','restart')`) +
+        actionButton('Recover', 'Queue recovery using saved session/spec metadata', `controlSession('${esc(session.id)}','recover')`);
     html += `<tr>` +
       `<td><b>${esc(session.agentId)}</b><br><span class="t clip-1"${titleAttr(session.id)}>${esc(session.id)}</span></td>` +
       `<td>${esc(session.runtime || '')}<br><span class="t">${esc(session.mode || '')}</span></td>` +
@@ -2381,8 +2389,7 @@ function renderSessions(sessions) {
       `<td><div class="run-controls">` +
       actionButton('Chat', 'Open chat with the agent backed by this session', `openAgentChat('${esc(session.agentId)}')`) +
       (activeRun ? actionButton('Interrupt', 'Ask the active run for this session to stop', `interruptRun('${esc(activeRun.id)}')`, 'btn-danger') : '') +
-      actionButton('Restart', 'Queue a new spawn from this session specification', `controlSession('${esc(session.id)}','restart')`) +
-      actionButton('Recover', 'Queue recovery using saved session/spec metadata', `controlSession('${esc(session.id)}','recover')`) +
+      spawnControl +
       actionButton('Continue as', 'Create a new managed agent/session from an editable handoff packet', `continueSessionAs('${esc(session.id)}')`) +
       (canStopSession ? actionButton('Stop', 'Stop this managed session and interrupt/cancel work where supported', `controlSession('${esc(session.id)}','stop')`, 'btn-danger') : '') +
       `</div></td>` +
