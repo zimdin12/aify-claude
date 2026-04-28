@@ -248,6 +248,10 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(dashboard.status_code, 200, dashboard.text)
         self.assertIn("Environments", dashboard.text)
         self.assertIn("/environments", dashboard.text)
+        self.assertIn("data-dashboard-action", dashboard.text)
+        self.assertNotIn('onclick="runDashboardAction(', dashboard.text)
+        self.assertIn("Advanced run control", dashboard.text)
+        self.assertIn("Normal users and agents should send messages, not dispatches.", dashboard.text)
 
     def test_environment_list_marks_missing_heartbeat_offline_and_orders_stably(self):
         self._heartbeat_environment(

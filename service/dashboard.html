@@ -758,7 +758,7 @@ aify-comms</pre>
       <p>Manual <code>comms_register</code> remains useful for human-open resident CLI sessions, but it is not the normal dashboard spawn path. Active triggering works through the local <code>stdio</code> MCP bridge on the target machine. SSE clients can use the shared service but cannot launch local Claude/Codex/OpenCode work themselves.</p>
       <p>Codex CLI note: if you want visible live wakeups instead of background thread resume, start Codex through <code>codex-aify</code> before registering. From that live session, prefer the strongest exact registration first: <code>comms_register(..., runtime="codex", sessionHandle="$CODEX_THREAD_ID", appServerUrl="$AIFY_CODEX_APP_SERVER_URL")</code>. Plain <code>codex</code> still works, but it advertises the older <code>codex-thread-resume</code> fallback.</p>
       <p>Claude CLI note: resident wakeups require starting Claude through the installed <code>claude-aify</code> wrapper so the local aify channel bridge is allowed to load during the current research-preview channels phase. It is only installed when the Claude client was set up with a real shared aify server URL.</p>
-      <p><b>Manual vs managed:</b> <code>comms_register</code> binds a live resident CLI session you opened yourself. Those rows are shown as manual CLI bindings, and offline entries are historical identities, not killable processes. Dashboard-spawned managed agents are the normal control-plane path: they have environment, workspace, runtime, spawn spec, session state, and recovery metadata. Use <code>comms_dispatch(...)</code> only for low-level run control/debugging; normal chat should use <code>comms_send(...)</code> or the Chat page.</p>
+      <p><b>Manual vs managed:</b> <code>comms_register</code> binds a live resident CLI session you opened yourself. Those rows are shown as manual CLI bindings, and offline entries are historical identities, not killable processes. Dashboard-spawned managed agents are the normal control-plane path: they have environment, workspace, runtime, spawn spec, session state, and recovery metadata. Normal chat should use <code>comms_send(...)</code> or the Chat page.</p>
         <p><b>Live send:</b> normal messages are not queued for future runs. If the target is offline, stale, stopped, already working, already has queued work, or lacks a live wake path, Send reports the issue and writes no message. Agent-reported blocked state and legacy completed state are status notes, not delivery blockers.</p>
       <p><b>Dashboard composer:</b> <b>Send</b> is the normal teamwork path. It delivers only to currently startable agents and surfaces live delivery failures immediately.</p>
 
@@ -777,8 +777,8 @@ aify-comms</pre>
 
       <h3>Tools</h3>
       <ul>
-        <li><b>Messaging:</b> <code>comms_register</code>, <code>comms_envs</code>, <code>comms_spawn</code>, <code>comms_agents</code>, <code>comms_status</code>, <code>comms_agent_info</code>, <code>comms_send</code> (normal teamwork; live-gated), <code>comms_dispatch</code> (advanced run control), <code>comms_listen</code> (stdio only), <code>comms_inbox</code>, <code>comms_unsend</code>, <code>comms_search</code></li>
-        <li><b>Run control:</b> <code>comms_run_status</code>, <code>comms_run_interrupt</code></li>
+        <li><b>Messaging:</b> <code>comms_register</code>, <code>comms_envs</code>, <code>comms_spawn</code>, <code>comms_agents</code>, <code>comms_status</code>, <code>comms_agent_info</code>, <code>comms_send</code> (normal teamwork; live-gated), <code>comms_listen</code> (stdio only), <code>comms_inbox</code>, <code>comms_unsend</code>, <code>comms_search</code></li>
+        <li><b>Advanced run control:</b> <code>comms_dispatch</code> (debug/strict run tracking), <code>comms_run_status</code>, <code>comms_run_interrupt</code>. Normal users and agents should send messages, not dispatches.</li>
         <li><b>Channels:</b> <code>comms_channel_create</code>, <code>comms_channel_join</code> (+ invite others), <code>comms_channel_send</code> (live-gated), <code>comms_channel_read</code>, <code>comms_channel_list</code>. In the dashboard, channels live inside Chat.</li>
         <li><b>File sharing:</b> <code>comms_share</code> (text + binary), <code>comms_read</code>, <code>comms_files</code></li>
         <li><b>Management:</b> <code>comms_clear</code>, <code>comms_dashboard</code></li>
@@ -1012,10 +1012,13 @@ function actionButton(label, title, onclick, classes = '') {
 }
 window._dashboardActions = window._dashboardActions || new Map();
 window._dashboardActionSeq = window._dashboardActionSeq || 0;
+function dashboardActionAttr(id) {
+  return `data-dashboard-action="${esc(id)}"`;
+}
 function actionButtonFn(label, title, handler, classes = '') {
   const id = `act_${++window._dashboardActionSeq}`;
   window._dashboardActions.set(id, handler);
-  return `<button class="btn btn-sm ${esc(classes)}"${titleAttr(title || label)} onclick="runDashboardAction(${jsArg(id)})">${esc(label)}</button>`;
+  return `<button class="btn btn-sm ${esc(classes)}"${titleAttr(title || label)} ${dashboardActionAttr(id)}>${esc(label)}</button>`;
 }
 async function runDashboardAction(id) {
   const handler = window._dashboardActions?.get(id);
@@ -1029,6 +1032,12 @@ async function runDashboardAction(id) {
     toast(error?.message || 'Action failed', '#f85149');
   }
 }
+document.addEventListener('click', event => {
+  const target = event.target.closest('[data-dashboard-action]');
+  if (!target) return;
+  event.preventDefault();
+  runDashboardAction(target.getAttribute('data-dashboard-action'));
+});
 function disabledActionButton(label, title, classes = '') {
   return `<button class="btn btn-sm ${esc(classes)}"${titleAttr(title || label)} disabled>${esc(label)}</button>`;
 }
@@ -1607,7 +1616,7 @@ function renderHomeControlRoom(stats, agents, managedAgents, residentAgents, env
     const peer = message.from === chatIdentity() ? (message.to || '') : (message.from || '');
     const actionId = `flow_${++window._dashboardActionSeq}`;
     window._dashboardActions.set(actionId, () => isChannel ? selectChatConversation(`channel:${message.channel || ''}`) : openAgentChat(peer));
-    return `<div class="activity-row" onclick="runDashboardAction(${jsArg(actionId)})" title="Open this conversation">` +
+    return `<div class="activity-row" ${dashboardActionAttr(actionId)} title="Open this conversation">` +
       `<div class="activity-route">${esc(route)}</div>` +
       `<div class="activity-main"><div class="activity-title clip-1"${titleAttr(title)}>${esc(title)}</div><div class="activity-preview clip-2"${titleAttr(preview)}>${esc(preview)}</div></div>` +
       `<div class="activity-time"${titleAttr(fmtTime(message.timestamp))}>${esc(fmtShortTime(message.timestamp))}${message.dispatchRequested ? '<br><span class="home-tag">wake</span>' : ''}</div>` +
@@ -1639,7 +1648,7 @@ function renderHomeControlRoom(stats, agents, managedAgents, residentAgents, env
       const meta = `${info.role || 'agent'} · ${agentRuntimeLabel(info) || info.wakeMode || 'not live-bound'}`;
       const actionId = `team_${++window._dashboardActionSeq}`;
       window._dashboardActions.set(actionId, () => openAgentChat(id));
-      return `<div class="team-tile" onclick="runDashboardAction(${jsArg(actionId)})" title="Open chat with ${esc(id)}"><b class="clip-1">${esc(id)}</b><span class="clip-2">${esc(meta)}</span><em class="team-state ${esc(state)}">${esc(state)}</em></div>`;
+      return `<div class="team-tile" ${dashboardActionAttr(actionId)} title="Open chat with ${esc(id)}"><b class="clip-1">${esc(id)}</b><span class="clip-2">${esc(meta)}</span><em class="team-state ${esc(state)}">${esc(state)}</em></div>`;
     }).join('') || '<div class="home-empty">No online/active agents. Offline identities are hidden here.</div>';
 
   const envRows = onlineEnvs.slice(0, 6).map(env => {
@@ -1825,7 +1834,7 @@ function renderEnvironments(environments) {
       `<pre class="env-command">${esc(startCommand)}</pre>` +
       `<div class="btn-row">` +
       (isOnline ? actionButtonFn('Spawn here', 'Prefill the spawn form with this environment and its first workspace root', () => prefillEnvironmentSpawn(env.id)) : '') +
-      actionButton('Copy start', 'Copy the command to start this bridge again', `copyText(${jsArg(startCommand)}, 'Start command copied')`) +
+      actionButtonFn('Copy start', 'Copy the command to start this bridge again', () => copyText(startCommand, 'Start command copied')) +
       (isOnline
         ? actionButtonFn('Kill bridge', 'Ask this host bridge process to exit. After it stops, the row can be forgotten.', () => controlEnvironment(env.id, 'stop'), 'btn-danger')
         : actionButtonFn('Forget', 'Hide this offline environment target. Agent identities, chats, and saved session/spec records remain.', () => controlEnvironment(env.id, 'forget'), 'btn-danger')) +
@@ -1963,7 +1972,7 @@ function renderChatRailItem(item) {
   const active = window._chatSelected === item.key ? ' active' : '';
   const actionId = `chat_${++window._dashboardActionSeq}`;
   window._dashboardActions.set(actionId, () => selectChatConversation(item.key));
-  return `<div class="chat-item${active}" onclick="runDashboardAction(${jsArg(actionId)})">` +
+  return `<div class="chat-item${active}" ${dashboardActionAttr(actionId)}>` +
     `<div><div class="chat-item-title clip-1">${esc(item.title)}</div><div class="chat-item-meta clip-1">${esc(item.meta || '')}</div></div>` +
     `${item.unread ? `<span class="chat-unread">${item.unread}</span>` : ''}` +
     `</div>`;
@@ -2597,8 +2606,8 @@ async function continueSessionAs(sessionId) {
         <div class="hint">This includes session identity plus the latest direct messages involving the source agent and channel posts authored by it.</div>
       </div>
       <div class="btn-row">
-        <button class="btn" title="Regenerate the packet from the selected message count" onclick="regenerateContinuePacket(${jsArg(sessionId)})">Regenerate</button>
-        <button class="btn btn-primary" title="Queue a managed-warm continuation spawn" onclick="submitContinueSessionAs(${jsArg(sessionId)})">Queue continuation</button>
+        ${actionButtonFn('Regenerate', 'Regenerate the packet from the selected message count', () => regenerateContinuePacket(sessionId))}
+        ${actionButtonFn('Queue continuation', 'Queue a managed-warm continuation spawn', () => submitContinueSessionAs(sessionId), 'btn-primary')}
       </div>
     </div>
   `);
@@ -3075,7 +3084,7 @@ async function showChannelList() {
     for (const ch of channels) {
       const actionId = `channel_${++window._dashboardActionSeq}`;
       window._dashboardActions.set(actionId, () => openChannel(ch.name));
-      html += `<tr style="cursor:pointer" onclick="runDashboardAction(${jsArg(actionId)})">` +
+      html += `<tr style="cursor:pointer" ${dashboardActionAttr(actionId)}>` +
         `<td><b style="color:#58a6ff">#${esc(ch.name)}</b><br><span class="t">${esc(ch.description||'')}</span></td>` +
         `<td>${(ch.members||[]).join(', ')}</td>` +
         `<td>${ch.messageCount || 0}</td>` +
