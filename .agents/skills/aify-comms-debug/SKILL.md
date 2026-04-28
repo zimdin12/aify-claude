@@ -109,6 +109,16 @@ comms_agent_info(agentId="my-agent")
 
 On Windows, the installer creates both a Bash `claude-aify` and a `claude-aify.cmd` shim. From PowerShell / cmd prefer the `.cmd`; from Git Bash either is fine.
 
+## Claude managed run fails: `Session ID ... is already in use`
+
+**Symptom.** A dashboard-managed Claude run fails immediately with an error like `Session ID e5b70d2b-b700-4b77-a6fe-d65ccb8f84c6 is already in use`.
+
+**Cause.** The managed session record held a Claude session ID that another Claude process still owns. This can happen after a crash, stale bridge, duplicate restart, or a recovered session that reused a locked Claude session ID.
+
+**Fix (current build).** Managed Claude runs detect this exact failure and retry once with a fresh session ID, then update runtime state to that new ID. Restart the Windows `aify-comms` bridge after updating so it loads the fixed runtime adapter.
+
+**Resident caveat.** Resident Claude sessions are not silently swapped, because their session ID is the visible CLI binding. If a resident session hits this, close the duplicate Claude tab/process, restart with `claude-aify`, and re-register from the live session.
+
 ## Machine ID shows `win32:unknown-host`
 
 **Symptom.** Agent's `machineId` is `win32:unknown-host` instead of the real hostname.

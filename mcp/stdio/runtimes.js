@@ -770,92 +770,116 @@ function createClaudeController({ agentId, agentInfo, run, runtimeState, callbac
   const launcher = defaultClaudeCommand();
   const executionMode = String(run.executionMode || agentInfo.sessionMode || "managed").trim().toLowerCase();
   const residentSessionId = String(agentInfo.sessionHandle || "").trim();
-  const sessionId =
+  const initialSessionId =
     executionMode === "resident"
       ? residentSessionId
       : (runtimeState?.sessionId || residentSessionId || randomUUID());
   const maxTurns = String(config.maxTurns || 15);
   const timeoutMs = Number(config.timeoutMs || 2 * 60 * 60 * 1000);
-  if (executionMode === "resident" && !sessionId) {
+  if (executionMode === "resident" && !initialSessionId) {
     throw new Error(
       `Resident Claude session "${agentId}" has no bound session ID. Re-register from the live Claude session or provide sessionHandle explicitly.`,
     );
   }
-  const args = [
-    ...launcher.args,
-    "-p",
-    "--output-format", "text",
-    "--session-id", sessionId,
-    "--max-turns", maxTurns,
-    "--append-system-prompt", buildSystemPrompt(agentId, agentInfo, run),
-  ];
-
-  if (agentInfo.model) {
-    args.push("--model", agentInfo.model);
-  }
-
-  const proc = spawnProcess(launcher.command, args, { cwd: agentInfo.cwd || process.cwd() });
-  const chunks = [];
-  const errChunks = [];
   let settled = false;
   let interrupted = false;
+  let activeProcess = null;
+  let retriedSessionInUse = false;
 
-  callbacks.onRuntimeState?.({ sessionId });
+  const startAttempt = (sessionId) => {
+    const args = [
+      ...launcher.args,
+      "-p",
+      "--output-format", "text",
+      "--session-id", sessionId,
+      "--max-turns", maxTurns,
+      "--append-system-prompt", buildSystemPrompt(agentId, agentInfo, run),
+    ];
 
-  proc.stdout.on("data", (chunk) => chunks.push(chunk));
-  proc.stderr.on("data", (chunk) => errChunks.push(chunk));
-  proc.stdin.write(buildUserPrompt(run));
-  proc.stdin.end();
-
-  const timer = setTimeout(() => {
-    if (!settled) {
-      proc.kill("SIGTERM");
+    if (agentInfo.model) {
+      args.push("--model", agentInfo.model);
     }
-  }, timeoutMs);
 
-  const promise = new Promise((resolve, reject) => {
-    proc.on("error", (error) => {
-      settled = true;
-      clearTimeout(timer);
-      reject(error);
-    });
+    const proc = spawnProcess(launcher.command, args, { cwd: agentInfo.cwd || process.cwd() });
+    activeProcess = proc;
+    const chunks = [];
+    const errChunks = [];
+    settled = false;
 
-    proc.on("close", (code) => {
-      settled = true;
-      clearTimeout(timer);
-      const stdout = Buffer.concat(chunks).toString("utf-8").trim();
-      const stderr = Buffer.concat(errChunks).toString("utf-8").trim();
-      if (interrupted) {
-        resolve({
-          status: "cancelled",
-          summary: stdout || stderr || "Run interrupted",
-          runtimeState: { sessionId },
-        });
-        return;
+    callbacks.onRuntimeState?.({ sessionId });
+
+    proc.stdout.on("data", (chunk) => chunks.push(chunk));
+    proc.stderr.on("data", (chunk) => errChunks.push(chunk));
+    proc.stdin.write(buildUserPrompt(run));
+    proc.stdin.end();
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        proc.kill("SIGTERM");
       }
-      if (code === 0) {
-        resolve({
-          status: "completed",
-          summary: stdout || "(no output)",
-          runtimeState: { sessionId },
-        });
-        return;
-      }
-      reject(new Error(stderr || stdout || `Claude exited with code ${code}`));
+    }, timeoutMs);
+
+    return new Promise((resolve, reject) => {
+      proc.on("error", (error) => {
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      });
+
+      proc.on("close", (code) => {
+        settled = true;
+        clearTimeout(timer);
+        const stdout = Buffer.concat(chunks).toString("utf-8").trim();
+        const stderr = Buffer.concat(errChunks).toString("utf-8").trim();
+        if (interrupted) {
+          resolve({
+            status: "cancelled",
+            summary: stdout || stderr || "Run interrupted",
+            runtimeState: { sessionId },
+          });
+          return;
+        }
+        if (code === 0) {
+          resolve({
+            status: "completed",
+            summary: stdout || "(no output)",
+            runtimeState: { sessionId },
+          });
+          return;
+        }
+        const errorText = stderr || stdout || `Claude exited with code ${code}`;
+        if (executionMode !== "resident" && !retriedSessionInUse && isClaudeSessionInUseError(errorText)) {
+          retriedSessionInUse = true;
+          const replacementSessionId = randomUUID();
+          callbacks.onEvent?.(
+            "runtime",
+            `Claude session "${sessionId}" is already in use; retrying this managed run with fresh session "${replacementSessionId}"`,
+          );
+          startAttempt(replacementSessionId).then(resolve, reject);
+          return;
+        }
+        reject(new Error(errorText));
+      });
     });
-  });
+  };
+
+  const promise = startAttempt(initialSessionId);
 
   return {
     capabilities: controlCapabilitiesForRuntime("claude-code"),
     interrupt: () => {
       interrupted = true;
-      if (!settled) proc.kill("SIGTERM");
+      if (!settled && activeProcess) activeProcess.kill("SIGTERM");
     },
     steer: async () => {
       throw new Error('Runtime "claude-code" does not support steer');
     },
     promise,
   };
+}
+
+export function isClaudeSessionInUseError(text) {
+  return /session id(?:\s+[0-9a-f-]+)?\s+is already in use/i.test(String(text || ""));
 }
 
 function createCodexController({ agentId, agentInfo, run, runtimeState, callbacks }) {

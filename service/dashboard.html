@@ -2250,7 +2250,21 @@ function renderChatInspector(meta, messages) {
   html += '</dl>';
   if (meta.kind === 'channel') {
     const channel = (window._channels || []).find(ch => ch.name === meta.id) || {};
-    html += '<h3>Members</h3>' + ((channel.members || []).length ? `<div class="env-pill-row">${channel.members.map(member => `<span class="env-pill">${esc(member)}</span>`).join('')}</div>` : '<p class="em">No members.</p>');
+    const members = channel.members || [];
+    const availableMembers = (window._allAgents || [])
+      .map(([id]) => id)
+      .filter(id => id && !members.includes(id))
+      .sort((a, b) => a.localeCompare(b));
+    html += '<h3>Members</h3>' +
+      (members.length ? `<div class="env-pill-row">${members.map(member => `<span class="env-pill">${esc(member)}</span>`).join('')}</div>` : '<p class="em">No members.</p>') +
+      `<div class="send-row">` +
+        `<select id="chat-channel-add-member" title="Agent to add to #${esc(meta.id)}">` +
+          (availableMembers.length
+            ? availableMembers.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join('')
+            : '<option value="">All known agents are members</option>') +
+        `</select>` +
+        actionButtonFn('Add member', 'Add the selected agent to this channel', () => addSelectedChannelMember(meta.id)) +
+      `</div>`;
   } else {
     if (session) {
       const sessionStatus = String(session.status || 'unknown').toLowerCase();
@@ -2285,6 +2299,34 @@ function renderChatInspector(meta, messages) {
   const recent = messages.slice(-5).reverse();
   html += '<h3>Recent Activity</h3><div class="mini-list">' + (recent.length ? recent.map(m => `<div class="mini-row"><span class="clip-1"${titleAttr(m.subject || m.preview || m.body || '')}>${esc(m.subject || m.preview || m.body || 'Message')}</span><span class="t">${esc(fmtTime(m.timestamp))}</span></div>`).join('') : '<p class="em">No activity.</p>') + '</div>';
   el.innerHTML = html;
+}
+
+async function addSelectedChannelMember(channelName) {
+  const select = document.getElementById('chat-channel-add-member');
+  const agentId = select?.value || '';
+  if (!agentId) {
+    toast('No agent available to add', '#f85149');
+    return;
+  }
+  try {
+    const response = await apiFetch(API + `/channels/${encodeURIComponent(channelName)}/join`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({agentId}),
+    });
+    const res = await response.json();
+    if (!response.ok || res.ok === false) throw new Error(res.detail || res.error || 'Add member failed');
+    const channel = (window._channels || []).find(ch => ch.name === channelName);
+    if (channel) {
+      channel.members = res.members || channel.members || [];
+      channel.memberCount = channel.members.length;
+    }
+    await refreshSelectedChannelMessages();
+    renderChat();
+    toast(`${agentId} added to #${channelName}`);
+  } catch (e) {
+    toast(e.message || 'Add member failed', '#f85149');
+  }
 }
 
 function setChatReplyContext(mode, target, messageId, subject, preview) {

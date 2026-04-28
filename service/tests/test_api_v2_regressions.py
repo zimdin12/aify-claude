@@ -252,6 +252,8 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertNotIn('onclick="runDashboardAction(', dashboard.text)
         self.assertIn("Advanced run control", dashboard.text)
         self.assertIn("Normal users and agents should send messages, not dispatches.", dashboard.text)
+        self.assertIn("chat-channel-add-member", dashboard.text)
+        self.assertIn("Add member", dashboard.text)
 
     def test_environment_list_marks_missing_heartbeat_offline_and_orders_stably(self):
         self._heartbeat_environment(
