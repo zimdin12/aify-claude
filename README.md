@@ -1,8 +1,10 @@
 # aify-comms
 
-Dashboard-driven communication and control plane for coding agents.
+Dashboard-driven communication and control plane for AI coding teams.
 
-The goal is to move from "agents manually register themselves and can message each other" to "a user opens a dashboard, picks an environment, spawns agents, chats with them, groups them, monitors them, and stops/resumes them without caring about registration details."
+`aify-comms` solves the practical problem of running more than one coding agent across Windows, WSL, Linux, and remote machines without losing track of who is live, what they are doing, and how to restart or replace them. The normal workflow is: start the service, run an `aify-comms` bridge in each execution environment, open the dashboard, spawn persistent managed teammates into chosen workspaces, then coordinate through chat.
+
+The dashboard is the product surface. Messages are the work interface; runs, sessions, bridges, and handoffs are operational telemetry around those messages.
 
 ## Product Direction
 
@@ -17,7 +19,7 @@ It now adds a first-class agent lifecycle layer:
 
 - connected environment registry: WSL, Windows, Linux, Docker host, remote machine
 - spawn from dashboard into any connected environment
-- headless runtime adapters: `claude -p`, `codex exec`, `opencode run`, and later runtime-specific resident/session modes
+- runtime adapters for Claude Code, Codex, and OpenCode managed/resident execution
 - automatic identity/registration for spawned agents
 - managed-warm sessions for long-lived agents
 - runtime/session visibility, with richer token/cost telemetry added as runtimes expose it
@@ -34,6 +36,8 @@ It now adds a first-class agent lifecycle layer:
 7. Talk to it in direct chat or channels, assign work through messages, inspect output, stop/restart/recover it.
 
 Manual `comms_register(...)` should become an advanced/debug path, not the normal user workflow.
+
+Normal dashboard chat is live-delivery gated: if a target cannot currently start work, the message is not silently queued for a future run. Fix the agent/session/environment state, then resend. Required handoffs are repaired automatically when a terminal run finishes without an explicit reply, and the Home page exposes repair/dismiss actions for old issue states.
 
 ## Current State
 
@@ -86,7 +90,7 @@ cd C:\path\to\workspace-or-workspace-parent
 aify-comms.cmd
 ```
 
-The service URL defaults to `http://localhost:8800`. The current directory is always advertised as an allowed workspace root. Extra root arguments are optional safety boundaries, for example `aify-comms /mnt/c/Docker` or `aify-comms.cmd C:\Docker`. The exact project workspace is selected per agent in the dashboard spawn form.
+The service URL defaults to `http://localhost:8800`. The current directory is always advertised as an allowed workspace root. Extra root arguments are optional safety boundaries, for example `aify-comms /mnt/c/Docker` or `aify-comms.cmd C:\Docker`. The exact project workspace is selected per agent in the dashboard spawn form. Ended sessions and historical failures stay available for debugging, but the dashboard hides them from the normal work queue by default.
 
 ## Design Rule
 

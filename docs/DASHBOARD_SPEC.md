@@ -32,12 +32,11 @@ The home page should show:
 - failed or lost sessions
 - running tasks
 - recent important events
-- quick spawn button
-- quick chat composer
+- quick links to spawn/chat pages
 
 Primary cards:
 
-- **Needs attention**: pending handoffs, unread urgent messages, failed spawns, lost sessions.
+- **Needs attention**: pending handoffs, unread urgent messages, failed spawns, lost sessions. Old terminal handoffs should have a repair action; reviewed historical failures should be dismissible from the home queue without deleting run/spawn audit history.
 - **Live capacity**: bridges/environments and supported runtimes.
 - **Active work**: current running sessions/runs.
 - **Recent conversation**: latest DMs and channels.
@@ -68,6 +67,8 @@ Message states:
 - `blocked`: run/session needs user intervention
 - `handoff pending`: reply expected
 - `closed`: handoff complete or explicitly dismissed
+
+Dashboard-origin managed messages can use the runtime's final plain-text result as the chat reply. Agents should still explicitly reply to other agents with `comms_send(type="response", inReplyTo=...)`, but dashboard chat must not require a fake `comms_send(to="dashboard")` call.
 
 Group chat must prevent accidental loops:
 
@@ -196,6 +197,8 @@ Capability badges:
 Do not show **Open in CLI** unless `cliAttach=true`. Always show transcript/log access for backed sessions.
 
 Do not show stop/kill-style actions for rows that only represent offline identity records. For offline manual bindings, show cleanup/removal language instead.
+
+Ended/completed/cancelled sessions are debug history. The normal Sessions page should hide them by default and expose a **Show ended/debug sessions** toggle for lifecycle investigation.
 
 ## Continue From Session Flow
 

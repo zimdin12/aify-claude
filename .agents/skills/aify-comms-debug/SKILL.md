@@ -269,15 +269,22 @@ Note that `description` is the one exception: omitting it preserves the existing
 
 **Fix.** Pass every field you care about on the re-register call. For Codex resident triggering, that usually means `cwd`, `sessionHandle`, and `appServerUrl` all explicit.
 
-## Install.sh fails on Windows (Git Bash)
+## Install.sh on Windows / Git Bash
 
-Known upstream issues with `install.sh` running under Git Bash:
+Current installer behavior:
 
-- **Hook installer crashes** with `Error: ENOENT: no such file or directory, open 'C:\c\Users\...'`. Cause: `$HOME` is an MSYS path like `/c/Users/...` which Node interprets as relative and prepends the current drive. Workaround: run `install.sh` without `--with-hook` and install the hook manually.
-- **`.cmd` shim hangs with `sed: command not found`** when launched from `cmd` / PowerShell. Cause: the system PATH only contains `C:\Program Files\Git\cmd`, not `C:\Program Files\Git\usr\bin`. Workaround: prepend Git's unix bin dirs to PATH before calling the shim, or run the Bash `claude-aify` / `codex-aify` wrapper directly from Git Bash.
-- **`claude` resolves to npm bash-shim instead of native `claude.exe`.** If both are installed, the bash wrapper picks the npm shim, which triggers the PATH issue above. Workaround: prefer the native Windows build of Claude Code (`%USERPROFILE%\.local\bin\claude.exe`) and add a check in the wrapper.
+- `--with-hook` is Git Bash aware. It writes native Windows hook paths without MSYS path mangling, so the old `C:\c\Users\...` failure should not require manual `settings.json` or `hooks.json` edits.
+- The installer creates Bash wrappers and `.cmd` shims in `%USERPROFILE%\.local\bin`, including `aify-comms.cmd`, `claude-aify.cmd`, and `codex-aify.cmd` when the matching client is installed.
+- The `.cmd` shims prepend Git's Unix binary directories when they can find Git, so `sed`/`bash` should be available even when PowerShell only had `C:\Program Files\Git\cmd` on PATH.
 
-These are maintainer-level issues, not runtime bugs. Track them in the install.sh improvements issue.
+If Windows still cannot find `aify-comms.cmd` after install:
+
+```powershell
+$env:Path += ";$env:USERPROFILE\.local\bin"
+& "$env:USERPROFILE\.local\bin\aify-comms.cmd"
+```
+
+If Claude is installed but `claude.cmd` is missing, the wrapper falls back to `claude` when available. Prefer the native Windows Claude Code install when possible, then restart Claude/Codex after reinstalling aify-comms.
 
 ## General escalation
 

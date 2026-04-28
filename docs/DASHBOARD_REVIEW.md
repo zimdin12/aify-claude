@@ -13,8 +13,9 @@ This dashboard is now treated as the product surface, not as a raw admin page.
 7. Spawn model: `aify-comms` roots are safety boundaries; each agent's exact workspace is selected at spawn time.
 8. Session control: Sessions are concrete runtime backing records; Agents are teammate identities; Runs are tracked work attempts.
 9. Debug surfaces: run/event tables and repair actions remain available but should not dominate daily use.
-10. Remaining debt: a dedicated frontend framework, inspector drawer, grouped DMs, richer run/thread linking, and true logs/telemetry views are still future work.
-11. Visual quality: keep the UI dense and operational, but use stronger panel hierarchy, quieter borders, readable dark neutrals, and obvious primary actions so it feels like a real control plane instead of a debug dump.
+10. Issue queue: Home should distinguish live blockers from reviewed history. Pending handoffs get repair actions; historical failed runs/spawns can be dismissed from Home while staying in audit views.
+11. Remaining debt: a dedicated frontend framework, inspector drawer, grouped DMs, richer run/thread linking, and true logs/telemetry views are still future work.
+12. Visual quality: keep the UI dense and operational, but use stronger panel hierarchy, quieter borders, readable dark neutrals, and obvious primary actions so it feels like a real control plane instead of a debug dump.
 
 ## Current Dashboard Semantics
 
@@ -22,7 +23,7 @@ This dashboard is now treated as the product surface, not as a raw admin page.
 - **Chat**: normal communication surface for DMs and channels. The selected **Viewing as** identity controls which messages are marked read, who sends, and which DM can be cleared.
 - **Agents**: managed agent identities spawned or controlled by the bridge, plus a separate manual/resident CLI section. Managed agents may have saved resume state without a currently running process.
 - **Environments**: connected host/WSL/Windows/Linux bridges and the managed-warm spawn form.
-- **Sessions**: concrete runtime/session backing records. Stop/restart/recover/continue belongs here when a real managed session exists.
+- **Sessions**: concrete runtime/session backing records. Stop/restart/recover/continue belongs here when a real managed session exists. Ended/completed/cancelled rows are hidden by default and shown only through the debug-history toggle.
 - **Runs**: dispatch attempts, handoff state, events, steering, and interrupts.
 - **Artifacts**: shared files.
 - **Help/Settings**: support and policy surfaces.
@@ -49,6 +50,9 @@ What was corrected in this pass:
 - **Analytics**: replaced old row stacks with a switched traffic chart (`24h`, `30d`, `12m`), live-health cards, and a run-status mix chart.
 - **Live failure visibility**: Home includes live-binding issues in Needs Attention, and DM chat shows a warning banner when a target is not live-wake capable.
 - **Live-only spawn model**: dashboard/API now reject new non-managed-warm spawn modes. Legacy values may still exist in old data, but they are not product choices.
+- **Dashboard chat handoffs**: dashboard-origin managed runs mirror the runtime's final text into chat as a clean reply when the agent did not send an explicit message. Agent-to-agent work still prefers explicit threaded `comms_send(type="response")`.
+- **Fragile button handlers**: dynamic dashboard actions now use registered function handlers instead of interpolating arbitrary IDs/names into inline JavaScript string literals.
+- **Issue queue cleanup**: Home exposes handoff repair and local dismissal for reviewed historical failures so "Needs Attention" stays actionable.
 
 Remaining high-value fixes:
 

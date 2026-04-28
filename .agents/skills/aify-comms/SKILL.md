@@ -117,7 +117,7 @@ Gotchas regardless of runtime:
 ### Run Controls (3)
 | Tool | Use |
 |------|-----|
-| `comms_dispatch` | Lower-level strict-start/run-control API. Use only when debugging run-state handling. For normal teamwork communication, prefer `comms_send`. |
+| `comms_dispatch` | Lower-level run-control/debug API. Use only when debugging run-state handling. For normal teamwork communication, prefer `comms_send`. |
 | `comms_run_status` | Check the status, summary, and recent events of a dispatched run. |
 | `comms_run_interrupt` | Request interruption of an active run. Works when the target runtime supports interrupt. |
 
@@ -154,7 +154,7 @@ Gotchas regardless of runtime:
 | Strict API/debug run control | `comms_dispatch(...)` |
 | Inject guidance mid-turn without interrupting | `comms_send(steer=true)` |
 
-Default to `comms_send` for normal teamwork. It is the message API and requires a currently reachable target. If the recipient is `offline`, `stale`, `stopped`, already `working`, already has queued work, or lacks a live wake path, the send fails with a notice and no message is stored. Use `comms_dispatch` only for low-level run-control/debug cases.
+Default to `comms_send` for normal teamwork. It is the message API and requires a currently reachable target. If the recipient is `offline`, `stale`, `stopped`, already `working`, already has queued work, or lacks a live wake path, the send fails with a notice and no message is stored. Use `comms_dispatch` only for low-level run-control/debug cases. Dashboard-origin managed runs may mirror the runtime's final text back into dashboard chat when no explicit reply message was sent; agent-to-agent work should still send an explicit threaded `response`.
 
 **Wake and priority are independent.** Waking an agent does NOT imply urgency. `priority="high"` does. Sending a wake message with "not urgent" in the body means the recipient will read it and defer — correctly. If you want work done now, say so: use `priority="high"` and explicit blocking language. Do not use high priority for routine ACKs, status chatter, or thread bookkeeping; those should be normal priority unless they are blocking someone right now.
 
@@ -197,6 +197,8 @@ When you receive a wake notification or finish a task, check inbox before starti
 - `comms_run_interrupt` to stop an active run. `comms_send(steer=true)` to inject guidance mid-turn.
 - Before diagnosing another agent's issues, call `comms_agent_info` first — don't guess.
 - Brief acks are fine — "on it" beats a paragraph.
+
+Dashboard note: Home is a live operations queue, not a full audit log. Pending handoffs can be repaired from the dashboard, and reviewed historical failures can be dismissed from Home while remaining available in Runs/Environments. Sessions hides ended/completed/cancelled rows by default; use "Show ended/debug sessions" when investigating lifecycle history.
 
 ## Communication Style
 

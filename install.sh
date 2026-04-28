@@ -300,6 +300,8 @@ install_windows_cmd_shim() {
   cat > "$shim_path" <<EOF
 @echo off
 setlocal
+for %%I in ("$bash_path") do set "AIFY_BASH_DIR=%%~dpI"
+set "PATH=%AIFY_BASH_DIR%;%AIFY_BASH_DIR%..\usr\bin;%AIFY_BASH_DIR%..\..\bin;%PATH%"
 "$bash_path" "$windows_wrapper_path" %*
 endlocal
 EOF

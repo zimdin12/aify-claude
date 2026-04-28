@@ -27,13 +27,13 @@ Every agent registration resolves to one of these wake modes. `comms_agent_info`
 | `codex-live` | Resident Codex session started via `codex-aify`; woken through the shared local WebSocket app-server that the visible TUI uses. |
 | `codex-thread-resume` | Resident Codex session started with plain `codex`; woken by resuming the bound `thread.id` in a separate background app-server. |
 | `opencode-session-resume` | Resident OpenCode session with a bound `sessionHandle`; resumed in a background worker. |
-| `managed-worker` | Detached managed worker created by `comms_spawn_agent`. Not visible to a live user. |
-| `message-only` | No live wake path available. Messages still land in the inbox; dispatch cannot execute. |
+| `managed-worker` | Detached managed worker created by dashboard Environment spawn or `comms_spawn`. Not visible in a live user CLI. |
+| `message-only` | Legacy/no-live binding. Normal `comms_send` rejects these targets instead of storing future work; older inbox-only records may still display this mode. |
 | `claude-needs-channel` | Claude agent is registered but no alive `claude-aify` wrapper exists on this machine. Fix: launch one. |
 
 ## Managed workers are persistent identities, not persistent processes
 
-**Decision.** `comms_spawn_agent` creates a stable managed-worker registration with saved runtime state, but the underlying Codex/Claude/OpenCode process is launched per dispatch run and torn down when that run finishes, fails, times out, or is interrupted.
+**Decision.** Dashboard Environment spawn and `comms_spawn` create a stable managed-worker registration with saved runtime state, but the underlying Codex/Claude/OpenCode process is launched per dispatch run and torn down when that run finishes, fails, times out, or is interrupted.
 
 **Why.** Keeping a long-lived hidden terminal process around for every worker would be harder to supervise, leak resources across idle periods, and make stale-worker cleanup much messier. The state we actually care about is the resumable conversation handle (`threadId`, `sessionId`, etc.), not the lifetime of a specific shell process.
 
@@ -158,6 +158,30 @@ The old bridge stays alive and keeps polling (that's fine — polling is cheap) 
 **Why not OpenCode.** OpenCode doesn't expose a hook path the notification script can bind to yet.
 
 **Consequence.** If an agent never runs a Bash tool call, it never checks for unread messages from the hook path. Agents should call `comms_inbox` explicitly at natural check-in points (start of a task, between major steps).
+
+## Dashboard actions use function handlers, not interpolated JavaScript
+
+**Decision.** Dynamic dashboard buttons register a JavaScript function and call it by generated action ID instead of interpolating agent IDs, run IDs, subjects, or channel names into inline `onclick` strings.
+
+**Why.** Agent IDs and message subjects can contain characters that are safe as data but unsafe inside a hand-built JavaScript string literal. The previous pattern caused broken buttons such as Follow up and Continue as when a value introduced a quote or unmatched escape. Function-backed actions keep dynamic values as closed-over data and make button behavior independent of display text.
+
+**Consequence.** If an action ID is older than the current in-memory render, the dashboard shows an "Action expired" toast instead of throwing a console syntax error.
+
+## Home is an operations queue, not the audit log
+
+**Decision.** The dashboard Home page highlights live blockers, pending handoff repairs, failed spawns, and failed/cancelled runs, but reviewed historical failures can be dismissed locally from Home. Runs, spawn requests, and event history remain in their dedicated audit views.
+
+**Why.** A control-plane homepage becomes useless if old, already-understood failures permanently look urgent. Operators need a current work queue first, with audit detail one click away.
+
+**Consequence.** Dismissal is a browser-local presentation choice. It does not delete messages, runs, spawn requests, sessions, or artifacts.
+
+## Ended sessions are debug history
+
+**Decision.** Sessions with terminal quiet statuses (`ended`, `completed`, `cancelled`) are hidden from the normal Sessions table by default. The table exposes a **Show ended/debug sessions** toggle for lifecycle investigation.
+
+**Why.** Managed sessions are backing records, and old records are useful when debugging recovery. They should not dominate the day-to-day operator view where the user wants running, starting, failed, or recoverable sessions.
+
+**Consequence.** Session counts still include hidden history where useful, but the primary list stays focused on actionable session state.
 
 ## Claude channel bridge completes runs only after delivery succeeds
 

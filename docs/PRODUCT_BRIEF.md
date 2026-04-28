@@ -2,9 +2,9 @@
 
 ## Problem
 
-`aify-comms` already lets registered agents message each other and trigger work, but the user still has to reason about live sessions, registration, wake modes, stale bridges, session IDs, and which OS a bridge belongs to.
+`aify-comms` is the control plane for AI coding teams. It lets agents message each other and trigger work, but the product only becomes useful when the user does not have to manually reason about live sessions, registration, wake modes, stale bridges, session IDs, and which OS a bridge belongs to.
 
-For a multi-agent workflow, the user wants a control room:
+For a multi-agent workflow, the user needs a control room:
 
 - spawn an agent from the dashboard
 - choose where it runs
@@ -13,14 +13,16 @@ For a multi-agent workflow, the user wants a control room:
 - keep it warm when needed
 - see whether it is actually running
 - stop or resume it without CLI surgery
+- separate live issues from reviewed historical failures
 
 ## Product Goal
 
 Build a headless agent bridge where connected environments are treated as execution capacity and agents are treated as managed, observable sessions.
 
+Messages are the work interface. Runs, sessions, bridges, handoffs, artifacts, and environment state are operational telemetry and controls around that message flow.
+
 The dashboard becomes the primary UI for:
 
-- direct chat
 - direct chat and channels
 - agent spawning
 - environment selection
@@ -36,6 +38,7 @@ The dashboard should feel like a real web application, not a database admin page
 - What conversations need attention?
 - Which runs are pending handoff?
 - What can I safely spawn, stop, restart, or recover?
+- Which old failures are still actionable, and which are only audit history?
 
 Daily workflow target:
 
@@ -58,6 +61,7 @@ Daily workflow target:
 - As a user, I can inspect token/cost telemetry when the runtime exposes it.
 - As a user, I can open a transcript/log for any managed agent, even when the official CLI cannot attach to that session.
 - As a user, I can start a clean new session from an old session using a reviewed compaction packet, including switching model, runtime, bridge, or workspace.
+- As a user, I can repair old missing-handoff rows and dismiss reviewed historical failures from the Home queue without deleting audit records.
 
 ## Non-Goals For Initial Build
 
@@ -75,6 +79,7 @@ Daily workflow target:
 - Agents are lifecycle-managed records, not just self-registered inbox owners.
 - Messaging is the source of truth. Dispatch/run state remains attached to messages.
 - Dashboard spawn is the normal path. Manual `comms_register` is compatibility/debug.
+- Dashboard chat is live-delivery gated. If an agent cannot start live work now, the send fails visibly instead of storing fragile future work.
 - Headless adapters hide CLI details. The rest of the system asks for `runtime=codex`, not for raw shell flags.
 - Managed warm sessions are always backed by durable state: agent identity, spawn spec, workspace, transcript/memory, runtime handles when available, and recovery policy.
 - Native CLI attach is optional. A session can be recoverable through the dashboard even when it cannot be opened in Claude Code/Codex CLI later.

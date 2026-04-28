@@ -320,7 +320,7 @@ async def comms_dispatch(
     if not lines:
         return "No dispatch runs were created."
     if requireStart:
-        lines.extend(["", "Use comms_run_status(...) to inspect progress. If start was impossible, requireStart=true would have failed instead of falling back to inbox-only delivery."])
+        lines.extend(["", "Use comms_run_status(...) to inspect progress. For normal teamwork messages, prefer comms_send(...); it already fails visibly when live delivery is not possible."])
     else:
         lines.extend(["", "Use comms_run_status(...) to inspect progress. Direct dispatch expects an explicit reply by default, and the bridge mirrors the result if none is sent."])
     return "\n".join(lines)

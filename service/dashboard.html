@@ -1262,17 +1262,17 @@ function renderAgents(agents, containerId = 'manual-agents-table') {
     const rawStatus = (info.statusRaw || '').toLowerCase();
     const activeRunId = info.dispatchState?.activeRun?.runId || '';
     const controls = [
-      actionButton('Chat', 'Open a direct chat with this agent identity', `openAgentChat('${esc(id)}')`),
+      actionButtonFn('Chat', 'Open a direct chat with this agent identity', () => openAgentChat(id)),
     ];
     if (activeRunId) {
-      controls.push(actionButton('Interrupt', 'Ask the active run to stop at the next supported interruption point', `interruptRun('${esc(activeRunId)}')`, 'btn-danger'));
+      controls.push(actionButtonFn('Interrupt', 'Ask the active run to stop at the next supported interruption point', () => interruptRun(activeRunId), 'btn-danger'));
     }
     if (rawStatus === 'stopped' || info.launchMode === 'none') {
-      controls.push(actionButton('Resume wake', 'Allow this resident identity to receive wake/dispatch again', `controlResidentAgent('${esc(id)}','resume')`));
+      controls.push(actionButtonFn('Resume wake', 'Allow this resident identity to receive wake/dispatch again', () => controlResidentAgent(id, 'resume')));
     } else {
-      controls.push(actionButton('Stop wake', 'Disable wake/dispatch for this resident identity and interrupt/cancel active work where possible. This does not close a human-open CLI window.', `controlResidentAgent('${esc(id)}','stop')`, 'btn-danger'));
+      controls.push(actionButtonFn('Stop wake', 'Disable wake/dispatch for this resident identity and interrupt/cancel active work where possible. This does not close a human-open CLI window.', () => controlResidentAgent(id, 'stop'), 'btn-danger'));
     }
-    controls.push(actionButton('Remove from dashboard', 'Remove this identity from the dashboard and prevent stale bridges from recreating it until explicitly registered again', `deleteAgent('${esc(id)}')`, 'btn-danger'));
+    controls.push(actionButtonFn('Remove from dashboard', 'Remove this identity from the dashboard and prevent stale bridges from recreating it until explicitly registered again', () => deleteAgent(id), 'btn-danger'));
     html += `<tr><td><b>${esc(id)}</b></td><td><span class="rb">${esc(info.role)}</span></td>` +
       renderPresenceCell(info) +
       `<td class="t"${titleAttr(`${session}${controlNote ? ' — ' + controlNote : ''}`)}><span class="session-text">${esc(session)}</span>${controlNote ? `<span class="row-note">${esc(controlNote)}</span>` : ''}</td>` +
@@ -1324,12 +1324,12 @@ function renderWorkers(workers) {
       `<td class="t"${titleAttr(runtime)}><span class="runtime-text">${esc(runtime)}</span></td>` +
       `<td>${info.unread || 0}</td><td class="t">${esc(info.lastSeen)}</td>` +
       `<td><div class="run-controls">` +
-      actionButton('Chat', 'Open a direct chat with this managed agent', `openAgentChat('${esc(id)}')`) +
-      actionButton('Assign task', 'Open chat composer as a request to this managed agent', `prefillWorkerMessage('${esc(id)}','request')`) +
-      actionButton('Assign env', 'Retarget this teammate identity and saved spawn spec to another online environment', `assignAgentEnvironment('${esc(id)}')`) +
-      (activeRunId ? actionButton('Interrupt', 'Ask the active managed run to stop at the next supported interruption point', `interruptRun('${esc(activeRunId)}')`, 'btn-danger') : '') +
-      actionButton('Clear Resume State', 'Forget saved runtime thread/session handles. Messages and identity remain.', `resetWorkerState('${esc(id)}')`) +
-      actionButton('Remove', 'Unregister this managed agent and cancel queued work', `deleteAgent('${esc(id)}')`, 'btn-danger') +
+      actionButtonFn('Chat', 'Open a direct chat with this managed agent', () => openAgentChat(id)) +
+      actionButtonFn('Assign task', 'Open chat composer as a request to this managed agent', () => prefillWorkerMessage(id, 'request')) +
+      actionButtonFn('Assign env', 'Retarget this teammate identity and saved spawn spec to another online environment', () => assignAgentEnvironment(id)) +
+      (activeRunId ? actionButtonFn('Interrupt', 'Ask the active managed run to stop at the next supported interruption point', () => interruptRun(activeRunId), 'btn-danger') : '') +
+      actionButtonFn('Clear Resume State', 'Forget saved runtime thread/session handles. Messages and identity remain.', () => resetWorkerState(id)) +
+      actionButtonFn('Remove', 'Unregister this managed agent and cancel queued work', () => deleteAgent(id), 'btn-danger') +
       `</div></td></tr>`;
   }
   html += '</tbody></table>';
@@ -1502,19 +1502,19 @@ function renderHomePanels(stats, agents, managedAgents, manualAgents, environmen
   const envRows = environments.slice(0, 5).map(env => {
     const runtimes = (env.runtimes || []).map(r => r.runtime).filter(Boolean).join(', ') || 'no runtimes';
     const roots = (env.cwdRoots || []).slice(0, 2).join(', ') || 'no roots';
-    return homeRow(env.label || env.id, `${env.os || 'unknown'} / ${env.kind || 'unknown'} · ${runtimes} · ${roots}`, env.status || 'unknown', env.status === 'online' ? '' : 'warn', actionButton('Spawn', 'Spawn an agent in this environment', `prefillEnvironmentSpawn('${esc(env.id)}')`));
+    return homeRow(env.label || env.id, `${env.os || 'unknown'} / ${env.kind || 'unknown'} · ${runtimes} · ${roots}`, env.status || 'unknown', env.status === 'online' ? '' : 'warn', actionButtonFn('Spawn', 'Spawn an agent in this environment', () => prefillEnvironmentSpawn(env.id)));
   }).join('') || '<div class="home-empty">No environments connected.</div>';
 
   const activeOrQueuedRuns = runs
     .filter(run => ['queued', 'claimed', 'running'].includes(run.status))
     .slice(0, 6)
-    .map(run => homeRow(run.subject || run.id, `${run.from} -> ${run.targetAgentId} · ${run.executionMode || 'managed'} · ${run.runtime || run.requestedRuntime || 'runtime'}`, run.status, run.status === 'running' ? '' : 'warn', actionButton('View', 'Open run details', `viewRun('${esc(run.id)}')`)))
+    .map(run => homeRow(run.subject || run.id, `${run.from} -> ${run.targetAgentId} · ${run.executionMode || 'managed'} · ${run.runtime || run.requestedRuntime || 'runtime'}`, run.status, run.status === 'running' ? '' : 'warn', actionButtonFn('View', 'Open run details', () => viewRun(run.id))))
     .join('') || '<div class="home-empty">No active or queued runs.</div>';
 
   const failureRows = runs
     .filter(run => ['failed', 'cancelled'].includes(run.status))
     .slice(0, 6)
-    .map(run => homeRow(run.subject || run.id, `${run.targetAgentId} · ${run.error || run.summary || 'No summary recorded'}`, run.status, 'bad', actionButton('View', 'Open failure details', `viewRun('${esc(run.id)}')`)))
+    .map(run => homeRow(run.subject || run.id, `${run.targetAgentId} · ${run.error || run.summary || 'No summary recorded'}`, run.status, 'bad', actionButtonFn('View', 'Open failure details', () => viewRun(run.id))))
     .join('') || '<div class="home-empty">No recent failed or cancelled runs in the current list.</div>';
 
   const pendingSpawnRows = spawnRequests
@@ -1535,13 +1535,13 @@ function renderHomePanels(stats, agents, managedAgents, manualAgents, environmen
     .slice(0, 6)
     .map(([peer, msg]) => {
       const unread = unreadForAgentConversation(peer, identity);
-      return homeRow(peer, `${msg.from} -> ${msg._to} · ${msg.subject || msg.preview || msg.body || ''}`, unread ? `${unread} unread` : 'read', unread ? 'warn' : '', actionButton('Chat', 'Open this direct conversation', `openAgentChat('${esc(peer)}')`));
+      return homeRow(peer, `${msg.from} -> ${msg._to} · ${msg.subject || msg.preview || msg.body || ''}`, unread ? `${unread} unread` : 'read', unread ? 'warn' : '', actionButtonFn('Chat', 'Open this direct conversation', () => openAgentChat(peer)));
     })
     .join('') || `<div class="home-empty">No recent direct conversations for ${esc(identity)}.</div>`;
 
   const agentRows = managedAgents
     .slice(0, 6)
-    .map(([id, info]) => homeRow(id, `${info.role || 'agent'} · ${agentRuntimeLabel(info)} · ${agentWorkText(info) || info.wakeMode || 'ready'}`, info.statusRaw || 'unknown', ['offline', 'stale', 'stopped'].includes((info.statusRaw || '').toLowerCase()) ? 'warn' : '', actionButton('Chat', 'Open agent chat', `openAgentChat('${esc(id)}')`)))
+    .map(([id, info]) => homeRow(id, `${info.role || 'agent'} · ${agentRuntimeLabel(info)} · ${agentWorkText(info) || info.wakeMode || 'ready'}`, info.statusRaw || 'unknown', ['offline', 'stale', 'stopped'].includes((info.statusRaw || '').toLowerCase()) ? 'warn' : '', actionButtonFn('Chat', 'Open agent chat', () => openAgentChat(id))))
     .join('') || '<div class="home-empty">No managed agents yet. Spawn one from Environments.</div>';
 
   const manualHidden = manualAgents.filter(([, info]) => !shouldShowManualBinding(info)).length;
@@ -1817,11 +1817,11 @@ function renderEnvironments(environments) {
       `</dl>` +
       `<pre class="env-command">${esc(startCommand)}</pre>` +
       `<div class="btn-row">` +
-      (isOnline ? actionButton('Spawn here', 'Prefill the spawn form with this environment and its first workspace root', `prefillEnvironmentSpawn('${esc(env.id)}')`) : '') +
+      (isOnline ? actionButtonFn('Spawn here', 'Prefill the spawn form with this environment and its first workspace root', () => prefillEnvironmentSpawn(env.id)) : '') +
       actionButton('Copy start', 'Copy the command to start this bridge again', `copyText(${jsArg(startCommand)}, 'Start command copied')`) +
       (isOnline
-        ? actionButton('Kill bridge', 'Ask this host bridge process to exit. After it stops, the row can be forgotten.', `controlEnvironment('${esc(env.id)}','stop')`, 'btn-danger')
-        : actionButton('Forget', 'Hide this offline environment target. Agent identities, chats, and saved session/spec records remain.', `controlEnvironment('${esc(env.id)}','forget')`, 'btn-danger')) +
+        ? actionButtonFn('Kill bridge', 'Ask this host bridge process to exit. After it stops, the row can be forgotten.', () => controlEnvironment(env.id, 'stop'), 'btn-danger')
+        : actionButtonFn('Forget', 'Hide this offline environment target. Agent identities, chats, and saved session/spec records remain.', () => controlEnvironment(env.id, 'forget'), 'btn-danger')) +
       `</div>` +
       `</section>`;
   }
@@ -1954,7 +1954,9 @@ function renderChatRail() {
 
 function renderChatRailItem(item) {
   const active = window._chatSelected === item.key ? ' active' : '';
-  return `<div class="chat-item${active}" onclick="selectChatConversation('${esc(item.key)}')">` +
+  const actionId = `chat_${++window._dashboardActionSeq}`;
+  window._dashboardActions.set(actionId, () => selectChatConversation(item.key));
+  return `<div class="chat-item${active}" onclick="runDashboardAction(${jsArg(actionId)})">` +
     `<div><div class="chat-item-title clip-1">${esc(item.title)}</div><div class="chat-item-meta clip-1">${esc(item.meta || '')}</div></div>` +
     `${item.unread ? `<span class="chat-unread">${item.unread}</span>` : ''}` +
     `</div>`;
@@ -2539,6 +2541,7 @@ async function continueSessionAs(sessionId) {
         <div class="form-group"><label>New agent ID</label><input id="cont-agent-id" value="${esc(`${session.agentId}-next`)}"></div>
         <div class="form-group"><label>Role</label><select id="cont-role">
           ${['coder','reviewer','tester','researcher','architect','manager','operator'].map(role => `<option value="${role}"${role === (agentInfo.role || 'coder') ? ' selected' : ''}>${role}</option>`).join('')}
+        </select></div>
         <div class="form-group"><label>Recent messages</label><input id="cont-count" type="number" min="0" max="80" value="24" onchange="regenerateContinuePacket(${jsArg(sessionId)})"></div>
       </div>
       <div class="send-row">
@@ -2838,9 +2841,9 @@ function renderRuns(runs, containerId = 'dispatch-runs-table') {
       `<td><div class="dispatch-subject"${titleAttr(run.subject || '')}><b class="clip-1">${esc(run.subject || '')}</b><span class="dispatch-id clip-1"${titleAttr(run.id || '')}>${esc(run.id || '')}</span></div></td>` +
       `<td><div class="run-summary clip-2"${titleAttr(summary)}>${esc(summary)}</div></td>` +
       `<td><div class="run-controls">` +
-        actionButton('View', 'Open run details, events, controls, errors, and handoff state', `viewRun('${esc(run.id)}')`) +
-        (active ? actionButton('Interrupt', 'Ask this active run to stop at the next supported interruption point', `interruptRun('${esc(run.id)}')`, 'btn-danger') : '') +
-        (active ? actionButton('Steer', 'Send additional guidance into this active run', `steerRun('${esc(run.id)}')`) : '') +
+        actionButtonFn('View', 'Open run details, events, controls, errors, and handoff state', () => viewRun(run.id)) +
+        (active ? actionButtonFn('Interrupt', 'Ask this active run to stop at the next supported interruption point', () => interruptRun(run.id), 'btn-danger') : '') +
+        (active ? actionButtonFn('Steer', 'Send additional guidance into this active run', () => steerRun(run.id)) : '') +
       `</div></td>` +
       `</tr>`;
   }
@@ -3028,7 +3031,9 @@ async function showChannelList() {
     }
     let html = '<h2>Channels</h2><table><thead><tr><th>Channel</th><th>Members</th><th>Messages</th><th>Unread</th><th>Created By</th></tr></thead><tbody>';
     for (const ch of channels) {
-      html += `<tr style="cursor:pointer" onclick="openChannel('${esc(ch.name)}')">` +
+      const actionId = `channel_${++window._dashboardActionSeq}`;
+      window._dashboardActions.set(actionId, () => openChannel(ch.name));
+      html += `<tr style="cursor:pointer" onclick="runDashboardAction(${jsArg(actionId)})">` +
         `<td><b style="color:#58a6ff">#${esc(ch.name)}</b><br><span class="t">${esc(ch.description||'')}</span></td>` +
         `<td>${(ch.members||[]).join(', ')}</td>` +
         `<td>${ch.messageCount || 0}</td>` +
@@ -3120,7 +3125,7 @@ async function loadFiles() {
       html += `<tr><td><b>${esc(f.name)}</b></td><td>${esc(f.from)}</td>` +
         `<td>${fmtSize(f.size)}</td><td>${esc(f.description)}</td>` +
         `<td class="t">${esc(f.sharedAt)}</td>` +
-        `<td>${actionButton('Delete', 'Delete this shared artifact from the bridge store', `deleteFile('${esc(f.name)}')`, 'btn-danger')}</td></tr>`;
+        `<td>${actionButtonFn('Delete', 'Delete this shared artifact from the bridge store', () => deleteFile(f.name), 'btn-danger')}</td></tr>`;
     }
     html += '</tbody></table>';
     document.getElementById('files-table').innerHTML = html;

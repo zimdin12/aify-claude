@@ -1832,7 +1832,7 @@ server.tool(
 
 server.tool(
   "comms_dispatch",
-  "Lower-level strict-start/run-control API for a triggerable resident or environment-managed session. Normal agent teamwork should use comms_send. Use comms_dispatch mainly when requireStart=true is important or you are debugging run handling.",
+  "Lower-level run-control/debug API for a triggerable resident or environment-managed session. Normal agent teamwork should use comms_send, which already fails fast when the target cannot start live work. Use comms_dispatch only when you need explicit run-control fields while diagnosing delivery/runtime behavior.",
   {
     from: z.string().describe("Your agent ID"),
     to: z.string().optional().describe("Target agent ID"),
@@ -1844,7 +1844,7 @@ server.tool(
     body: z.string().describe("Task details"),
     priority: z.enum(["normal", "high", "urgent"]).optional().describe("Message priority (default: normal)"),
     inReplyTo: z.string().optional().describe("Message ID this replies to"),
-    requireStart: z.boolean().optional().describe("When true, fail instead of falling back to inbox-only delivery if the target cannot start work now."),
+    requireStart: z.boolean().optional().describe("Legacy strict-start flag. Current normal live delivery already fails instead of queueing future work; leave unset unless debugging old clients."),
     requireReply: z.boolean().optional().describe("Advanced override for reply tracking; normal requests/reviews/errors should be answered explicitly"),
   },
   async ({ from, to, toRole, type, subject, body, priority, inReplyTo, requireStart, requireReply }) => {
@@ -1882,7 +1882,7 @@ server.tool(
     });
     const skipped = (r.notStarted || []).map((item) => `- ${item.targetAgentId}: ${item.reason}`);
     const footer = requireStart
-      ? "\n\nUse comms_run_status(...) to inspect progress. If start was impossible, requireStart=true would have failed instead of falling back to inbox-only delivery."
+      ? "\n\nUse comms_run_status(...) to inspect progress. For normal teamwork messages, prefer comms_send(...); it already fails visibly when live delivery is not possible."
       : "\n\nUse comms_run_status(...) to inspect progress. Explicit replies are expected by default for direct dispatch; if none is sent, the bridge mirrors the run result back.";
     return {
       content: [{

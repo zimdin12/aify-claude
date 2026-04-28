@@ -15,6 +15,14 @@ Agents create persistent comms-visible teammates through `comms_envs(...)` and `
 
 `aify-comms-debug` is the troubleshooting guide for stale bridges, failed dispatch, wrong wake mode, Codex path/session problems, and Claude channel issues. It should stay separate so routine agents do not need to load the longer failure catalog unless something breaks.
 
+Current dashboard behavior reflected by the skills:
+
+- normal teamwork uses `comms_send`; `comms_dispatch` is a lower-level debug/run-control tool
+- normal sends are live-delivery gated and are not queued for future runs when an agent is offline/busy/unstartable
+- persistent teammates are created through dashboard Environment spawn or `comms_spawn`, not ordinary one-off subagents
+- pending handoffs can be repaired by the dashboard; reviewed historical failures can be dismissed from Home without deleting audit history
+- ended/completed/cancelled session rows are debug history and are hidden by default in Sessions
+
 ## Did This Product Pass Add A New Skill?
 
 No new skill name was added in this pass. The existing `aify-comms` and `aify-comms-debug` skills were updated as part of the product work and can be reinstalled into Codex with:
