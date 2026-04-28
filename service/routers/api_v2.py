@@ -3171,6 +3171,41 @@ async def assign_agent_environment(agent_id: str, req: AgentEnvironmentAssignReq
             """,
             (environment_id, runtime, workspace, spec_id, now, now, agent_id),
         )
+        session_cursor = await db.execute(
+            "SELECT id FROM agent_sessions WHERE agent_id = ? ORDER BY last_seen DESC LIMIT 1",
+            (agent_id,),
+        )
+        existing_session = await session_cursor.fetchone()
+        if not existing_session:
+            session_id = f"sess_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+            await db.execute(
+                """
+                INSERT INTO agent_sessions (
+                    id, agent_id, environment_id, runtime, workspace, mode, process_id, session_handle,
+                    app_server_url, spawn_spec_id, spawn_request_id, capabilities, telemetry, status,
+                    started_at, last_seen, ended_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    session_id,
+                    agent_id,
+                    environment_id,
+                    runtime,
+                    workspace,
+                    "managed-warm",
+                    "",
+                    "",
+                    "",
+                    spec_id,
+                    None,
+                    json.dumps({"persistent": True, "bridgeResume": True, "adopted": True}),
+                    "{}",
+                    "stopped",
+                    now,
+                    now,
+                    now,
+                ),
+            )
         await db.execute(
             """
             UPDATE spawn_requests

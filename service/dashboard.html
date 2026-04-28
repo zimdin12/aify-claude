@@ -630,7 +630,13 @@ tr:hover{background:#1b1f21}
       </div>
     </div>
     <div id="environments-list"></div>
-    <h3>Spawn Requests</h3>
+    <div class="fb">
+      <h3>Spawn Queue</h3>
+      <label class="switch-row" title="Show successful historical spawn records. Keep this off for normal work; a running spawn request means the session was started.">
+        <input type="checkbox" id="show-spawn-history" onchange="setShowSpawnHistory(this.checked)">
+        <span>Show successful spawn history</span>
+      </label>
+    </div>
     <div id="spawn-requests-table"></div>
   </div>
 
@@ -1272,6 +1278,7 @@ function renderAgents(agents, containerId = 'manual-agents-table') {
     } else {
       controls.push(actionButtonFn('Stop wake', 'Disable wake/dispatch for this resident identity and interrupt/cancel active work where possible. This does not close a human-open CLI window.', () => controlResidentAgent(id, 'stop'), 'btn-danger'));
     }
+    controls.push(actionButtonFn('Adopt env', 'Convert this resident identity into a dashboard-managed teammate backed by an online environment. Close or stop the old CLI after adoption.', () => assignAgentEnvironment(id)));
     controls.push(actionButtonFn('Remove from dashboard', 'Remove this identity from the dashboard and prevent stale bridges from recreating it until explicitly registered again', () => deleteAgent(id), 'btn-danger'));
     html += `<tr><td><b>${esc(id)}</b></td><td><span class="rb">${esc(info.role)}</span></td>` +
       renderPresenceCell(info) +
@@ -1379,7 +1386,7 @@ async function assignAgentEnvironment(agentId) {
     });
     const res = await response.json();
     if (!response.ok || res.ok === false) throw new Error(res.detail || res.error || 'Assign environment failed');
-    toast(`${agentId} assigned to ${environment.id}. Use Sessions -> Recover/Restart to run it there.`);
+    toast(`${agentId} assigned to ${environment.id}. Use Sessions -> Recover/Restart to run it there. Close old resident CLI tabs for that same ID.`);
     await refreshDashboard();
   } catch (e) {
     toast(e.message || 'Assign environment failed', '#f85149');
@@ -2427,25 +2434,60 @@ function prefillEnvironmentSpawn(envId) {
 function renderSpawnRequests(spawnRequests) {
   const el = document.getElementById('spawn-requests-table');
   if (!el) return;
+  const showHistory = showSpawnHistory();
+  const visibleRequests = showHistory ? spawnRequests : spawnRequests.filter(req => !isQuietSpawnRequest(req));
+  const hidden = Math.max(0, spawnRequests.length - visibleRequests.length);
+  const toggle = document.getElementById('show-spawn-history');
+  if (toggle) toggle.checked = showHistory;
   if (!spawnRequests.length) {
     el.innerHTML = '<p class="em">No spawn requests yet.</p>';
     return;
   }
+  if (!visibleRequests.length) {
+    el.innerHTML = `<p class="em">Only successful spawn history is recorded. ${hidden} successful spawn record(s) hidden.</p>`;
+    return;
+  }
+  const note = hidden ? `<p class="em">${hidden} successful spawn record(s) hidden. Turn on history to inspect old started sessions.</p>` : '';
   let html = '<table><thead><tr><th>Created</th><th>Agent</th><th>Environment</th><th>Runtime</th><th>Status</th><th>Workspace</th><th>Bridge / Error</th></tr></thead><tbody>';
-  for (const req of spawnRequests) {
+  for (const req of visibleRequests) {
     const detail = req.error || req.claimedByBridgeId || '';
+    const statusLabel = spawnRequestStatusLabel(req);
     html += `<tr>` +
       `<td class="t">${esc(req.createdAt || '')}</td>` +
       `<td><b>${esc(req.agentId || '')}</b><br><span class="t">${esc(req.role || '')}</span></td>` +
       `<td class="t"${titleAttr(req.environmentId || '')}><span class="clip-1">${esc(req.environmentId || '')}</span></td>` +
       `<td>${esc(req.runtime || '')}</td>` +
-      `<td><span class="st-${esc(req.status || 'queued')}">${esc(req.status || '')}</span></td>` +
+      `<td><span class="st-${esc(req.status || 'queued')}"${titleAttr(statusLabel.title)}>${esc(statusLabel.label)}</span></td>` +
       `<td class="t"${titleAttr(req.workspace || '')}><span class="clip-1">${esc(req.workspace || '')}</span></td>` +
       `<td class="t"${titleAttr(detail)}><span class="clip-1">${esc(detail)}</span></td>` +
       `</tr>`;
   }
   html += '</tbody></table>';
-  el.innerHTML = html;
+  el.innerHTML = note + html;
+}
+
+function isQuietSpawnRequest(req) {
+  return ['running', 'completed', 'cancelled'].includes(String(req.status || '').toLowerCase());
+}
+
+function showSpawnHistory() {
+  return localStorage.getItem('aifyShowSpawnHistory') === '1';
+}
+
+function setShowSpawnHistory(show) {
+  localStorage.setItem('aifyShowSpawnHistory', show ? '1' : '0');
+  renderSpawnRequests(window._spawnRequests || []);
+}
+
+function spawnRequestStatusLabel(req) {
+  const status = String(req.status || 'queued').toLowerCase();
+  if (status === 'running') {
+    return {label: 'session started', title: 'The spawn request succeeded and produced/updated a managed session. This is history, not an active queued request.'};
+  }
+  if (status === 'cancelled') {
+    return {label: 'cancelled', title: 'The request was cancelled before it produced a session.'};
+  }
+  return {label: req.status || 'queued', title: ''};
 }
 
 const QUIET_SESSION_STATUSES = new Set(['ended', 'completed', 'cancelled']);

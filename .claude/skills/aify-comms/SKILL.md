@@ -46,6 +46,7 @@ Environment bridge model:
 - Killing a bridge stops the execution target, not the teammate identity. Managed teammates from that environment become offline/detached and active sessions become lost; chats, identities, spawn specs, and session records remain.
 - Forgetting an environment hides the obsolete execution target. It does not delete teammates, chats, spawn specs, or session records.
 - To keep a teammate after an environment is gone, assign it to another online environment from the dashboard Team page, then recover/restart it from Sessions.
+- Existing resident/manual identities can be moved under dashboard-managed control from **Team -> Manual / Resident CLI Identities -> Adopt env**. This creates managed backing for future runs; it does not attach the already-open CLI process. Close or stop the old CLI tab for that same `agentId`, then recover/restart from Sessions.
 
 Subagent rule:
 - Short-lived subagents spawned inside your current task are not top-level team members by default.

@@ -23,6 +23,7 @@ This dashboard is now treated as the product surface, not as a raw admin page.
 - **Chat**: normal communication surface for DMs and channels. The selected **Viewing as** identity controls which messages are marked read, who sends, and which DM can be cleared.
 - **Agents**: managed agent identities spawned or controlled by the bridge, plus a separate manual/resident CLI section. Managed agents may have saved resume state without a currently running process.
 - **Environments**: connected host/WSL/Windows/Linux bridges and the managed-warm spawn form.
+- **Spawn Queue**: active spawn requests and failures. Successful `running` spawn requests are historical "session started" records, not active work, and should be hidden by default.
 - **Sessions**: concrete runtime/session backing records. Stop/restart/recover/continue belongs here when a real managed session exists. Ended/completed/cancelled rows are hidden by default and shown only through the debug-history toggle.
 - **Runs**: dispatch attempts, handoff state, events, steering, and interrupts.
 - **Artifacts**: shared files.
@@ -31,6 +32,7 @@ This dashboard is now treated as the product surface, not as a raw admin page.
 ## Design Rules Going Forward
 
 - Prefer dashboard-spawned managed agents over manual `comms_register` for normal teamwork.
+- To migrate a manual/resident identity, use **Adopt env**. This creates managed backing for the identity; it does not attach the existing CLI process.
 - Do not expose a destructive button without hover text and a confirm when state will be deleted or wake/dispatch disabled.
 - Do not show a "kill/stop" action for a row that represents an offline identity only.
 - Do not let legacy `aify-comms` terminology leak into primary navigation unless it describes the actual user model.

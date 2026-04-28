@@ -443,6 +443,40 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(spec["environment_id"], "linux:new-host:default")
         self.assertEqual(spec["workspace"], "/newroot/project")
 
+    def test_assign_agent_environment_adopts_resident_agent_with_session_record(self):
+        self._heartbeat_environment(id="linux:new-host:default", bridgeId="bridge-new", cwdRoots=["/newroot"])
+        self._register(
+            "resident-manager",
+            role="manager",
+            runtime="codex",
+            cwd="/newroot/project",
+            sessionMode="resident",
+            sessionHandle="thread-old",
+            launchMode="codex-live",
+        )
+
+        assigned = self.client.post(
+            "/api/v1/agents/resident-manager/environment",
+            json={"environmentId": "linux:new-host:default", "runtime": "codex", "workspace": "/newroot/project"},
+        )
+        self.assertEqual(assigned.status_code, 200, assigned.text)
+
+        agent = self._fetchone("SELECT cwd, launch_mode, session_mode, session_handle, status FROM agents WHERE id = ?", ("resident-manager",))
+        session = self._fetchone("SELECT environment_id, runtime, workspace, status, spawn_spec_id FROM agent_sessions WHERE agent_id = ?", ("resident-manager",))
+        spec = self._fetchone("SELECT environment_id, runtime, workspace FROM spawn_specs WHERE agent_id = ?", ("resident-manager",))
+        self.assertEqual(agent["session_mode"], "managed")
+        self.assertEqual(agent["launch_mode"], "none")
+        self.assertEqual(agent["session_handle"], "")
+        self.assertEqual(agent["status"], "offline")
+        self.assertIsNotNone(session)
+        self.assertEqual(session["environment_id"], "linux:new-host:default")
+        self.assertEqual(session["runtime"], "codex")
+        self.assertEqual(session["workspace"], "/newroot/project")
+        self.assertEqual(session["status"], "stopped")
+        self.assertTrue(session["spawn_spec_id"])
+        self.assertEqual(spec["environment_id"], "linux:new-host:default")
+        self.assertEqual(spec["workspace"], "/newroot/project")
+
     def test_managed_dispatch_claim_rejects_stale_environment_bridge(self):
         self._heartbeat_environment(id="linux:test-host:default", bridgeId="bridge-current")
         created = self.client.post(

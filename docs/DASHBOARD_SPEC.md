@@ -157,6 +157,8 @@ Environment health states:
 - `disabled`: user disabled spawning
 - `unknown`: seen before, no current health data
 
+Spawn queue should show queued/claimed/starting requests and failures by default. Successful `running` spawn request rows mean the request already started a managed session; label them as **session started** and hide them behind **Show successful spawn history** so they do not look like active work.
+
 ## Sessions Page
 
 Columns:
@@ -199,6 +201,8 @@ Do not show **Open in CLI** unless `cliAttach=true`. Always show transcript/log 
 Do not show stop/kill-style actions for rows that only represent offline identity records. For offline manual bindings, show cleanup/removal language instead.
 
 Ended/completed/cancelled sessions are debug history. The normal Sessions page should hide them by default and expose a **Show ended/debug sessions** toggle for lifecycle investigation.
+
+Manual/resident identities may expose **Adopt env** when at least one environment is online. Adoption should be explicit: it creates managed backing for future dashboard work, but it does not magically attach the currently open CLI process. The UI should tell the operator to close/stop the old resident CLI for that `agentId` and recover/restart the new managed session from Sessions.
 
 ## Continue From Session Flow
 
