@@ -47,7 +47,9 @@ const DEFAULT_CWD = process.cwd();
 const SERVER_URL = process.env.CLAUDE_MCP_SERVER_URL || process.env.AIFY_SERVER_URL || "";
 const IS_REMOTE = !!SERVER_URL;
 const API_KEY = process.env.CLAUDE_MCP_API_KEY || process.env.AIFY_API_KEY || "";
-const IS_ENVIRONMENT_BRIDGE = ["1", "true", "yes"].includes(String(process.env.AIFY_ENVIRONMENT_BRIDGE || "").toLowerCase());
+const IS_ENVIRONMENT_BRIDGE =
+  process.argv.includes("--environment-bridge") ||
+  ["1", "true", "yes"].includes(String(process.env.AIFY_ENVIRONMENT_BRIDGE || "").toLowerCase());
 const MACHINE_ID = defaultMachineId();
 const BRIDGE_INSTANCE_ID = randomUUID();
 const BRIDGE_VERSION = "3.7.0";

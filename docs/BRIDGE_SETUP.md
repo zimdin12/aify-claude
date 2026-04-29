@@ -42,7 +42,7 @@ aify-comms http://host:8800 /path/to/extra/root
 
 If no server URL is passed, the launcher uses `AIFY_SERVER_URL` or falls back to the URL provided during install, then `http://localhost:8800`. The current directory is always included in `AIFY_CWD_ROOTS`; `AIFY_CWD_ROOTS` and extra command-line roots add more allowed workspace boundaries.
 
-The launcher exports `AIFY_ENVIRONMENT_BRIDGE=1`. That flag is what turns the stdio server into a dashboard spawn target. Do not set it for ordinary MCP client sessions unless you intentionally want that process to claim dashboard spawn requests.
+The launcher passes `--environment-bridge` to the stdio server. That process argument is what turns the stdio server into a dashboard spawn target. Do not set the legacy `AIFY_ENVIRONMENT_BRIDGE=1` flag for ordinary MCP client sessions unless you intentionally want that process to claim dashboard spawn requests.
 
 Roots are not the project choice for every agent. They are safety boundaries that say "this bridge may launch agents somewhere under here." The exact project folder is selected per spawned agent in the dashboard.
 
@@ -57,6 +57,8 @@ Leave the process running while you use the dashboard. Stop it with `Ctrl+C`.
 The bridge heartbeats every 30 seconds. A graceful `Ctrl+C` marks the environment offline immediately; a hard kill, crash, or machine sleep is inferred from missed heartbeats and normally appears offline within about 90 seconds. The dashboard sorts environments by status and name, not by heartbeat time, so cards should not swap places during normal refresh.
 
 If you start `aify-comms` again for the same environment before killing an older bridge, the newer bridge becomes the current bridge for that environment. Older bridge heartbeats are ignored once the server has seen the newer bridge's `bridgeStartedAt` metadata, and the server queues a stop control for the older bridge. Current bridge builds log the replacement bridge, PID, and cwd before exiting, so a terminal that closes with an "environment was superseded" message is not a runtime crash; another bridge for the same environment became current. The older OS process may still exist if it is hung and no longer polling, but it should not own spawn claims anymore.
+
+If a bridge is superseded immediately after spawning or messaging a managed Claude/Codex agent, update and reinstall the bridge launcher. Older launchers used an inherited `AIFY_ENVIRONMENT_BRIDGE=1` environment variable; managed child MCP servers could inherit it and briefly impersonate the environment bridge from the agent workspace. Current launchers pass `--environment-bridge` only to the real bridge process, and managed child processes strip bridge-only environment variables.
 
 Killing a bridge stops the execution target, not the team identity. Managed teammates that were backed by that environment are marked offline/detached and their active sessions become lost; chats and identity records remain. Restart the bridge, or assign the teammate to another online environment from **Team**, then recover/restart from **Sessions**.
 

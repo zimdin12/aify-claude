@@ -22,7 +22,7 @@ const RUNTIME_ALIASES = new Map([
 function spawnProcess(command, args, options = {}) {
   const proc = spawn(command, args, {
     cwd: options.cwd,
-    env: { ...process.env, ...(options.env || {}) },
+    env: runtimeChildEnv(options.env || {}),
     stdio: ["pipe", "pipe", "pipe"],
     shell: false,
   });
@@ -31,6 +31,22 @@ function spawnProcess(command, args, options = {}) {
   // bug cannot crash the bridge process before the adapter wires rejection.
   proc.on("error", () => {});
   return proc;
+}
+
+const ENVIRONMENT_BRIDGE_ENV_KEYS = [
+  "AIFY_ENVIRONMENT_BRIDGE",
+  "AIFY_ENVIRONMENT_ID",
+  "AIFY_ENVIRONMENT_LABEL",
+  "AIFY_ENVIRONMENT_KIND",
+  "AIFY_CWD_ROOTS",
+];
+
+export function runtimeChildEnv(extraEnv = {}) {
+  const env = { ...process.env, ...(extraEnv || {}) };
+  for (const key of ENVIRONMENT_BRIDGE_ENV_KEYS) {
+    delete env[key];
+  }
+  return env;
 }
 
 const RUNTIME_DIR = path.dirname(fileURLToPath(import.meta.url));

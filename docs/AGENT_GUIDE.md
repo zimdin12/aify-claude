@@ -69,7 +69,7 @@ aify-comms.cmd
 
 The current directory is always an allowed workspace root. Extra root arguments are optional safety boundaries. The exact project directory is selected per spawned agent in the dashboard.
 
-Only the `aify-comms` launcher should set `AIFY_ENVIRONMENT_BRIDGE=1`. Ordinary MCP client sessions should not advertise themselves as dashboard spawn targets.
+Only the `aify-comms` launcher should pass `--environment-bridge` to the stdio server. Ordinary MCP client sessions should not advertise themselves as dashboard spawn targets or set the legacy `AIFY_ENVIRONMENT_BRIDGE=1` flag.
 
 ## Dashboard Standard
 

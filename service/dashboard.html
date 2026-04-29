@@ -265,6 +265,9 @@ tr:hover{background:#19212a}
 .actions-menu[open] .actions-menu-panel{display:flex}
 .actions-menu-panel{display:none;position:absolute;right:0;top:calc(100% + 4px);z-index:30;min-width:190px;flex-direction:column;gap:6px;background:#0f151c;border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 12px 36px #0008}
 .actions-menu-panel .btn{justify-content:flex-start;width:100%}
+.actions-table{overflow:visible}
+.actions-table td:last-child{overflow:visible}
+.actions-table tbody tr:last-child .actions-menu-panel{top:auto;bottom:calc(100% + 4px)}
 .modal-form{display:grid;gap:10px}
 .modal-form label{display:grid;gap:5px;color:var(--muted);font-size:.82em}
 .modal-form input,.modal-form select,.modal-form textarea{background:#0a0f15;border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:7px;font:inherit;font-size:.9em}
@@ -2776,7 +2779,7 @@ function renderSessions(sessions) {
     container.innerHTML = '<p class="em">Only ended/debug sessions are recorded. Turn on "Show ended/debug sessions" to inspect them.</p>';
     return;
   }
-  let html = '<table><thead><tr><th>Agent</th><th>Runtime</th><th>Environment</th><th>Workspace</th><th>Status</th><th>Capabilities</th><th>Last Seen</th><th></th></tr></thead><tbody>';
+  let html = '<table class="actions-table"><thead><tr><th>Agent</th><th>Runtime</th><th>Environment</th><th>Workspace</th><th>Status</th><th>Capabilities</th><th>Last Seen</th><th></th></tr></thead><tbody>';
   for (const session of visibleSessions) {
     const caps = session.capabilities || {};
     const capLabels = ['nativeResume','bridgeResume','cliAttach','interrupt','streaming'].filter(key => caps[key]).map(key => key.replace(/[A-Z]/g, m => ' ' + m.toLowerCase())).join(', ');

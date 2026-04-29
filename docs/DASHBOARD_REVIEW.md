@@ -46,7 +46,7 @@ This dashboard is now treated as the product surface, not as a raw admin page.
 
 What was corrected in this pass:
 
-- **Environment ownership boundary**: normal MCP client sessions no longer heartbeat as dashboard environments. Only the `aify-comms` launcher exports `AIFY_ENVIRONMENT_BRIDGE=1`, so every open Codex/Claude tab should not become a duplicate spawn target.
+- **Environment ownership boundary**: normal MCP client sessions no longer heartbeat as dashboard environments. Only the `aify-comms` launcher passes `--environment-bridge`, so every open Codex/Claude tab should not become a duplicate spawn target.
 - **Topbar behavior**: removed page-specific action swapping. The topbar is stable now: product name/page title, live indicator, refresh. Page-specific actions belong inside page content.
 - **Collapsed sidebar**: removed always-visible letter badges. Collapsed nav is now a quiet dot rail with hover labels and a persistent edge collapse button.
 - **Analytics**: replaced old row stacks with a switched traffic chart (`24h`, `30d`, `12m`), live-health cards, and a run-status mix chart.

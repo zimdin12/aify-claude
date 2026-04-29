@@ -231,14 +231,13 @@ NODE
 
 export AIFY_SERVER_URL="\$SERVER_URL"
 export AIFY_CWD_ROOTS="\$ROOTS"
-export AIFY_ENVIRONMENT_BRIDGE=1
 
 echo "aify-comms bridge"
 echo "  server: \$AIFY_SERVER_URL"
 echo "  roots:  \$AIFY_CWD_ROOTS"
 echo "  stop:   Ctrl+C"
 cd "\$SAFE_CWD"
-exec node "$SCRIPT_DIR/mcp/stdio/server.js"
+exec node "$SCRIPT_DIR/mcp/stdio/server.js" --environment-bridge
 EOF
   chmod +x "$wrapper_path"
   install_windows_cmd_shim "aify-comms" "$wrapper_dir"
