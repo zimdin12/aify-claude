@@ -16,6 +16,8 @@ assert.match(script, /Get-CimInstance Win32_Process/);
 assert.match(script, /taskkill/);
 assert.match(script, /--session-id/);
 assert.match(script, /-p\|--print/);
+assert.match(script, /--resume/);
+assert.match(script, /claude-aify/);
 assert.match(script, /e5b70d2b-b700-4b77-a6fe-d65ccb8f84c6/);
 
 console.log("claude-session-in-use.test.js: all assertions passed");
