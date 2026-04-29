@@ -173,6 +173,7 @@ if (!IS_REMOTE) {
 
 const HTTP_RETRY_ATTEMPTS = 3;
 const HTTP_RETRY_BASE_MS = 250;
+const HTTP_TIMEOUT_MS = Math.max(1000, Number(process.env.AIFY_HTTP_TIMEOUT_MS || 20000));
 
 // POST is not idempotent in general, so we only retry POSTs that are safe to
 // replay. Everything else (GET, PATCH, DELETE) is always retriable.
@@ -211,17 +212,20 @@ function isTransientHttpError(error) {
 
 async function httpCall(method, endpoint, body = null) {
   const url = `${SERVER_URL}/api/v1${endpoint}`;
-  const options = { method, headers: {} };
-  if (API_KEY) options.headers["X-API-Key"] = API_KEY;
+  const baseOptions = { method, headers: {} };
+  if (API_KEY) baseOptions.headers["X-API-Key"] = API_KEY;
   if (body) {
-    options.headers["Content-Type"] = "application/json";
-    options.body = JSON.stringify(body);
+    baseOptions.headers["Content-Type"] = "application/json";
+    baseOptions.body = JSON.stringify(body);
   }
   const retriable = isRetriableRequest(method, endpoint);
   const maxAttempts = retriable ? HTTP_RETRY_ATTEMPTS : 1;
   let lastError;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
     try {
+      const options = { ...baseOptions, headers: { ...baseOptions.headers }, signal: controller.signal };
       const res = await fetch(url, options);
       if (!res.ok) {
         const text = await res.text();
@@ -238,11 +242,19 @@ async function httpCall(method, endpoint, body = null) {
       }
       return res.json();
     } catch (error) {
-      lastError = error;
+      if (error?.name === "AbortError") {
+        const timeoutError = new Error(`HTTP ${method} ${endpoint} timed out after ${HTTP_TIMEOUT_MS}ms`);
+        timeoutError.name = "TimeoutError";
+        lastError = timeoutError;
+      } else {
+        lastError = error;
+      }
       if (attempt >= maxAttempts || !isTransientHttpError(error) || !retriable) {
-        throw error;
+        throw lastError;
       }
       await new Promise((r) => setTimeout(r, HTTP_RETRY_BASE_MS * 2 ** (attempt - 1)));
+    } finally {
+      clearTimeout(timeout);
     }
   }
   throw lastError || new Error("httpCall exhausted retries without error");

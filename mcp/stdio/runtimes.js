@@ -241,6 +241,19 @@ function quoteForDisplay(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
 
+function describeCodexItem(item = {}) {
+  const type = String(item?.type || item?.kind || "item").trim() || "item";
+  const name =
+    String(item?.name || item?.toolName || item?.call?.name || item?.function?.name || "").trim();
+  const server =
+    String(item?.server || item?.serverName || item?.mcpServer || item?.call?.server || "").trim();
+  const title = String(item?.title || "").trim();
+  const bits = [type];
+  const detail = [server, name || title].filter(Boolean).join("/");
+  if (detail) bits.push(detail);
+  return bits.join(" ");
+}
+
 export function isFatalCodexRuntimeLog(line) {
   const text = String(line || "");
   return (
@@ -1173,11 +1186,11 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
       finalText = params.item.text || finalText;
       if (params.item?.id) activeItems.delete(params.item.id);
     } else if (message.method === "item/started" && params.item?.id) {
-      const itemType = params.item?.type || params.item?.kind || "item";
+      const itemType = describeCodexItem(params.item);
       activeItems.set(params.item.id, itemType);
       callbacks.onEvent?.("codex", `Started ${itemType}`);
     } else if (message.method === "item/completed" && params.item?.id) {
-      const itemType = params.item?.type || params.item?.kind || activeItems.get(params.item.id) || "item";
+      const itemType = activeItems.get(params.item.id) || describeCodexItem(params.item);
       activeItems.delete(params.item.id);
       callbacks.onEvent?.("codex", `Completed ${itemType}`);
     } else if (message.method === "error" && params.error?.message) {
