@@ -64,12 +64,56 @@ function extractClaudeSessionInUseId(text) {
   return match ? match[1] : "";
 }
 
-export function buildManagedClaudeUnlockPowerShell(sessionId) {
+function claudeProjectNameForCwd(cwd) {
+  return String(cwd || process.cwd()).replace(/[^a-zA-Z0-9]/g, "-");
+}
+
+export function claudeSessionTranscriptPath(sessionId, cwd = process.cwd()) {
+  const normalized = String(sessionId || "").trim();
+  if (!normalized) return "";
+  return path.join(os.homedir(), ".claude", "projects", claudeProjectNameForCwd(cwd), `${normalized}.jsonl`);
+}
+
+export function claudeSessionTranscriptExists(sessionId, cwd = process.cwd()) {
+  const transcriptPath = claudeSessionTranscriptPath(sessionId, cwd);
+  if (!transcriptPath) return false;
+  try {
+    return fs.statSync(transcriptPath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+export function buildManagedClaudeUnlockPowerShell(sessionId, markerPids = []) {
   const sid = quotePowerShellString(sessionId);
+  const pids = (Array.isArray(markerPids) ? markerPids : [])
+    .map((pid) => Number(pid))
+    .filter((pid) => Number.isInteger(pid) && pid > 0);
+  const markerPidLiteral = pids.length ? `@(${pids.join(",")})` : "@()";
   return [
     "$ErrorActionPreference = 'SilentlyContinue';",
     "$sid = " + sid + ";",
     "$ownPid = $PID;",
+    "$markerPids = " + markerPidLiteral + ";",
+    "$all = @(Get-CimInstance Win32_Process);",
+    "function Stop-AifyTree($pid, $reason) {",
+    "  if (-not $pid -or $pid -eq $ownPid) { return }",
+    "  taskkill /pid $pid /t /f | Out-Null;",
+    "  Write-Output (\"{0}:{1}\" -f $reason, $pid)",
+    "}",
+    "function Test-AifyProtected($process) {",
+    "  if (-not $process) { return $true }",
+    "  $cmd = [string]$process.CommandLine;",
+    "  return $cmd -match 'claude-aify' -or $cmd -match '(^|\\s)--resume(\\s|=)'",
+    "}",
+    "function Test-AifyHeadlessClaude($process) {",
+    "  if (-not $process) { return $false }",
+    "  $cmd = [string]$process.CommandLine;",
+    "  $name = [string]$process.Name;",
+    "  if (Test-AifyProtected $process) { return $false }",
+    "  if ($cmd -notmatch 'claude' -and $name -notmatch '^(node|claude|cmd)(\\.exe)?$') { return $false }",
+    "  return $cmd -match '(^|\\s)(-p|--print)(\\s|$)' -or $cmd -match '(^|\\s)--session-id(\\s|=)'",
+    "}",
     "Get-CimInstance Win32_Process |",
     "  Where-Object {",
     "    $_.ProcessId -ne $ownPid -and",
@@ -84,26 +128,41 @@ export function buildManagedClaudeUnlockPowerShell(sessionId) {
     "    )",
     "  } |",
     "  ForEach-Object {",
-    "    taskkill /pid $_.ProcessId /t /f | Out-Null;",
-    "    Write-Output $_.ProcessId",
+    "    Stop-AifyTree $_.ProcessId 'session'",
+    "  };",
+    "foreach ($markerPid in $markerPids) {",
+    "  $marker = $all | Where-Object { $_.ProcessId -eq $markerPid } | Select-Object -First 1;",
+    "  if (-not $marker) { continue }",
+    "  $parent = $all | Where-Object { $_.ProcessId -eq $marker.ParentProcessId } | Select-Object -First 1;",
+    "  $grandparent = if ($parent) { $all | Where-Object { $_.ProcessId -eq $parent.ParentProcessId } | Select-Object -First 1 } else { $null };",
+    "  foreach ($candidate in @($parent, $grandparent)) {",
+    "    if (Test-AifyHeadlessClaude $candidate) {",
+    "      Stop-AifyTree $candidate.ProcessId 'marker';",
+    "      break;",
+    "    }",
     "  }",
+    "}",
   ].join("\n");
 }
 
-function releaseManagedClaudeSessionLock(sessionId) {
+function releaseManagedClaudeSessionLock(sessionId, cwd = "") {
   const normalized = String(sessionId || "").trim();
-  if (!normalized || process.platform !== "win32") return [];
-  const script = buildManagedClaudeUnlockPowerShell(normalized);
+  if (!normalized || process.platform !== "win32") return { releasedPids: [], markerPids: [] };
+  const markerPids = listRuntimeMarkers("claude-code", cwd)
+    .map((marker) => Number(marker?.pid || 0))
+    .filter((pid) => Number.isInteger(pid) && pid > 0);
+  const script = buildManagedClaudeUnlockPowerShell(normalized, markerPids);
   const result = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
     encoding: "utf8",
     windowsHide: true,
     timeout: 10000,
   });
-  if (result.status !== 0) return [];
-  return String(result.stdout || "")
+  if (result.status !== 0) return { releasedPids: [], markerPids };
+  const releasedPids = String(result.stdout || "")
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
+  return { releasedPids, markerPids };
 }
 
 const ENVIRONMENT_BRIDGE_ENV_KEYS = [
@@ -905,13 +964,15 @@ function createClaudeController({ agentId, agentInfo, run, runtimeState, callbac
   let interrupted = false;
   let activeProcess = null;
 
-  const startAttempt = (sessionId, attempt = 1) => {
+  const startAttempt = (sessionId, attempt = 1, forceResume = false) => {
+    const cwd = agentInfo.cwd || process.cwd();
+    const resumeExistingTranscript = forceResume || claudeSessionTranscriptExists(sessionId, cwd);
     const args = [
       ...launcher.args,
       ...managedClaudePermissionArgs(config, executionMode),
       "-p",
       "--output-format", "text",
-      "--session-id", sessionId,
+      ...(resumeExistingTranscript ? ["--resume", sessionId] : ["--session-id", sessionId]),
       "--max-turns", maxTurns,
       "--append-system-prompt", buildSystemPrompt(agentId, agentInfo, run),
     ];
@@ -920,7 +981,7 @@ function createClaudeController({ agentId, agentInfo, run, runtimeState, callbac
       args.push("--model", agentInfo.model);
     }
 
-    const proc = spawnProcess(launcher.command, args, { cwd: agentInfo.cwd || process.cwd() });
+    const proc = spawnProcess(launcher.command, args, { cwd });
     activeProcess = proc;
     const chunks = [];
     const errChunks = [];
@@ -970,20 +1031,37 @@ function createClaudeController({ agentId, agentInfo, run, runtimeState, callbac
         const errorText = stderr || stdout || `Claude exited with code ${code}`;
         if (executionMode !== "resident" && isClaudeSessionInUseError(errorText)) {
           const lockedSessionId = extractClaudeSessionInUseId(errorText) || sessionId;
-          if (attempt === 1) {
-            const releasedPids = releaseManagedClaudeSessionLock(lockedSessionId);
+          if (!resumeExistingTranscript && attempt === 1) {
+            callbacks.onEvent?.(
+              "runtime",
+              `Claude reported session ${lockedSessionId} already exists; retrying once with --resume instead of --session-id.`,
+            );
+            startAttempt(lockedSessionId, attempt + 1, true).then(resolve, reject);
+            return;
+          }
+          if (attempt <= 2) {
+            const { releasedPids, markerPids } = releaseManagedClaudeSessionLock(
+              lockedSessionId,
+              agentInfo.cwd || process.cwd(),
+            );
             if (releasedPids.length > 0) {
               callbacks.onEvent?.(
                 "runtime",
                 `Released stale headless Claude process(es) for session ${lockedSessionId}: ${releasedPids.join(", ")}; retrying once.`,
               );
-              startAttempt(sessionId, attempt + 1).then(resolve, reject);
+              startAttempt(sessionId, attempt + 1, resumeExistingTranscript).then(resolve, reject);
               return;
+            }
+            if (markerPids.length > 0) {
+              callbacks.onEvent?.(
+                "runtime",
+                `Found Claude runtime marker(s) for this workspace (${markerPids.join(", ")}), but none looked like a headless managed Claude owner; leaving them running.`,
+              );
             }
           }
           reject(new Error(
             `${errorText}\n\nThe stored Claude session is locked by another Claude process. ` +
-            `The bridge did not find a matching stale headless Claude process it could release automatically. ` +
+            `The bridge did not find a matching stale headless Claude process it could release automatically by session ID or workspace runtime marker. ` +
             `Close the duplicate Claude process or explicitly clear this agent's resume state from Dashboard -> Sessions/Team, then restart/recover. ` +
             `The bridge did not create a fresh session automatically because that would discard native chat memory.`,
           ));

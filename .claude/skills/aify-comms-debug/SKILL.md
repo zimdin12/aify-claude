@@ -113,11 +113,13 @@ On Windows, the installer creates both a Bash `claude-aify` and a `claude-aify.c
 
 **Symptom.** A dashboard-managed Claude run fails immediately with an error like `Session ID e5b70d2b-b700-4b77-a6fe-d65ccb8f84c6 is already in use`.
 
-**Cause.** The managed session record held a Claude session ID that another Claude process still owns. This can happen after a crash, stale bridge, duplicate restart, or a recovered session that reused a locked Claude session ID.
+**Cause.** There are two possible causes. The common managed-run cause is using Claude Code's `--session-id` flag for a session that already has a transcript file; `--session-id` is for creating a specific new session, while `--resume <id>` continues an existing one. A less common Windows cause is a stale headless Claude process that still owns the backing session after a crash or duplicate restart.
 
 **Fix (current build).** Managed Claude runs detect this exact failure and stop instead of silently creating a fresh session. Silent session replacement discards native Claude chat memory, so it is now an explicit operator choice. Close the duplicate Claude process that owns the session, or use Dashboard **Sessions/Team -> Clear resume state** when you intentionally want the next run to start with a fresh backing session. Restart the Windows `aify-comms` bridge after updating so it loads the fixed runtime adapter.
 
-**Hidden-process caveat.** The duplicate owner may be a headless managed `claude -p` child, not a visible CLI tab. Older bridge builds on Windows launched Claude through `cmd.exe /c`; killing or superseding the bridge could kill `cmd.exe` without killing the Claude child, leaving the native session locked. Current bridge code terminates the whole process tree on timeout, stop, interrupt, and bridge shutdown. When a managed Claude run still hits a session lock, the Windows bridge looks for a process command line containing the exact locked session ID, excludes interactive `claude-aify` / `--resume` commands, kills that process tree, and retries once. Pull latest, rerun the installer, and restart the Windows `aify-comms` bridge so it loads that fix.
+**Resume behavior.** Current bridge builds check for the native Claude JSONL transcript under `.claude/projects/...`. If it exists, dashboard-managed Claude uses `--resume <session-id>`; if it does not, the first turn uses `--session-id <session-id>` to create the stable backing session. Pull latest, rerun the installer, and restart the Windows `aify-comms` bridge so it loads that fix.
+
+**Hidden-process caveat.** The duplicate owner may still be a headless managed `claude -p` child, not a visible CLI tab. Older bridge builds on Windows launched Claude through `cmd.exe /c`; killing or superseding the bridge could kill `cmd.exe` without killing the Claude child, leaving a stale process behind. Current bridge code terminates the whole process tree on timeout, stop, interrupt, and bridge shutdown. When a managed Claude run still hits the error after the transcript/resume check, the Windows bridge first looks for a process command line containing the exact locked session ID, excludes interactive `claude-aify` / `--resume` commands, kills that process tree, and retries once. If the session ID is not visible in the process command line, it also checks aify runtime markers for the same workspace and stops a marked Claude parent only when that parent looks headless (`-p`, `--print`, or `--session-id`).
 
 If the automatic cleanup cannot find a matching headless process, remove the stale Windows Claude process manually. From an elevated PowerShell:
 
@@ -131,9 +133,18 @@ Get-CimInstance Win32_Process |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 ```
 
-Replace the session ID with the one from the run error. Then restart the Windows `aify-comms` bridge and recover/restart the dashboard session. If no process is found, use **Clear resume state** only when you accept losing that native Claude memory.
+Replace the session ID with the one from the run error. If that finds nothing, list likely hidden Claude owners for the workspace with:
 
-**Visibility caveat.** Dashboard-managed Claude Code uses headless `claude -p --session-id ...`. A healthy managed backing may not appear in the `claude-aify` picker. Use dashboard **Copy CLI resume** to open it by ID (`claude-aify --resume <session-id>`) after the backing has recorded a resume ID.
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -match 'claude|claude-channel|aify-comms' } |
+  Select-Object ProcessId,ParentProcessId,Name,CommandLine |
+  Format-List
+```
+
+Then restart the Windows `aify-comms` bridge and recover/restart the dashboard session. Use **Clear resume state** only when you accept losing that native Claude memory.
+
+**Visibility caveat.** Dashboard-managed Claude Code uses headless `claude -p` with `--session-id` for the first turn and `--resume` after the native transcript exists. A healthy managed backing may not appear in the `claude-aify` picker. Use dashboard **Copy CLI resume** to open it by ID (`claude-aify --resume <session-id>`) after the backing has recorded a resume ID.
 
 If you want the resumed CLI to match managed-agent permissions, use `--dangerously-skip-permissions`. Do not use `--permanently-skip-permissions`; Claude Code rejects it as an unknown option.
 
