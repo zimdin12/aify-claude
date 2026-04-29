@@ -117,6 +117,18 @@ On Windows, the installer creates both a Bash `claude-aify` and a `claude-aify.c
 
 **Fix (current build).** Managed Claude runs detect this exact failure and stop instead of silently creating a fresh session. Silent session replacement discards native Claude chat memory, so it is now an explicit operator choice. Close the duplicate Claude process that owns the session, or use Dashboard **Sessions/Team -> Clear resume state** when you intentionally want the next run to start with a fresh backing session. Restart the Windows `aify-comms` bridge after updating so it loads the fixed runtime adapter.
 
+**Hidden-process caveat.** The duplicate owner may be a headless managed `claude -p` child, not a visible CLI tab. Older bridge builds on Windows launched Claude through `cmd.exe /c`; killing or superseding the bridge could kill `cmd.exe` without killing the Claude child, leaving the native session locked. Current bridge code terminates the whole process tree on timeout, stop, interrupt, and bridge shutdown. Pull latest, rerun the installer, and restart the Windows `aify-comms` bridge so it loads that fix.
+
+If the lock already exists, remove the stale Windows Claude process first. From an elevated PowerShell:
+
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -match 'claude' -and $_.CommandLine -match 'b67ab2d1-a121-43d2-9c63-5ad0a2883e72' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```
+
+Replace the session ID with the one from the run error. Then restart the Windows `aify-comms` bridge and recover/restart the dashboard session. If no process is found, use **Clear resume state** only when you accept losing that native Claude memory.
+
 **Visibility caveat.** Dashboard-managed Claude Code uses headless `claude -p --session-id ...`. A healthy managed backing may not appear in the `claude-aify` picker. Use dashboard **Copy CLI resume** to open it by ID (`claude-aify --resume <session-id>`) after the backing has recorded a resume ID.
 
 If you want the resumed CLI to match managed-agent permissions, use `--dangerously-skip-permissions`. Do not use `--permanently-skip-permissions`; Claude Code rejects it as an unknown option.

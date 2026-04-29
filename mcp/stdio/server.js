@@ -80,7 +80,22 @@ if (AIFY_CODEX_APP_SERVER_URL) {
 let shutdownStarted = false;
 let reportEnvironmentOffline = async () => {};
 
+async function interruptActiveRuns(reason = "Bridge shutdown") {
+  const active = Array.from(ACTIVE_RUNS.values());
+  if (!active.length) return;
+  await Promise.allSettled(active.map(async (run) => {
+    try {
+      await run?.controller?.interrupt?.(reason);
+    } catch {
+      // Best effort. The process is going down.
+    }
+  }));
+}
+
 function cleanupOnExit() {
+  for (const run of ACTIVE_RUNS.values()) {
+    try { run?.controller?.interrupt?.("Bridge process exiting"); } catch { /* best effort */ }
+  }
   if (environmentHeartbeatTimer) {
     clearInterval(environmentHeartbeatTimer);
     environmentHeartbeatTimer = null;
@@ -100,6 +115,7 @@ function cleanupOnExit() {
 async function shutdownWithStatus(code) {
   if (shutdownStarted) process.exit(code);
   shutdownStarted = true;
+  await interruptActiveRuns("Bridge shutting down");
   try { await reportEnvironmentOffline(); } catch { /* best effort */ }
   cleanupOnExit();
   process.exit(code);
@@ -795,7 +811,7 @@ async function runEnvironmentControlLoop() {
       } catch {
         // The process is going down anyway; best effort.
       }
-      setTimeout(() => process.exit(0), 50);
+      setTimeout(() => { shutdownWithStatus(0); }, 50);
       return;
     }
     await httpCall("PATCH", `/environments/controls/${encodeURIComponent(control.id)}`, {

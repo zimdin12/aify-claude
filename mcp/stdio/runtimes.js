@@ -25,12 +25,34 @@ function spawnProcess(command, args, options = {}) {
     env: runtimeChildEnv(options.env || {}),
     stdio: ["pipe", "pipe", "pipe"],
     shell: false,
+    windowsHide: true,
   });
   // ChildProcess emits "error" when the executable is missing or cannot be
   // started. Keep a listener attached at creation time so a runtime adapter
   // bug cannot crash the bridge process before the adapter wires rejection.
   proc.on("error", () => {});
   return proc;
+}
+
+export function terminateProcessTree(proc, signal = "SIGTERM") {
+  if (!proc || !proc.pid) return;
+  if (process.platform === "win32") {
+    try {
+      const result = spawnSync("taskkill", ["/pid", String(proc.pid), "/t", "/f"], {
+        stdio: "ignore",
+        windowsHide: true,
+        timeout: 5000,
+      });
+      if (result.status === 0) return;
+    } catch {
+      // Fall through to proc.kill below.
+    }
+  }
+  try {
+    proc.kill(signal);
+  } catch {
+    // Best-effort cleanup.
+  }
 }
 
 const ENVIRONMENT_BRIDGE_ENV_KEYS = [
@@ -862,7 +884,7 @@ function createClaudeController({ agentId, agentInfo, run, runtimeState, callbac
 
     const timer = setTimeout(() => {
       if (!settled) {
-        proc.kill("SIGTERM");
+        terminateProcessTree(proc);
       }
     }, timeoutMs);
 
@@ -914,7 +936,7 @@ function createClaudeController({ agentId, agentInfo, run, runtimeState, callbac
     capabilities: controlCapabilitiesForRuntime("claude-code"),
     interrupt: () => {
       interrupted = true;
-      if (!settled && activeProcess) activeProcess.kill("SIGTERM");
+      if (!settled && activeProcess) terminateProcessTree(activeProcess);
     },
     steer: async () => {
       throw new Error('Runtime "claude-code" does not support steer');
@@ -998,7 +1020,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
       finalError = `Codex runtime fatal error: ${text}`;
       settled = true;
       try {
-        proc?.kill("SIGTERM");
+        terminateProcessTree(proc);
       } catch {
         // ignore shutdown errors
       }
@@ -1016,7 +1038,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
     const timer = setTimeout(() => {
       if (!settled) {
         try {
-          proc?.kill("SIGTERM");
+          terminateProcessTree(proc);
         } catch {
           // ignore shutdown errors
         }
@@ -1215,7 +1237,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
             externalRefs: { threadId: activeThreadId, turnId: activeTurnId },
           });
           try {
-            proc?.kill("SIGTERM");
+            terminateProcessTree(proc);
           } catch {
             // ignore shutdown errors
           }
@@ -1234,7 +1256,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
             externalRefs: { threadId: activeThreadId, turnId: activeTurnId },
           });
           try {
-            proc?.kill("SIGTERM");
+            terminateProcessTree(proc);
           } catch {
             // ignore shutdown errors
           }
@@ -1248,7 +1270,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
         const detail = finalError || finalText || `Codex turn finished with status ${finalStatus}`;
         reject(new Error(detail));
         try {
-          proc?.kill("SIGTERM");
+          terminateProcessTree(proc);
         } catch {
           // ignore shutdown errors
         }
@@ -1262,7 +1284,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
       clearTimeout(timer);
       reject(error);
       try {
-        proc?.kill("SIGTERM");
+        terminateProcessTree(proc);
       } catch {
         // ignore shutdown errors
       }
@@ -1279,7 +1301,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
     interrupt: async () => {
       interrupted = true;
       if (!activeThreadId || !activeTurnId) {
-        proc.kill("SIGTERM");
+        terminateProcessTree(proc);
         return;
       }
       try {
