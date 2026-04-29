@@ -119,6 +119,8 @@ On Windows, the installer creates both a Bash `claude-aify` and a `claude-aify.c
 
 **Visibility caveat.** Dashboard-managed Claude Code uses headless `claude -p --session-id ...`. A healthy managed backing may not appear in the `claude-aify` picker. Use dashboard **Copy CLI resume** to open it by ID (`claude-aify --resume <session-id>`) after the backing has recorded a resume ID.
 
+If you want the resumed CLI to match managed-agent permissions, use `--dangerously-skip-permissions`. Do not use `--permanently-skip-permissions`; Claude Code rejects it as an unknown option.
+
 **Resident caveat.** Resident Claude sessions are not silently swapped, because their session ID is the visible CLI binding. If a resident session hits this, close the duplicate Claude tab/process, restart with `claude-aify`, and re-register from the live session.
 
 ## Machine ID shows `win32:unknown-host`

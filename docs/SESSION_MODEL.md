@@ -186,6 +186,7 @@ Examples:
 
 - Codex session with a stored thread ID may become attachable if the same Codex installation and thread store can resume it safely.
 - Claude managed-warm currently runs headless through `claude -p --session-id ...`. It may not show up in the `claude-aify` resume picker, but the same session can be opened by ID with `claude-aify --resume <session-id>` when the backing has recorded a resume ID.
+- To match managed Claude's unattended permission behavior in a resumed CLI, use `claude-aify --dangerously-skip-permissions --resume <session-id>`. `--permanently-skip-permissions` is not a Claude Code CLI option.
 - Codex managed-warm stores threads in the managed Codex home used by the bridge. To open one in a CLI, use the dashboard-generated resume command so `CODEX_HOME` points at that managed store before `codex resume --include-non-interactive <thread-id>`.
 
 Dashboard rule:
