@@ -7,6 +7,7 @@ import json
 import re
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -38,6 +39,15 @@ router = APIRouter(tags=["api"])
 
 def _now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+def _iso_to_epoch(value: Any) -> float:
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0.0
 
 def _iso_from_ms(timestamp_ms: int) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(max(0, int(timestamp_ms or 0)) / 1000))
@@ -78,6 +88,7 @@ _DISPATCH_TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 _DISPATCH_ACTIVE_STATUSES = {"queued", "claimed", "running"}
 _SPAWN_TERMINAL_STATUSES = {"running", "failed", "cancelled"}
 _SPAWN_MODES = {"managed-warm"}
+ACTIVE_RUN_BRIDGE_STALE_SECONDS = 120
 
 async def _get_ws(request: Request):
     try:
@@ -2363,21 +2374,48 @@ async def control_environment(environment_id: str, req: EnvironmentControlReques
 async def claim_environment_control(req: EnvironmentControlClaim):
     db = await get_db()
     try:
-        cursor = await db.execute(
-            """
-            SELECT *
-            FROM environment_controls
-            WHERE environment_id = ?
-              AND status = 'pending'
-              AND (bridge_id = '' OR bridge_id = ?)
-            ORDER BY requested_at ASC
-            LIMIT 1
-            """,
-            (req.environmentId, req.bridgeId),
-        )
-        row = await cursor.fetchone()
-        if not row:
-            return {"ok": True, "control": None}
+        row = None
+        while True:
+            cursor = await db.execute(
+                """
+                SELECT *
+                FROM environment_controls
+                WHERE environment_id = ?
+                  AND status = 'pending'
+                  AND (bridge_id = '' OR bridge_id = ?)
+                ORDER BY requested_at ASC
+                LIMIT 1
+                """,
+                (req.environmentId, req.bridgeId),
+            )
+            candidate = await cursor.fetchone()
+            if not candidate:
+                return {"ok": True, "control": None}
+            env_cursor = await db.execute("SELECT bridge_id, metadata FROM environments WHERE id = ?", (req.environmentId,))
+            env = await env_cursor.fetchone()
+            env_bridge_id = str((env["bridge_id"] if env else "") or "").strip()
+            metadata = _json_loads_or(env["metadata"], {}) if env else {}
+            bridge_started_at = metadata.get("bridgeStartedAt") or ""
+            if (
+                candidate["action"] == "stop"
+                and env_bridge_id == req.bridgeId
+                and _iso_to_epoch(candidate["requested_at"]) > 0
+                and _iso_to_epoch(bridge_started_at) > 0
+                and _iso_to_epoch(candidate["requested_at"]) < _iso_to_epoch(bridge_started_at)
+            ):
+                now = _now()
+                await db.execute(
+                    "UPDATE environment_controls SET status = 'failed', handled_at = ?, error = ? WHERE id = ? AND status = 'pending'",
+                    (
+                        now,
+                        f'Stale stop control ignored because bridge "{req.bridgeId}" started after the control was requested.',
+                        candidate["id"],
+                    ),
+                )
+                await db.commit()
+                continue
+            row = candidate
+            break
         now = _now()
         await db.execute(
             "UPDATE environment_controls SET status = 'claimed', machine_id = ?, claimed_at = ? WHERE id = ? AND status = 'pending'",
@@ -4240,6 +4278,22 @@ async def claim_dispatch(req: DispatchClaimRequest, request: Request):
             if owner and owner == req.bridgeId:
                 await db.commit()
                 return {"ok": True, "run": None, "blockedBy": active_run}
+            active_since = _iso_to_epoch(active_run.get("startedAt") or active_run.get("requestedAt"))
+            active_age = time.time() - active_since if active_since else ACTIVE_RUN_BRIDGE_STALE_SECONDS + 1
+            if active_age < ACTIVE_RUN_BRIDGE_STALE_SECONDS:
+                await db.commit()
+                return {
+                    "ok": True,
+                    "run": None,
+                    "blockedBy": {
+                        **active_run,
+                        "reason": "active_run_owned_by_previous_bridge",
+                        "ownerBridgeId": owner or "",
+                        "currentBridgeId": req.bridgeId or "",
+                        "retryAfterSeconds": max(1, int(ACTIVE_RUN_BRIDGE_STALE_SECONDS - active_age)),
+                        "hint": "A previous bridge claimed this run recently. Waiting avoids killing a run that may still complete.",
+                    },
+                }
             finished_at = _now()
             owner_label = owner or "unowned"
             await db.execute(

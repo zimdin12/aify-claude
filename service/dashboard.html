@@ -259,6 +259,16 @@ tr:hover{background:#19212a}
 .instructions h3{color:var(--blue);margin-top:20px}
 .run-summary{color:var(--muted);max-width:360px;white-space:pre-wrap;word-break:break-word;font-size:.8em}
 .run-controls{display:flex;gap:6px;flex-wrap:wrap}
+.actions-menu{position:relative;display:inline-block}
+.actions-menu summary{list-style:none;cursor:pointer}
+.actions-menu summary::-webkit-details-marker{display:none}
+.actions-menu[open] .actions-menu-panel{display:flex}
+.actions-menu-panel{display:none;position:absolute;right:0;top:calc(100% + 4px);z-index:30;min-width:190px;flex-direction:column;gap:6px;background:#0f151c;border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 12px 36px #0008}
+.actions-menu-panel .btn{justify-content:flex-start;width:100%}
+.modal-form{display:grid;gap:10px}
+.modal-form label{display:grid;gap:5px;color:var(--muted);font-size:.82em}
+.modal-form input,.modal-form select,.modal-form textarea{background:#0a0f15;border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:7px;font:inherit;font-size:.9em}
+.modal-form textarea{min-height:120px;resize:vertical}
 .banner{background:#1d2631;border:1px solid #344253;color:#e7be63;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:.85em}
 .banner-row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .dispatch-subject{display:flex;flex-direction:column;gap:4px;min-width:0}
@@ -1020,6 +1030,11 @@ function actionButtonFn(label, title, handler, classes = '') {
   window._dashboardActions.set(id, handler);
   return `<button class="btn btn-sm ${esc(classes)}"${titleAttr(title || label)} ${dashboardActionAttr(id)}>${esc(label)}</button>`;
 }
+function actionsMenu(items, label = 'Actions') {
+  const content = (items || []).filter(Boolean).join('');
+  if (!content) return '';
+  return `<details class="actions-menu"><summary class="btn btn-sm"${titleAttr(label)}>${esc(label)}</summary><div class="actions-menu-panel">${content}</div></details>`;
+}
 async function runDashboardAction(id) {
   const handler = window._dashboardActions?.get(id);
   if (!handler) {
@@ -1037,6 +1052,14 @@ document.addEventListener('click', event => {
   if (!target) return;
   event.preventDefault();
   runDashboardAction(target.getAttribute('data-dashboard-action'));
+});
+document.addEventListener('change', event => {
+  const target = event.target.closest('[data-channel-member-select]');
+  if (!target) return;
+  const channelName = target.getAttribute('data-channel-member-select') || '';
+  if (!channelName) return;
+  window._channelMemberDrafts = window._channelMemberDrafts || {};
+  window._channelMemberDrafts[channelName] = target.value || '';
 });
 function disabledActionButton(label, title, classes = '') {
   return `<button class="btn btn-sm ${esc(classes)}"${titleAttr(title || label)} disabled>${esc(label)}</button>`;
@@ -1276,9 +1299,7 @@ function renderAgents(agents, containerId = 'manual-agents-table') {
     const controlNote = residentControlNote(info);
     const rawStatus = (info.statusRaw || '').toLowerCase();
     const activeRunId = info.dispatchState?.activeRun?.runId || '';
-    const controls = [
-      actionButtonFn('Chat', 'Open a direct chat with this agent identity', () => openAgentChat(id)),
-    ];
+    const controls = [];
     if (activeRunId) {
       controls.push(actionButtonFn('Interrupt', 'Ask the active run to stop at the next supported interruption point', () => interruptRun(activeRunId), 'btn-danger'));
     }
@@ -1296,7 +1317,11 @@ function renderAgents(agents, containerId = 'manual-agents-table') {
       `<td class="t"${titleAttr(dispatch)}><span class="dispatch-text">${esc(dispatch)}</span></td>` +
       `<td class="t"${titleAttr(runtime)}><span class="runtime-text">${esc(runtime)}</span></td>` +
       `<td>${info.unread || 0}</td><td class="t">${esc(info.lastSeen)}</td>` +
-      `<td><div class="run-controls">${controls.join('')}</div></td></tr>`;
+      `<td><div class="run-controls">` +
+      actionButtonFn('Chat', 'Open a direct chat with this agent identity', () => openAgentChat(id)) +
+      actionButtonFn('Edit', 'Edit identity ID or adopt into an environment', () => openAgentEditor(id)) +
+      actionsMenu(controls) +
+      `</div></td></tr>`;
   }
   html += '</tbody></table>';
   container.innerHTML = html;
@@ -1331,6 +1356,13 @@ function renderWorkers(workers) {
     const runtime = agentRuntimeLabel(info);
     const wake = info.wakeMode || 'managed-worker';
     const activeRunId = info.dispatchState?.activeRun?.runId || '';
+    const actionItems = [
+      actionButtonFn('Assign task', 'Open chat composer as a request to this managed agent', () => prefillWorkerMessage(id, 'request')),
+      actionButtonFn('Assign env', 'Retarget this teammate identity and saved spawn spec to another online environment', () => assignAgentEnvironment(id)),
+      activeRunId ? actionButtonFn('Interrupt', 'Ask the active managed run to stop at the next supported interruption point', () => interruptRun(activeRunId), 'btn-danger') : '',
+      actionButtonFn('Clear Resume State', 'Forget saved runtime thread/session handles. Messages and identity remain.', () => resetWorkerState(id)),
+      actionButtonFn('Remove', 'Unregister this managed agent and cancel queued work', () => deleteAgent(id), 'btn-danger'),
+    ];
     html += `<tr><td><b>${esc(id)}</b></td>` +
       `<td class="t"${titleAttr(info.managedBy || '')}><span class="session-text">${esc(info.managedBy || '')}</span></td>` +
       renderPresenceCell(info) +
@@ -1341,12 +1373,8 @@ function renderWorkers(workers) {
       `<td>${info.unread || 0}</td><td class="t">${esc(info.lastSeen)}</td>` +
       `<td><div class="run-controls">` +
       actionButtonFn('Chat', 'Open a direct chat with this managed agent', () => openAgentChat(id)) +
-      actionButtonFn('Assign task', 'Open chat composer as a request to this managed agent', () => prefillWorkerMessage(id, 'request')) +
-      actionButtonFn('Change ID', 'Rename this teammate identity everywhere in aify-comms history and session records', () => renameAgentIdentity(id)) +
-      actionButtonFn('Assign env', 'Retarget this teammate identity and saved spawn spec to another online environment', () => assignAgentEnvironment(id)) +
-      (activeRunId ? actionButtonFn('Interrupt', 'Ask the active managed run to stop at the next supported interruption point', () => interruptRun(activeRunId), 'btn-danger') : '') +
-      actionButtonFn('Clear Resume State', 'Forget saved runtime thread/session handles. Messages and identity remain.', () => resetWorkerState(id)) +
-      actionButtonFn('Remove', 'Unregister this managed agent and cancel queued work', () => deleteAgent(id), 'btn-danger') +
+      actionButtonFn('Edit', 'Edit identity ID, environment, runtime, and workspace', () => openAgentEditor(id)) +
+      actionsMenu(actionItems) +
       `</div></td></tr>`;
   }
   html += '</tbody></table>';
@@ -1403,38 +1431,72 @@ async function assignAgentEnvironment(agentId) {
   }
 }
 
-async function renameAgentIdentity(agentId) {
-  const next = prompt(
-    `Rename agent identity "${agentId}" to:\n\nThis updates chats, channel memberships, sessions, runs, spawn specs, and artifacts. A live/resident agent must be told to use the new ID.`,
-    agentId,
-  );
-  if (next === null) return;
-  const newAgentId = next.trim();
-  if (!newAgentId || newAgentId === agentId) return;
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(newAgentId)) {
-    toast('Invalid agent ID. Use letters, numbers, dots, hyphens, and underscores.', '#f85149');
+function openAgentEditor(agentId) {
+  const agent = (window._allAgents || []).find(([id]) => id === agentId)?.[1] || {};
+  const session = primarySessionForAgent(agentId) || (window._sessions || []).find(item => item.agentId === agentId) || {};
+  const environments = (window._environments || []).filter(env => env.status === 'online');
+  const currentEnvId = session.environmentId || '';
+  const selectedEnv = environments.find(env => env.id === currentEnvId) || environments[0] || {};
+  const runtimeOptions = (selectedEnv.runtimes || []).map(item => item.runtime).filter(Boolean);
+  const runtimeValue = session.runtime || agent.runtime || runtimeOptions[0] || '';
+  const envOptions = environments.map(env => `<option value="${esc(env.id)}"${env.id === currentEnvId ? ' selected' : ''}>${esc(env.label || env.id)} (${esc(env.id)})</option>`).join('');
+  const runtimeSelect = runtimeOptions.length
+    ? `<select id="agent-edit-runtime">${runtimeOptions.map(runtime => `<option value="${esc(runtime)}"${runtime === runtimeValue ? ' selected' : ''}>${esc(runtime)}</option>`).join('')}</select>`
+    : `<input id="agent-edit-runtime" value="${esc(runtimeValue)}">`;
+  const workspace = session.workspace || agent.cwd || selectedEnv.cwdRoots?.[0] || '';
+  openModal(`Edit ${agentId}`, `
+    <div class="modal-form">
+      <label>Agent ID<input id="agent-edit-id" value="${esc(agentId)}"></label>
+      <label>Environment<select id="agent-edit-env">${envOptions || '<option value="">No online environments</option>'}</select></label>
+      <label>Runtime${runtimeSelect}</label>
+      <label>Workspace<input id="agent-edit-workspace" value="${esc(workspace)}"></label>
+      <p class="worker-note">Changing the ID rewrites aify-comms chats, channels, sessions, runs, spawn specs, and artifacts. A live/resident agent still needs to be told to use the new ID.</p>
+      <div class="btn-row">
+        ${actionButtonFn('Save', 'Save identity and environment changes', () => saveAgentEditor(agentId), 'btn-primary')}
+        ${actionButtonFn('Assign task', 'Open chat composer as a request', () => { closeModal(); prefillWorkerMessage(agentId, 'request'); })}
+        ${actionButtonFn('Clear Resume State', 'Forget saved runtime thread/session handles', () => resetWorkerState(agentId))}
+        ${actionButtonFn('Remove', 'Unregister this identity and cancel queued work', () => { closeModal(); deleteAgent(agentId); }, 'btn-danger')}
+      </div>
+    </div>`);
+}
+
+async function saveAgentEditor(originalAgentId) {
+  let agentId = originalAgentId;
+  const newAgentId = (document.getElementById('agent-edit-id')?.value || '').trim();
+  const environmentId = (document.getElementById('agent-edit-env')?.value || '').trim();
+  const runtime = (document.getElementById('agent-edit-runtime')?.value || '').trim();
+  const workspace = (document.getElementById('agent-edit-workspace')?.value || '').trim();
+  if (!newAgentId) {
+    toast('Agent ID is required', '#f85149');
     return;
   }
-  if ((window._allAgents || []).some(([id]) => id === newAgentId)) {
-    toast(`Agent ${newAgentId} already exists`, '#f85149');
-    return;
-  }
-  const activeRun = (window._allRuns || []).find(run => run.targetAgentId === agentId && ['queued', 'claimed', 'running'].includes(String(run.status || '').toLowerCase()));
-  const extra = activeRun ? `\n\nWarning: ${agentId} has active or queued work (${activeRun.id}). Rename only if you are intentionally changing the identity now.` : '';
-  if (!confirm(`Rename ${agentId} to ${newAgentId}?${extra}\n\nThe old ID will be tombstoned so stale bridges do not silently recreate it.`)) return;
   try {
-    const response = await apiFetch(API + `/agents/${encodeURIComponent(agentId)}/rename`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({newAgentId, requestedBy: chatIdentity()}),
-    });
-    const res = await response.json();
-    if (!response.ok || res.ok === false) throw new Error(res.detail || res.error || 'Rename failed');
-    if (window._chatSelected === `dm:${agentId}`) window._chatSelected = `dm:${newAgentId}`;
-    toast(`Renamed ${agentId} to ${newAgentId}`);
+    if (newAgentId !== originalAgentId) {
+      if (!confirm(`Rename ${originalAgentId} to ${newAgentId}?\n\nThis rewrites aify-comms history and tombstones the old ID. The running agent still needs to be told to use the new ID.`)) return;
+      const renameResponse = await apiFetch(API + `/agents/${encodeURIComponent(originalAgentId)}/rename`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({newAgentId, requestedBy: chatIdentity()}),
+      });
+      const renameRes = await renameResponse.json();
+      if (!renameResponse.ok || renameRes.ok === false) throw new Error(renameRes.detail || renameRes.error || 'Rename failed');
+      agentId = newAgentId;
+      if (window._chatSelected === `dm:${originalAgentId}`) window._chatSelected = `dm:${agentId}`;
+    }
+    if (environmentId && runtime && workspace) {
+      const assignResponse = await apiFetch(API + `/agents/${encodeURIComponent(agentId)}/environment`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({environmentId, runtime, workspace, requestedBy: chatIdentity()}),
+      });
+      const assignRes = await assignResponse.json();
+      if (!assignResponse.ok || assignRes.ok === false) throw new Error(assignRes.detail || assignRes.error || 'Assign environment failed');
+    }
+    closeModal();
+    toast(`Saved ${agentId}`);
     await refreshDashboard();
   } catch (e) {
-    toast(e.message || 'Rename failed', '#f85149');
+    toast(e.message || 'Save failed', '#f85149');
   }
 }
 
@@ -1871,12 +1933,14 @@ function renderEnvironments(environments) {
       `<pre class="env-command">${esc(startCommand)}</pre>` +
       `<div class="btn-row">` +
       (isOnline ? actionButtonFn('Spawn here', 'Prefill the spawn form with this environment and its first workspace root', () => prefillEnvironmentSpawn(env.id)) : '') +
-      actionButtonFn('Edit roots', 'Change the workspace roots this dashboard and bridge use for managed spawns', () => editEnvironmentRoots(env.id)) +
-      (manualRoots ? actionButtonFn('Use bridge roots', 'Reset roots back to what the bridge process advertises', () => resetEnvironmentRoots(env.id)) : '') +
-      actionButtonFn('Copy start', 'Copy the command to start this bridge again', () => copyText(startCommand, 'Start command copied')) +
-      (isOnline
-        ? actionButtonFn('Kill bridge', 'Ask this host bridge process to exit. After it stops, the row can be forgotten.', () => controlEnvironment(env.id, 'stop'), 'btn-danger')
-        : actionButtonFn('Forget', 'Hide this offline environment target. Agent identities, chats, and saved session/spec records remain.', () => controlEnvironment(env.id, 'forget'), 'btn-danger')) +
+      actionButtonFn('Edit', 'Edit workspace roots and inspect start command', () => openEnvironmentEditor(env.id)) +
+      actionsMenu([
+        actionButtonFn('Copy start', 'Copy the command to start this bridge again', () => copyText(startCommand, 'Start command copied')),
+        manualRoots ? actionButtonFn('Use bridge roots', 'Reset roots back to what the bridge process advertises', () => resetEnvironmentRoots(env.id)) : '',
+        isOnline
+          ? actionButtonFn('Kill bridge', 'Ask this host bridge process to exit. After it stops, the row can be forgotten.', () => controlEnvironment(env.id, 'stop'), 'btn-danger')
+          : actionButtonFn('Forget', 'Hide this offline environment target. Agent identities, chats, and saved session/spec records remain.', () => controlEnvironment(env.id, 'forget'), 'btn-danger'),
+      ]) +
       `</div>` +
       `</section>`;
   }
@@ -1900,24 +1964,40 @@ function environmentStartCommand(env) {
   return `${cd}\naify-comms${args ? ' ' + args : ''}`;
 }
 
-async function editEnvironmentRoots(environmentId) {
+function openEnvironmentEditor(environmentId) {
   const env = (window._environments || []).find(item => item.id === environmentId);
   if (!env) {
     toast('Environment not found', '#f85149');
     return;
   }
-  const current = (env.cwdRoots || []).join('\n');
-  const text = prompt(
-    `Workspace roots for ${environmentId}\n\nOne root per line. These roots are used for dashboard spawn validation and sent back to the live bridge on heartbeat.`,
-    current,
-  );
-  if (text === null) return;
+  const startCommand = environmentStartCommand(env);
+  const roots = (env.cwdRoots || []).join('\n');
+  const manualRoots = !!(env.metadata && env.metadata.manualRoots);
+  openModal(`Edit Environment`, `
+    <div class="modal-form">
+      <label>Environment ID<input value="${esc(env.id)}" disabled></label>
+      <label>Label<input value="${esc(env.label || env.id)}" disabled></label>
+      <label>Workspace roots<textarea id="env-edit-roots">${esc(roots)}</textarea></label>
+      <label>Start command<textarea id="env-edit-start" readonly>${esc(startCommand)}</textarea></label>
+      <p class="worker-note">Roots are spawn safety boundaries. Already-running agents are not moved; new and recovered managed spawns use this effective root list after the bridge's next heartbeat.</p>
+      <div class="btn-row">
+        ${actionButtonFn('Save', 'Save workspace roots for this environment', () => saveEnvironmentEditor(env.id), 'btn-primary')}
+        ${actionButtonFn('Copy start', 'Copy the command to start this bridge again', () => copyText(startCommand, 'Start command copied'))}
+        ${manualRoots ? actionButtonFn('Use bridge roots', 'Reset roots back to what the bridge process advertises', () => resetEnvironmentRoots(env.id)) : ''}
+        ${env.status === 'online'
+          ? actionButtonFn('Kill bridge', 'Ask this host bridge process to exit', () => { closeModal(); controlEnvironment(env.id, 'stop'); }, 'btn-danger')
+          : actionButtonFn('Forget', 'Hide this offline environment target', () => { closeModal(); controlEnvironment(env.id, 'forget'); }, 'btn-danger')}
+      </div>
+    </div>`);
+}
+
+async function saveEnvironmentEditor(environmentId) {
+  const text = document.getElementById('env-edit-roots')?.value || '';
   const roots = text.split(/\r?\n|,/).map(item => item.trim()).filter(Boolean);
   if (!roots.length) {
     toast('At least one root is required. Use "Use bridge roots" to reset.', '#f85149');
     return;
   }
-  if (!confirm(`Update roots for ${environmentId}?\n\n${roots.join('\n')}\n\nAlready-running agents are not moved. New/recovered spawns will use this root list.`)) return;
   try {
     const response = await apiFetch(API + `/environments/${encodeURIComponent(environmentId)}/roots`, {
       method: 'PATCH',
@@ -1926,6 +2006,7 @@ async function editEnvironmentRoots(environmentId) {
     });
     const res = await response.json();
     if (!response.ok || res.ok === false) throw new Error(res.detail || res.error || 'Root update failed');
+    closeModal();
     toast('Environment roots updated');
     await refreshDashboard();
   } catch (e) {
@@ -2344,12 +2425,17 @@ function renderChatInspector(meta, messages) {
       .map(([id]) => id)
       .filter(id => id && !members.includes(id))
       .sort((a, b) => a.localeCompare(b));
+    window._channelMemberDrafts = window._channelMemberDrafts || {};
+    const draft = availableMembers.includes(window._channelMemberDrafts[meta.id]) ? window._channelMemberDrafts[meta.id] : (availableMembers[0] || '');
+    window._channelMemberDrafts[meta.id] = draft;
     html += '<h3>Members</h3>' +
-      (members.length ? `<div class="env-pill-row">${members.map(member => `<span class="env-pill">${esc(member)}</span>`).join('')}</div>` : '<p class="em">No members.</p>') +
+      (members.length
+        ? `<div class="mini-list">${members.slice().sort((a, b) => a.localeCompare(b)).map(member => `<div class="mini-row"><span class="env-pill">${esc(member)}</span>${actionButtonFn('Remove', `Remove ${member} from #${meta.id}`, () => removeChannelMember(meta.id, member), 'btn-danger')}</div>`).join('')}</div>`
+        : '<p class="em">No members.</p>') +
       `<div class="send-row">` +
-        `<select id="chat-channel-add-member" title="Agent to add to #${esc(meta.id)}">` +
+        `<select id="chat-channel-add-member" data-channel-member-select="${esc(meta.id)}" title="Agent to add to #${esc(meta.id)}">` +
           (availableMembers.length
-            ? availableMembers.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join('')
+            ? availableMembers.map(id => `<option value="${esc(id)}"${id === draft ? ' selected' : ''}>${esc(id)}</option>`).join('')
             : '<option value="">All known agents are members</option>') +
         `</select>` +
         actionButtonFn('Add member', 'Add the selected agent to this channel', () => addSelectedChannelMember(meta.id)) +
@@ -2392,7 +2478,8 @@ function renderChatInspector(meta, messages) {
 
 async function addSelectedChannelMember(channelName) {
   const select = document.getElementById('chat-channel-add-member');
-  const agentId = select?.value || '';
+  window._channelMemberDrafts = window._channelMemberDrafts || {};
+  const agentId = window._channelMemberDrafts[channelName] || select?.value || '';
   if (!agentId) {
     toast('No agent available to add', '#f85149');
     return;
@@ -2410,11 +2497,35 @@ async function addSelectedChannelMember(channelName) {
       channel.members = res.members || channel.members || [];
       channel.memberCount = channel.members.length;
     }
+    window._channelMemberDrafts[channelName] = '';
     await refreshSelectedChannelMessages();
     renderChat();
     toast(`${agentId} added to #${channelName}`);
   } catch (e) {
     toast(e.message || 'Add member failed', '#f85149');
+  }
+}
+
+async function removeChannelMember(channelName, agentId) {
+  if (!confirm(`Remove ${agentId} from #${channelName}?`)) return;
+  try {
+    const response = await apiFetch(API + `/channels/${encodeURIComponent(channelName)}/leave`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({agentId}),
+    });
+    const res = await response.json();
+    if (!response.ok || res.ok === false) throw new Error(res.detail || res.error || 'Remove member failed');
+    const channel = (window._channels || []).find(ch => ch.name === channelName);
+    if (channel) {
+      channel.members = res.members || channel.members || [];
+      channel.memberCount = channel.members.length;
+    }
+    await refreshSelectedChannelMessages();
+    renderChat();
+    toast(`${agentId} removed from #${channelName}`);
+  } catch (e) {
+    toast(e.message || 'Remove member failed', '#f85149');
   }
 }
 
@@ -2688,6 +2799,13 @@ function renderSessions(sessions) {
       ? disabledActionButton('Spawn pending', `Pending ${pendingSpawn.status} spawn request ${pendingSpawn.id}. Stop the session to cancel it, or wait for the bridge to finish.`)
       : actionButtonFn('Restart', 'Queue a new spawn from this session specification', () => controlSession(session.id, 'restart')) +
         actionButtonFn('Recover', 'Queue recovery using saved session/spec metadata', () => controlSession(session.id, 'recover'));
+    const sessionActions = [
+      actionButtonFn('Edit agent', 'Edit the agent identity backed by this session', () => openAgentEditor(session.agentId)),
+      activeRun ? actionButtonFn('Interrupt', 'Ask the active run for this session to stop', () => interruptRun(activeRun.id), 'btn-danger') : '',
+      spawnControl,
+      actionButtonFn('Continue as', 'Create a new managed agent/session from an editable handoff packet', () => continueSessionAs(session.id)),
+      canStopSession ? actionButtonFn('Stop', 'Stop this managed session and interrupt/cancel work where supported', () => controlSession(session.id, 'stop'), 'btn-danger') : '',
+    ];
     html += `<tr>` +
       `<td><b>${esc(session.agentId)}</b><br><span class="t clip-1"${titleAttr(session.id)}>${esc(session.id)}</span></td>` +
       `<td>${esc(session.runtime || '')}<br><span class="t">${esc(session.mode || '')}</span></td>` +
@@ -2698,11 +2816,7 @@ function renderSessions(sessions) {
       `<td class="t">${esc(session.lastSeen || '')}</td>` +
       `<td><div class="run-controls">` +
       actionButtonFn('Chat', 'Open chat with the agent backed by this session', () => openAgentChat(session.agentId)) +
-      actionButtonFn('Change ID', 'Rename this agent identity across sessions, chats, channels, runs, and spawn records', () => renameAgentIdentity(session.agentId)) +
-      (activeRun ? actionButtonFn('Interrupt', 'Ask the active run for this session to stop', () => interruptRun(activeRun.id), 'btn-danger') : '') +
-      spawnControl +
-      actionButtonFn('Continue as', 'Create a new managed agent/session from an editable handoff packet', () => continueSessionAs(session.id)) +
-      (canStopSession ? actionButtonFn('Stop', 'Stop this managed session and interrupt/cancel work where supported', () => controlSession(session.id, 'stop'), 'btn-danger') : '') +
+      actionsMenu(sessionActions) +
       `</div></td>` +
       `</tr>`;
   }

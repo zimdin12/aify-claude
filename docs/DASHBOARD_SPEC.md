@@ -52,7 +52,7 @@ Chat should feel like a real team messenger:
 - mention support: `@agent`, `@group`, `@channel`
 - quick actions: reply/follow-up, mark read, clear DM/delete channel, share artifact
 - thread drawer for run details, artifacts, and handoff state
-- channel details: show current members and allow adding known agents from the right-side Members panel
+- channel details: show current members and allow adding/removing known agents from the right-side Members panel; add selection must be stable across realtime refreshes
 - artifact uploads store bytes in the aify-comms shared artifact service and inserted chat text should tell agents to use `comms_read(name="...")`
 - reply expectations are inferred from message type: requests/reviews should get explicit replies; routine info does not need a special toggle
 - normal dashboard chat has one send path; strict dispatch remains an advanced API/debug path, not a primary composer option
@@ -281,7 +281,7 @@ Columns:
 Actions:
 
 - open chat
-- change identity ID, with a visible warning that live/resident agents need to be told the new ID
+- edit identity in a modal: change ID, environment, runtime, and workspace; destructive/advanced actions live under Actions, not as a row full of buttons
 - spawn/recover
 - continue from latest session
 - stop active session

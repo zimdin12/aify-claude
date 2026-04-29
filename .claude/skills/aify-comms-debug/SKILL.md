@@ -148,7 +148,7 @@ On Windows, the installer creates both a Bash `claude-aify` and a `claude-aify.c
 
 **Cause (Claude resident).** On older bridge code, the channel bridge claimed dispatch runs and left them `running` indefinitely — it had no way to track Claude's progress. On current code, the channel bridge completes runs immediately on delivery, so this failure mode no longer occurs for Claude agents. If you still see it, the bridge is running pre-fix code — `git pull` and restart `claude-aify`.
 
-**Auto-recovery (current build).** When a replacement bridge polls `/dispatch/claim` for the same agent, the server detects the stale run (owned by a different bridge) and marks it failed automatically. Existing queued run-control work may then be claimed normally. Normal `comms_send` will not create additional queued work while the target is blocked.
+**Auto-recovery (current build).** When a replacement bridge polls `/dispatch/claim` for the same agent, the server gives a recently claimed run a short grace window before declaring it stale. During that window the replacement bridge sees `blockedBy.reason = "active_run_owned_by_previous_bridge"` and should retry. If the previous bridge does not finish, the server then marks the orphaned run failed automatically and existing queued run-control work may be claimed normally. Normal `comms_send` will not create additional queued work while the target is blocked.
 
 For older dispatch-backed messages, the original inbox message may still exist. For current normal `comms_send`, failed live delivery writes no message row, so retry after the agent is startable.
 
@@ -204,7 +204,7 @@ If only the thread ID is available, pass `sessionHandle` without `appServerUrl`.
 **Fix.**
 - Pull latest, reinstall, and restart `aify-comms` so the bridge has graceful offline reporting.
 - Check for leftover processes with `ps -ef | rg 'aify-comms|mcp/stdio/server.js'` on WSL/Linux, or `Get-Process node | Select-Object Id,Path,CommandLine` on Windows.
-- Starting a newer `aify-comms` for the same environment supersedes older bridge heartbeats when both advertise `bridgeStartedAt`; the server also queues a stop control for the older bridge. Old OS processes still need manual cleanup if they are hung and no longer polling, but they should not own spawn claims.
+- Starting a newer `aify-comms` for the same environment supersedes older bridge heartbeats when both advertise `bridgeStartedAt`; the server also queues a stop control for the older bridge. A fresh bridge ignores stale stop controls that were requested before that bridge started. Old OS processes still need manual cleanup if they are hung and no longer polling, but they should not own spawn claims.
 - Use the dashboard **Kill bridge** action while the bridge is online. Managed teammates from that environment become offline/detached; chats and identities remain. Assign them to another online environment from **Team** or restart the bridge, then recover/restart from **Sessions**.
 - Use **Forget** only to hide an obsolete execution target. Forgetting keeps agent identities, chats, saved spawn specs, and session records; it no longer deletes managed teammates.
 - If a spawn request is marked `running` but the first brief dispatch failed, current server code repairs it to `failed` on the next spawn-request list refresh.
@@ -226,9 +226,9 @@ If you still see the old behavior after update, capture the run ID plus `/api/v1
 
 **Symptom.** A dispatch run shows an auto-heal summary like `Auto-healed: bridge "old" replaced by "new"` or `Auto-healed before steer...`.
 
-**Cause.** The server saw a new live bridge polling for the agent while the DB still had an active run claimed by an older bridge. That older run was stale, so the server failed it to unblock the queue.
+**Cause.** The server saw a new live bridge polling for the agent while the DB still had an active run claimed by an older bridge. If that run was older than the bridge-replacement grace window, the server treated it as orphaned and failed it to unblock the queue.
 
-**Fix.** Usually no repair is needed beyond shutting down the stale bridge and re-registering from the live session. This is a recovery path, not silent data loss for older dispatch-backed messages. Current normal sends will fail fast instead of queueing fresh work behind stale state. If this repeats on every dispatch, an old bridge is probably still polling; current builds should block it with `bridge_not_current` before it can claim fresh work.
+**Fix.** Usually no repair is needed beyond shutting down the stale bridge and re-registering from the live session. This is a recovery path, not silent data loss for older dispatch-backed messages. If it happens seconds after a reconnect, update and restart the dashboard service: current builds wait briefly before failing another bridge's active run. Current normal sends will fail fast instead of queueing fresh work behind stale state. If this repeats on every dispatch, an old bridge is probably still polling; current builds should block it with `bridge_not_current` before it can claim fresh work.
 
 ## Bridge "lost" the agent / has to be re-registered manually
 

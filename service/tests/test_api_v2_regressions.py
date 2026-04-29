@@ -244,6 +244,27 @@ class ApiV2RegressionTests(unittest.TestCase):
         )
         self.assertEqual(completed.status_code, 200, completed.text)
 
+    def test_stale_environment_stop_control_does_not_kill_new_bridge(self):
+        self._heartbeat_environment(id="windows:test-host:default", bridgeId="bridge-new", metadata={"bridgeStartedAt": "2999-01-01T00:00:00Z"})
+        self._execute(
+            """
+            INSERT INTO environment_controls (
+                id, environment_id, bridge_id, machine_id, action, status, requested_by, requested_at
+            ) VALUES (?,?,?,?,?,?,?,?)
+            """,
+            ("envctl-stale", "windows:test-host:default", "", "win32:test-host", "stop", "pending", "dashboard", "2020-01-01T00:00:00Z"),
+        )
+
+        claim = self.client.post(
+            "/api/v1/environments/controls/claim",
+            json={"environmentId": "windows:test-host:default", "bridgeId": "bridge-new", "machineId": "win32:test-host"},
+        )
+        self.assertEqual(claim.status_code, 200, claim.text)
+        self.assertIsNone(claim.json()["control"])
+        control = self._fetchone("SELECT status, error FROM environment_controls WHERE id = ?", ("envctl-stale",))
+        self.assertEqual(control["status"], "failed")
+        self.assertIn("Stale stop control ignored", control["error"])
+
     def test_environment_list_api_and_dashboard_render_surface(self):
         response = self.client.post(
             "/api/v1/environments/heartbeat",
@@ -280,6 +301,9 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertIn("Normal users and agents should send messages, not dispatches.", dashboard.text)
         self.assertIn("chat-channel-add-member", dashboard.text)
         self.assertIn("Add member", dashboard.text)
+        self.assertIn("data-channel-member-select", dashboard.text)
+        self.assertIn("Edit workspace roots", dashboard.text)
+        self.assertIn("Edit identity ID", dashboard.text)
 
     def test_environment_list_marks_missing_heartbeat_offline_and_orders_stably(self):
         self._heartbeat_environment(
@@ -622,6 +646,42 @@ class ApiV2RegressionTests(unittest.TestCase):
         )
         self.assertEqual(current_claim.status_code, 200, current_claim.text)
         self.assertEqual(current_claim.json()["run"]["id"], dispatched["runs"][0]["runId"])
+
+    def test_replacement_bridge_does_not_immediately_fail_recent_active_run(self):
+        self._register("manager", role="manager")
+        self._register(
+            "claude-worker",
+            role="coder",
+            runtime="claude-code",
+            sessionMode="managed",
+            launchMode="managed",
+        )
+        dispatched = self._dispatch(
+            from_agent="manager",
+            to="claude-worker",
+            type="request",
+            subject="active",
+            body="do work",
+        )
+        run_id = dispatched["runs"][0]["runId"]
+        first_claim = self.client.post(
+            "/api/v1/dispatch/claim",
+            json={"agentId": "claude-worker", "bridgeId": "bridge-old", "machineId": "win32:test-host", "executionModes": ["managed"]},
+        )
+        self.assertEqual(first_claim.status_code, 200, first_claim.text)
+        self.assertEqual(first_claim.json()["run"]["id"], run_id)
+
+        replacement_claim = self.client.post(
+            "/api/v1/dispatch/claim",
+            json={"agentId": "claude-worker", "bridgeId": "bridge-new", "machineId": "win32:test-host", "executionModes": ["managed"]},
+        )
+        self.assertEqual(replacement_claim.status_code, 200, replacement_claim.text)
+        payload = replacement_claim.json()
+        self.assertIsNone(payload["run"])
+        self.assertEqual(payload["blockedBy"]["reason"], "active_run_owned_by_previous_bridge")
+        run = self._fetchone("SELECT status, summary, error_text FROM dispatch_runs WHERE id = ?", (run_id,))
+        self.assertEqual(run["status"], "claimed")
+        self.assertEqual(run["summary"], "")
 
     def test_spawn_request_targets_environment_and_matching_bridge_claims(self):
         self._heartbeat_environment()
