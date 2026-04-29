@@ -2391,7 +2391,7 @@ async def claim_environment_control(req: EnvironmentControlClaim):
             candidate = await cursor.fetchone()
             if not candidate:
                 return {"ok": True, "control": None}
-            env_cursor = await db.execute("SELECT bridge_id, metadata FROM environments WHERE id = ?", (req.environmentId,))
+            env_cursor = await db.execute("SELECT * FROM environments WHERE id = ?", (req.environmentId,))
             env = await env_cursor.fetchone()
             env_bridge_id = str((env["bridge_id"] if env else "") or "").strip()
             metadata = _json_loads_or(env["metadata"], {}) if env else {}
