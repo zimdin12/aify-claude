@@ -262,13 +262,19 @@ tr:hover{background:#19212a}
 .actions-menu{position:relative;display:inline-block}
 .actions-menu summary{list-style:none;cursor:pointer}
 .actions-menu summary::-webkit-details-marker{display:none}
+.actions-menu[open]{z-index:260}
 .actions-menu[open] .actions-menu-panel{display:flex}
-.actions-menu-panel{display:none;position:absolute;right:0;top:calc(100% + 4px);z-index:30;min-width:190px;flex-direction:column;gap:6px;background:#0f151c;border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 12px 36px #0008}
+.actions-menu-panel{display:none;position:absolute;right:0;top:calc(100% + 4px);z-index:260;min-width:190px;flex-direction:column;gap:6px;background:#0f151c;border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 18px 46px #000c}
 .actions-menu-panel .btn{justify-content:flex-start;width:100%}
 .actions-table{overflow:visible}
 .actions-table th:last-child,.actions-table td:last-child{overflow:visible}
+.actions-table tr:has(.actions-menu[open]){position:relative;z-index:240}
 .actions-table .actions-menu{z-index:40}
 .actions-table tbody tr:nth-last-child(-n+3) .actions-menu-panel{top:auto;bottom:calc(100% + 4px)}
+.session-helper{margin-top:8px}
+.session-helper summary{cursor:pointer;color:var(--blue);font-size:.78em;font-weight:700;list-style:none}
+.session-helper summary::-webkit-details-marker{display:none}
+.session-helper pre{margin-top:7px;background:#080c10;border:1px solid var(--line-soft);border-radius:8px;padding:9px 10px;color:var(--text);font-size:.78em;white-space:pre-wrap;word-break:break-word}
 .modal-form{display:grid;gap:10px}
 .modal-form label{display:grid;gap:5px;color:var(--muted);font-size:.82em}
 .modal-form input,.modal-form select,.modal-form textarea{background:#0a0f15;border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:7px;font:inherit;font-size:.9em}
@@ -2982,7 +2988,7 @@ function renderSessions(sessions) {
       canStopSession ? actionButtonFn('Stop', 'Stop this managed session and interrupt/cancel work where supported', () => controlSession(session.id, 'stop'), 'btn-danger') : '',
     ];
     html += `<tr>` +
-      `<td><b>${esc(session.agentId)}</b><br><span class="t clip-1"${titleAttr(session.id)}>${esc(session.id)}</span></td>` +
+      `<td><b>${esc(session.agentId)}</b><br><span class="t clip-1"${titleAttr(session.id)}>${esc(session.id)}</span>${resumeCommand ? `<details class="session-helper"><summary>CLI resume</summary><pre>${esc(resumeCommand)}</pre>${actionButtonFn('Copy command', 'Copy the native CLI resume command for this backing', () => copySessionResumeCommand(session.id))}</details>` : ''}</td>` +
       `<td>${esc(session.runtime || '')}<br><span class="t"${titleAttr(runtimeAttachNote(session))}>${esc(modeLabel)}</span></td>` +
       `<td class="t"${titleAttr(session.environmentId || '')}><span class="clip-1">${esc(session.environmentId || '')}</span></td>` +
       `<td class="t"${titleAttr(session.workspace || '')}><span class="clip-1">${esc(session.workspace || '')}</span></td>` +
