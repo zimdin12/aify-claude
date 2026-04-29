@@ -22,6 +22,7 @@ It now adds a first-class agent lifecycle layer:
 - runtime adapters for Claude Code, Codex, and OpenCode managed/resident execution
 - automatic identity/registration for spawned agents
 - managed-warm sessions for long-lived agents
+- portable compact/continue into fresh managed successors when a phase changes or context gets noisy
 - runtime/session visibility, with token/cost telemetry shown only when runtimes expose it
 - real chat UI with DMs, channels, mentions, artifacts, and run/handoff state near the conversation
 
@@ -33,11 +34,13 @@ It now adds a first-class agent lifecycle layer:
 4. Click **Spawn Agent**.
 5. Pick runtime, environment, workspace, role, optional model/profile, and initial instructions.
 6. The agent identity, spawn spec, and session backing appear automatically.
-7. Talk to it in direct chat or channels, assign work through messages, inspect output, stop/restart/recover it.
+7. Talk to it in direct chat or channels, assign work through messages, inspect output, stop/restart/recover it, or compact it into a fresh successor.
 
 Manual `comms_register(...)` should become an advanced/debug path, not the normal user workflow.
 
 Normal dashboard chat is live-delivery gated: if a target cannot currently start work, the message is not silently queued for a future run. Fix the agent/session/environment state, then resend. Required handoffs are repaired automatically when a terminal run finishes without an explicit reply, and the Home page exposes repair/dismiss actions for old issue states.
+
+Compaction in `aify-comms` means creating a fresh managed successor with an editable handoff packet and recent comms context. It is portable across Claude Code, Codex, and OpenCode, and the original agent is left intact until a manager stops it after the successor is verified.
 
 ## Current State
 

@@ -209,7 +209,7 @@ Manual/resident identities may expose **Edit** and **Adopt env** when at least o
 
 ## Continue From Session Flow
 
-Button: **Continue from this session**
+Button: **Compact / continue**
 
 Use when:
 

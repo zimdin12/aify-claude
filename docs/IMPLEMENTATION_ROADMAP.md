@@ -202,7 +202,7 @@ Bridge:
 
 Dashboard:
 
-- add **Continue from this session** action
+- add **Compact / continue** action
 - show compaction packet review/edit screen
 - allow target environment/runtime/workspace/model selection
 - show warnings for runtime/environment switches

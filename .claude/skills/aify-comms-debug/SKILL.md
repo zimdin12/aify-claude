@@ -144,11 +144,11 @@ Get-CimInstance Win32_Process |
 
 Then restart the Windows `aify-comms` bridge and recover/restart the dashboard session. Use **Clear resume state** only when you accept losing that native Claude memory.
 
-**Visibility caveat.** Dashboard-managed Claude Code uses headless `claude -p` with `--session-id` for the first turn and `--resume` after the native transcript exists. A healthy managed backing may not appear in the `claude-aify` picker. Use dashboard **Copy CLI resume** to open it by ID (`claude-aify --resume <session-id>`) after the backing has recorded a resume ID.
+**Visibility caveat.** Dashboard-managed Claude Code uses headless `claude -p` with `--session-id` for the first turn and `--resume` after the native transcript exists. A healthy managed backing may not appear in the `claude-aify` picker. Use the dashboard's copyable CLI resume command to open it by ID (`claude-aify --resume <session-id>`) after the backing has recorded a resume ID.
 
 If you want the resumed CLI to match managed-agent permissions, use `--dangerously-skip-permissions`. Do not use `--permanently-skip-permissions`; Claude Code rejects it as an unknown option.
 
-Use dashboard **Take over in CLI** before opening a managed Claude session directly. It sets the agent to a paused/disabled dashboard state so new dashboard chat sends fail fast instead of trying to write into a Claude session already owned by your terminal. Use **Recover** or **Restart** from Sessions after closing the CLI if you want dashboard control back.
+Use dashboard **Pause for CLI** before opening a managed Claude session directly. It sets the agent to a paused/disabled dashboard state so new dashboard chat sends fail fast instead of trying to write into a Claude session already owned by your terminal. Use **Recover** or **Restart** from Sessions after closing the CLI if you want dashboard control back.
 
 After opening the native CLI, re-register from that same session with the same `agentId`. That is how the dashboard learns the current native handle. If the agent forgets CLI conversation after returning to dashboard, check whether the session's stored handle changed or was cleared during adopt/restart. Current code should preserve handles across same-runtime adopt/recover/restart; a new handle should only appear after a new spawn or explicit **Clear resume state**.
 

@@ -200,8 +200,8 @@ Examples:
 Dashboard rule:
 
 - Show **Open in CLI** only when `cliAttach=true`.
-- Show **Copy CLI resume** when a runtime handle is known but attach is not guaranteed. This is a takeover/resume command, not proof that the dashboard and human CLI can safely write the same session concurrently.
-- Prefer **Take over in CLI** before opening the native CLI. It pauses dashboard delivery for that agent so normal chat sends fail fast instead of racing the open CLI and producing runtime lock errors. Use **Recover** or **Restart** when returning control to the dashboard.
+- Show the CLI resume command as a copyable code block when a runtime handle is known but attach is not guaranteed. This is a takeover/resume command, not proof that the dashboard and human CLI can safely write the same session concurrently.
+- Prefer **Pause for CLI** before opening the native CLI. It pauses dashboard delivery for that agent so normal chat sends fail fast instead of racing the open CLI and producing runtime lock errors. Use **Recover** or **Restart** when returning control to the dashboard.
 - After the native CLI opens, re-register from that same CLI session. This updates the dashboard's stored handle so returning to dashboard control can resume the conversation instead of starting from a blank backing.
 - Show **View transcript/logs** for all persistent sessions.
 - If the bridge owns an active managed session, attaching a human CLI must either pause bridge ownership or use explicit shared-session locking to avoid races.
@@ -280,7 +280,7 @@ The packet should be human-readable and editable before launch. It is not just a
 
 ## Compaction Flow
 
-1. User clicks **Continue from this session**.
+1. User clicks **Compact / continue**.
 2. Dashboard asks the source session/agent to produce a compaction packet, or generates one from transcript/logs if the source is offline.
 3. User chooses target runtime, bridge/environment, workspace, model/profile, and whether to keep the same agent identity.
 4. Dashboard shows the generated compaction packet for review/edit.

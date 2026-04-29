@@ -80,6 +80,7 @@ The dashboard should feel like a real work console, not a raw admin table:
 - Team should focus on active managed agents and keep manual/resident identities sorted and clearly separated.
 - Environments should show only real connected spawn targets, with stop/forget controls.
 - Sessions and Runs should expose lifecycle details without duplicating Chat as a second messaging UI.
+- Compact / continue should be presented as a fresh managed successor with a handoff packet, not as native in-place Claude/Codex compaction.
 - Analytics should show useful time-based views, not dense tables of counters.
 
 Keep advanced IDs, JSON, logs, and rarely used compatibility details in inspectors/drawers or Help, not in the primary flow.
@@ -91,4 +92,4 @@ Keep only two skills unless the workflow clearly demands another:
 - `aify-comms`: normal operating guide
 - `aify-comms-debug`: failure recovery and known issues
 
-Do not teach agents to use silent/inbox-only paths as the default. New persistent teammates should be created through `comms_spawn` or dashboard Environment spawn, not ad hoc one-off launch paths.
+Do not teach agents to use silent/inbox-only paths as the default. New persistent teammates should be created through `comms_spawn` or dashboard Environment spawn, not ad hoc one-off launch paths. Phase-change compaction should use dashboard **Compact / continue** or `comms_compact`, which creates a successor and leaves the original available until it is explicitly stopped.

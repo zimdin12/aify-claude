@@ -43,13 +43,14 @@ Dashboard **Environments -> Spawn Agent** and `comms_spawn` are the same product
 
 Managed runtime policy:
 - Dashboard-managed agents are unattended automation. Managed Codex uses the non-interactive approval policy and writable workspace sandbox configured by the bridge. Managed Claude Code adds `--dangerously-skip-permissions` by default so it can call installed MCP tools such as `comms_inbox` without a human approval prompt.
-- Dashboard-managed Claude Code is headless (`claude -p --session-id ...`). It may not appear in the `claude-aify` picker, but it can be opened by ID with the dashboard's **Copy CLI resume** command once a resume ID is recorded.
+- Dashboard-managed Claude Code is headless (`claude -p --session-id ...` for the first turn, then `--resume ...`). It may not appear in the `claude-aify` picker, but it can be opened by ID with the dashboard's copyable CLI resume command once a resume ID is recorded.
 - Claude Code's skip-permissions CLI flag is `--dangerously-skip-permissions`; `--permanently-skip-permissions` is not a valid Claude Code option.
 - Dashboard-managed Codex uses a managed `CODEX_HOME`; use the dashboard's generated resume command so `codex resume --include-non-interactive <thread-id>` reads the correct thread store.
-- Use dashboard **Take over in CLI** before opening a managed session directly. It pauses dashboard delivery so normal chat sends fail fast instead of racing the open CLI and hitting `Session ID ... is already in use`. Re-register from the opened CLI with the same `agentId` so the dashboard stores the current Claude session ID, Codex thread ID, or OpenCode session ID. `claude-aify --resume <id>` exports `CLAUDE_SESSION_ID=<id>` for the MCP process; Codex should still register with `$CODEX_THREAD_ID` and `$AIFY_CODEX_APP_SERVER_URL` when available. Use **Recover** or **Restart** from Sessions when you want dashboard control back.
+- Use dashboard **Pause for CLI** before opening a managed session directly. It pauses dashboard delivery so normal chat sends fail fast instead of racing the open CLI and hitting `Session ID ... is already in use`. Re-register from the opened CLI with the same `agentId` so the dashboard stores the current Claude session ID, Codex thread ID, or OpenCode session ID. `claude-aify --resume <id>` exports `CLAUDE_SESSION_ID=<id>` for the MCP process; Codex should still register with `$CODEX_THREAD_ID` and `$AIFY_CODEX_APP_SERVER_URL` when available. Use **Recover** or **Restart** from Sessions when you want dashboard control back.
 - Fresh native handles should come from a new spawn or explicit **Clear resume state**. Ordinary adopt/recover/restart should preserve the stored handle when the runtime is unchanged; if it cannot, treat that as a recoverable problem instead of accepting context loss silently.
 - Resident sessions keep the permission mode of the CLI the user started. If a resident Claude session says comms tools need approval, restart it with the desired Claude permission flags or use a dashboard-managed session for unattended work.
 - Every delivered managed message includes the recipient's own `agentId`; use that exact ID for `comms_inbox(agentId="...")` when asked to check recent messages between you and the sender.
+- Dashboard **Compact / continue** is the current aify-comms compaction path. It creates a fresh managed session from an editable handoff packet using recent comms messages/channel context. It is portable across runtimes, but it is not native in-place Claude `/compact` or a Codex internal compaction command.
 
 Environment bridge model:
 - Starting a newer `aify-comms` bridge for the same environment makes the newer bridge current and queues a stop for the older bridge. If the old process is hung and no longer polling, it may need manual OS cleanup, but it should not own spawn claims.
@@ -102,14 +103,15 @@ Gotchas regardless of runtime:
 - `agentId` must be unique per session. Re-registering the same ID supersedes the previous bridge for that agent on that machine.
 - One session per tab; don't register the same agent from two tabs — the old one is replaced.
 
-## Tools (26)
+## Tools (27)
 
-### Identity And Lifecycle (6)
+### Identity And Lifecycle (7)
 | Tool | Use |
 |------|-----|
 | `comms_register` | Register the exact live session you currently have open. |
 | `comms_envs` | List connected environment bridges, supported runtimes, and workspace roots. |
 | `comms_spawn` | Create a persistent dashboard-managed agent session in a chosen environment/workspace/runtime. |
+| `comms_compact` | Create a fresh managed successor from an existing managed agent using a compact handoff packet. Leaves the original intact. |
 | `comms_agents` | List all agents, their status, and unread counts. |
 | `comms_status` | Set a short focus/availability note: `comms_status(status="working", note="NRD pipeline")`. Report completion with a reply message instead. |
 | `comms_describe` | Set your team-facing description: who you are, project, focus areas. Visible in `comms_agents`. Persists across re-register. |

@@ -2,8 +2,8 @@
 //
 // aify-comms-mcp -- MCP server for inter-agent communication between coding-agent runtimes.
 //
-// 26 tools (all prefixed "comms_"):
-//   comms_register, comms_envs, comms_spawn, comms_agents, comms_status, comms_describe, comms_send, comms_dispatch, comms_inbox, comms_search,
+// 27 tools (all prefixed "comms_"):
+//   comms_register, comms_envs, comms_spawn, comms_compact, comms_agents, comms_status, comms_describe, comms_send, comms_dispatch, comms_inbox, comms_search,
 //   comms_share, comms_read, comms_files,
 //   comms_channel_create, comms_channel_join, comms_channel_send, comms_channel_read, comms_channel_list,
 //   comms_agent_info, comms_listen, comms_unsend, comms_run_status, comms_run_interrupt,
@@ -1560,6 +1560,80 @@ function summarizeEnvironment(env) {
   return `- ${env.id} [${env.status || "unknown"}] ${env.label || ""}\n  ${env.os || "unknown"}/${env.kind || "unknown"}; runtimes: ${runtimes}; roots: ${roots}`;
 }
 
+function pickCompactSession(sessions = []) {
+  const scores = {
+    running: 100,
+    starting: 90,
+    recovering: 85,
+    restarting: 80,
+    "cli-takeover": 60,
+    stopped: 40,
+    lost: 25,
+    failed: 20,
+    ended: 5,
+  };
+  return [...sessions].sort((a, b) => {
+    const aScore = scores[String(a.status || "").toLowerCase()] || 0;
+    const bScore = scores[String(b.status || "").toLowerCase()] || 0;
+    if (aScore !== bScore) return bScore - aScore;
+    return (Date.parse(b.lastSeen || b.startedAt || "") || 0) - (Date.parse(a.lastSeen || a.startedAt || "") || 0);
+  })[0] || null;
+}
+
+function compactSuccessorId(targetAgentId, agents = {}) {
+  const base = `${targetAgentId}-next`.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 96);
+  if (!agents[base]) return base;
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 12);
+  return `${base}-${stamp}`.slice(0, 128);
+}
+
+function messageContextForCompact(messages = [], targetAgentId, count = 24) {
+  return messages
+    .filter((message) => {
+      if (message.source === "channel") return message.from === targetAgentId;
+      return message.from === targetAgentId || message.to === targetAgentId;
+    })
+    .sort((a, b) => (Date.parse(b.timestamp || "") || 0) - (Date.parse(a.timestamp || "") || 0))
+    .slice(0, Math.max(0, Number(count || 0)))
+    .reverse()
+    .map((message) => ({
+      timestamp: message.timestamp || "",
+      route: message.source === "channel"
+        ? `${message.from || ""} -> #${message.channel || ""}`
+        : `${message.from || ""} -> ${message.to || ""}`,
+      subject: message.subject || (message.channel ? `#${message.channel}` : ""),
+      preview: message.preview || message.body || "",
+    }));
+}
+
+function compactPacket({ from, targetAgentId, sourceSession, successorId, messages, instructions }) {
+  const messageBlock = messages.length
+    ? messages.map((message, index) =>
+        `${index + 1}. [${message.timestamp || "unknown time"}] ${message.route}\nSubject: ${message.subject || "(none)"}\n${message.preview || ""}`
+      ).join("\n\n")
+    : "No recent message context selected.";
+  return `Compact / continue from previous managed session
+Requested by: ${from}
+Source agent: ${targetAgentId}
+Source session: ${sourceSession.id || ""}
+Successor agent: ${successorId}
+Runtime: ${sourceSession.runtime || ""}
+Environment: ${sourceSession.environmentId || ""}
+Workspace: ${sourceSession.workspace || ""}
+
+Operator instructions:
+${instructions || "Continue the same work unless the manager gives a narrower phase brief."}
+
+Recent message context:
+${messageBlock}
+
+Current state:
+
+Open tasks:
+
+Next action:`;
+}
+
 server.tool(
   "comms_envs",
   "List connected environment bridges. Use this before spawning persistent managed agents so you can choose the right host, runtime, and workspace root.",
@@ -1640,6 +1714,95 @@ server.tool(
         text:
           `Queued persistent agent "${agentId}" in ${env.id} (${resolvedRuntime}, ${selectedWorkspace || "default workspace"}). ` +
           `Spawn request: ${req.id || "unknown"} [${req.status || "queued"}].`,
+      }],
+    };
+  }
+);
+
+server.tool(
+  "comms_compact",
+  "Create a fresh persistent managed successor from an existing managed agent/session using a portable handoff packet. This is the agent-callable version of dashboard Compact / continue; it does not stop or delete the original agent.",
+  {
+    from: z.string().describe("Manager/coordinator agent requesting the compact"),
+    targetAgentId: z.string().describe("Existing managed agent to compact/continue from"),
+    newAgentId: z.string().optional().describe("Successor agent ID. Defaults to target-next, with a timestamp if needed."),
+    role: z.string().optional().describe("Successor role. Defaults to the target agent role or coder."),
+    environmentId: z.string().optional().describe("Target environment. Defaults to the source session environment."),
+    runtime: z.string().optional().describe("Target runtime. Defaults to the source session runtime."),
+    workspace: z.string().optional().describe("Target workspace. Defaults to the source session workspace."),
+    instructions: z.string().optional().describe("Phase brief or compaction instructions for the successor."),
+    recentMessages: z.number().int().min(0).max(80).optional().describe("Recent comms messages to include in the handoff packet. Default 24."),
+    priority: z.enum(["normal", "high", "urgent"]).optional().describe("Priority for the successor initial brief"),
+  },
+  async ({ from, targetAgentId, newAgentId, role, environmentId, runtime, workspace, instructions, recentMessages, priority }) => {
+    if (!IS_REMOTE) {
+      return { content: [{ type: "text", text: "Managed compaction requires remote server mode. Start aify-comms against the dashboard service first." }], isError: true };
+    }
+    try {
+      validateName(from, "from agent ID");
+      validateName(targetAgentId, "target agent ID");
+    } catch (e) {
+      return { content: [{ type: "text", text: e.message }], isError: true };
+    }
+
+    const agents = (await httpCall("GET", "/agents")).agents || {};
+    const targetInfo = agents[targetAgentId] || {};
+    const successorId = newAgentId || compactSuccessorId(targetAgentId, agents);
+    try { validateName(successorId, "successor agent ID"); } catch (e) { return { content: [{ type: "text", text: e.message }], isError: true }; }
+
+    const sessionsRes = await httpCall("GET", `/sessions?agentId=${encodeURIComponent(targetAgentId)}&limit=100`);
+    const sourceSession = pickCompactSession(sessionsRes.sessions || []);
+    if (!sourceSession) {
+      return {
+        content: [{
+          type: "text",
+          text: `No managed session record found for "${targetAgentId}". Compact / continue needs a dashboard-managed backing session. Use comms_spawn first or adopt the identity into an environment from the dashboard.`,
+        }],
+        isError: true,
+      };
+    }
+
+    const count = Math.max(0, Math.min(80, Number(recentMessages ?? 24)));
+    const recentLimit = Math.min(250, Math.max(80, count * 4 || 80));
+    const recentRes = await httpCall("GET", `/messages/recent?limit=${recentLimit}`);
+    const contextMessages = messageContextForCompact(recentRes.messages || [], targetAgentId, count);
+    const packet = compactPacket({
+      from,
+      targetAgentId,
+      sourceSession,
+      successorId,
+      messages: contextMessages,
+      instructions,
+    });
+
+    const resolvedRuntime = normalizeRuntime(runtime || sourceSession.runtime || targetInfo.runtime || "generic");
+    const r = await httpCall("POST", "/spawn-requests", {
+      createdBy: from,
+      environmentId: environmentId || sourceSession.environmentId,
+      agentId: successorId,
+      role: role || targetInfo.role || "coder",
+      name: successorId,
+      runtime: resolvedRuntime,
+      workspace: workspace || sourceSession.workspace || targetInfo.cwd || "",
+      initialMessage: packet,
+      subject: `Compact / continue from ${targetAgentId}`,
+      priority: priority || "normal",
+      mode: "managed-warm",
+      resumePolicy: "fresh_context",
+      metadata: {
+        compactedFromAgentId: targetAgentId,
+        compactedFromSessionId: sourceSession.id || "",
+        compactedBy: from,
+        contextMessageCount: contextMessages.length,
+      },
+    });
+    const req = r.spawnRequest || {};
+    return {
+      content: [{
+        type: "text",
+        text:
+          `Queued compact successor "${successorId}" from "${targetAgentId}" with ${contextMessages.length} recent message(s). ` +
+          `Spawn request: ${req.id || "unknown"} [${req.status || "queued"}]. The original agent was left intact; stop it separately when the successor is verified.`,
       }],
     };
   }

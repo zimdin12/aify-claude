@@ -88,6 +88,15 @@ tr:hover{background:#19212a}
 .clip-1{white-space:nowrap;text-overflow:ellipsis}
 .clip-2{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;word-break:break-word;line-height:1.35;max-height:calc(1.35em * 2)}
 .agents-grid td,.runs-grid td{overflow:hidden}
+.spawn-queue-grid{table-layout:fixed}
+.spawn-queue-grid th:nth-child(1),.spawn-queue-grid td:nth-child(1){width:122px}
+.spawn-queue-grid th:nth-child(2),.spawn-queue-grid td:nth-child(2){width:15%}
+.spawn-queue-grid th:nth-child(3),.spawn-queue-grid td:nth-child(3){width:19%}
+.spawn-queue-grid th:nth-child(4),.spawn-queue-grid td:nth-child(4){width:86px}
+.spawn-queue-grid th:nth-child(5),.spawn-queue-grid td:nth-child(5){width:112px}
+.spawn-queue-grid th:nth-child(6),.spawn-queue-grid td:nth-child(6){width:21%}
+.spawn-queue-grid th:nth-child(7),.spawn-queue-grid td:nth-child(7){width:auto}
+.spawn-queue-grid td{overflow:hidden}
 .status-cell{display:flex;align-items:center;gap:6px;min-width:0}
 .status-text,.dispatch-text,.runtime-text,.session-text,.wake-text,.run-route,.run-mode,.run-runtime,.run-summary{display:block;width:100%;min-width:0;overflow:hidden}
 .status-text,.dispatch-text,.runtime-text,.session-text,.wake-text,.run-route,.run-mode,.run-runtime{white-space:nowrap;text-overflow:ellipsis}
@@ -126,7 +135,7 @@ tr:hover{background:#19212a}
 .btn[disabled]{opacity:.45;cursor:not-allowed}
 .btn[disabled]:hover{background:#21262d}
 .btn-sm{padding:3px 8px;font-size:.78em}
-.btn-row{display:flex;gap:8px;margin:12px 0}
+.btn-row{display:flex;gap:8px;margin:12px 0;flex-wrap:wrap;min-width:0}
 .home-actions{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px}
 .insight-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:0 0 16px}
 .insight-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;box-shadow:0 8px 24px #00000018;min-width:0}
@@ -275,6 +284,11 @@ tr:hover{background:#19212a}
 .session-helper summary{cursor:pointer;color:var(--blue);font-size:.78em;font-weight:700;list-style:none}
 .session-helper summary::-webkit-details-marker{display:none}
 .session-helper pre{margin-top:7px;background:#080c10;border:1px solid var(--line-soft);border-radius:8px;padding:9px 10px;color:var(--text);font-size:.78em;white-space:pre-wrap;word-break:break-word}
+.cli-command-card{margin-top:10px;min-width:0}
+.cli-command-label{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-size:.76em;font-weight:800;text-transform:uppercase;letter-spacing:.45px;margin-bottom:6px}
+.copy-code{display:block;width:100%;max-width:100%;min-width:0;background:#080c10;border:1px solid var(--line-soft);border-radius:10px;padding:9px 10px;color:var(--text);font-size:.78em;line-height:1.38;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;cursor:pointer;overflow:hidden}
+.copy-code:hover{border-color:#42505b;background:#0c1116}
+.copy-hint{color:var(--subtle);font-size:.72em;text-transform:none;letter-spacing:0;font-weight:700}
 .modal-form{display:grid;gap:10px}
 .modal-form label{display:grid;gap:5px;color:var(--muted);font-size:.82em}
 .modal-form input,.modal-form select,.modal-form textarea{background:#0a0f15;border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:7px;font:inherit;font-size:.9em}
@@ -349,9 +363,15 @@ tr:hover{background:#19212a}
 .chat-view-label{color:var(--muted);font-size:.78em;text-transform:uppercase;letter-spacing:.4px}
 .chat-composer textarea{width:100%;height:92px;resize:vertical;background:#0a0f15;border:1px solid var(--line);color:var(--text);border-radius:7px;padding:10px;font:inherit;font-size:.92em;line-height:1.4}
 .chat-composer textarea:focus,.chat-compose-row input:focus,.chat-compose-row select:focus,.chat-rail-head input:focus{outline:none;border-color:var(--blue)}
-.chat-inspector{padding:12px;overflow:auto}
+.chat-inspector{padding:12px;overflow:auto;overflow-x:hidden;min-width:0}
 .chat-inspector h3{margin-top:0}.chat-kv{display:grid;grid-template-columns:82px minmax(0,1fr);gap:7px 8px;font-size:.82em;margin-top:10px}
-.chat-kv dt{color:var(--muted)}.chat-kv dd{min-width:0}
+.chat-kv dt{color:var(--muted)}.chat-kv dd{min-width:0;max-width:100%;overflow:hidden}
+.chat-inspector .btn-row{display:grid;grid-template-columns:1fr;gap:7px;margin:10px 0}
+.chat-inspector .btn{width:100%;white-space:normal;text-align:left}
+.chat-inspector .mini-row{grid-template-columns:minmax(0,1fr);align-items:start}
+.chat-inspector .mini-row .btn{width:auto;text-align:center}
+.chat-inspector .send-row{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.chat-inspector .send-row select{width:100%;min-width:0}
 .chat-create-channel{display:flex;gap:6px;margin-top:10px}
 .chat-create-channel input{min-width:0;flex:1;background:#0a0f15;border:1px solid var(--line);color:var(--text);padding:7px 9px;border-radius:7px;font-size:.84em}
 @media (max-width:1100px){.chat-shell{grid-template-columns:240px minmax(0,1fr);height:auto}.chat-inspector{display:none}}
@@ -432,6 +452,12 @@ tr:hover{background:#1b1f21}
 .chat-item:hover{background:#1a1e20;border-color:#2c3336}
 .chat-item.active{background:#1d211f;border-color:#3d5049;box-shadow:inset 4px 0 0 var(--teal)}
 .chat-topbar{padding:14px 16px;background:#101214;border-bottom-color:#252a2d;border-radius:16px 16px 0 0}
+.chat-topbar{min-width:0;align-items:flex-start}
+.chat-title{flex:1 1 auto;min-width:0}
+.chat-actions{flex:0 1 auto;min-width:0;justify-content:flex-end}
+.chat-actions .btn{white-space:nowrap}
+.chat-as-label{min-width:0}
+.chat-as-label select{min-width:120px;max-width:190px}
 .chat-title b{font-size:1.05em}
 .chat-timeline{padding:20px;background:linear-gradient(180deg,#121415 0%,#101112 100%)}
 .chat-bubble{border-radius:14px;background:#1b1d1f;border-color:#303538;padding:12px 14px;box-shadow:0 8px 26px #00000024}
@@ -795,7 +821,7 @@ aify-comms</pre>
       <p>Manual <code>comms_register</code> remains useful for human-open resident CLI sessions, but it is not the normal dashboard spawn path. Active triggering works through the local <code>stdio</code> MCP bridge on the target machine. SSE clients can use the shared service but cannot launch local Claude/Codex/OpenCode work themselves.</p>
       <p>Codex CLI note: if you want visible live wakeups instead of background thread resume, start Codex through <code>codex-aify</code> before registering. From that live session, prefer the strongest exact registration first: <code>comms_register(..., runtime="codex", sessionHandle="$CODEX_THREAD_ID", appServerUrl="$AIFY_CODEX_APP_SERVER_URL")</code>. Plain <code>codex</code> still works, but it advertises the older <code>codex-thread-resume</code> fallback.</p>
       <p>Claude CLI note: resident wakeups require starting Claude through the installed <code>claude-aify</code> wrapper so the local aify channel bridge is allowed to load during the current research-preview channels phase. It is only installed when the Claude client was set up with a real shared aify server URL.</p>
-      <p>Managed runtime note: dashboard-spawned agents are unattended automation. Managed Codex runs use non-interactive approval policy with a writable workspace sandbox. Managed Claude Code runs add <code>--dangerously-skip-permissions</code> by default so they can call installed MCP tools such as <code>comms_inbox</code> without a human approval prompt. Managed Claude Code currently runs through headless <code>claude -p</code>, so it may not appear in the <code>claude-aify</code> picker, but Sessions/Chat can copy a native resume command once the runtime has recorded a resume ID. Use <b>Take over in CLI</b> before opening that command if you want dashboard sends to pause instead of colliding with the open CLI, then re-register from the opened CLI so the dashboard stores the current native handle. The Claude flag is <code>--dangerously-skip-permissions</code>; <code>--permanently-skip-permissions</code> is not a Claude Code CLI option. Human-open resident sessions keep the permission mode of the CLI you started.</p>
+      <p>Managed runtime note: dashboard-spawned agents are unattended automation. Managed Codex runs use non-interactive approval policy with a writable workspace sandbox. Managed Claude Code runs add <code>--dangerously-skip-permissions</code> by default so they can call installed MCP tools such as <code>comms_inbox</code> without a human approval prompt. Managed Claude Code currently runs through headless <code>claude -p</code>, so it may not appear in the <code>claude-aify</code> picker, but Sessions/Chat show a native resume command once the runtime has recorded a resume ID. Click that command block to copy it. Use <b>Pause for CLI</b> before opening the command if you want dashboard sends to pause instead of colliding with the open CLI, then re-register from the opened CLI so the dashboard stores the current native handle. The Claude flag is <code>--dangerously-skip-permissions</code>; <code>--permanently-skip-permissions</code> is not a Claude Code CLI option. Human-open resident sessions keep the permission mode of the CLI you started.</p>
       <p><b>Manual vs managed:</b> <code>comms_register</code> binds a live resident CLI session you opened yourself. Those rows are shown as manual CLI bindings, and offline entries are historical identities, not killable processes. Dashboard-spawned managed agents are the normal control-plane path: they have environment, workspace, runtime, spawn spec, session state, and recovery metadata. Normal chat should use <code>comms_send(...)</code> or the Chat page.</p>
         <p><b>Live send:</b> normal messages are not queued for future runs. If the target is offline, stale, stopped, already working, already has queued work, or lacks a live wake path, Send reports the issue and writes no message. Agent-reported blocked state and legacy completed state are status notes, not delivery blockers.</p>
       <p><b>Dashboard composer:</b> <b>Send</b> is the normal teamwork path. It delivers only to currently startable agents and surfaces live delivery failures immediately.</p>
@@ -811,12 +837,12 @@ aify-comms</pre>
       </ul>
 
       <h3>Continue / Compact</h3>
-      <p>Open <b>Sessions</b> and use <b>Continue as</b>. The dashboard opens an editable continuation form with new agent ID, role, environment, runtime, workspace, and a generated packet. The packet includes the last selected number of direct messages involving the source agent plus channel posts authored by it, then queues a fresh managed-warm spawn. This is useful for compaction, but keep the included message count bounded so the new session starts cleanly.</p>
-      <p><b>Recover</b> tries to keep the saved runtime handle. <b>Restart</b> uses the saved spawn spec and carries the saved handle forward when the runtime is unchanged. <b>Take over in CLI</b> pauses dashboard delivery and copies the native resume command for direct project work. Re-register from that CLI session before returning to dashboard control. <b>Clear resume state</b> is the explicit reset: it forgets saved Claude session IDs or Codex thread IDs so the next run starts fresh. The bridge should not silently clear native memory or invent blank replacement sessions on lock errors. If managed Claude reports a session ID is already in use, the Windows bridge tries to release a matching stale headless Claude process and retries once; interactive CLI sessions remain protected.</p>
+      <p>Open <b>Sessions</b> and use <b>Compact / continue</b>. The dashboard opens an editable continuation form with new agent ID, role, environment, runtime, workspace, and a generated packet. The packet includes the last selected number of direct messages involving the source agent plus channel posts authored by it, then queues a fresh managed-warm spawn. This is the current aify-comms compaction path: portable handoff into a new backing session, not native Claude/Codex in-place <code>/compact</code>.</p>
+      <p><b>Recover</b> tries to keep the saved runtime handle. <b>Restart</b> uses the saved spawn spec and carries the saved handle forward when the runtime is unchanged. <b>Pause for CLI</b> pauses dashboard delivery and copies the native resume command for direct project work. Re-register from that CLI session before returning to dashboard control. <b>Clear resume state</b> is the explicit reset: it forgets saved Claude session IDs or Codex thread IDs so the next run starts fresh. The bridge should not silently clear native memory or invent blank replacement sessions on lock errors. If managed Claude reports a session ID is already in use, the Windows bridge tries to release a matching stale headless Claude process and retries once; interactive CLI sessions remain protected.</p>
 
       <h3>Tools</h3>
       <ul>
-        <li><b>Messaging:</b> <code>comms_register</code>, <code>comms_envs</code>, <code>comms_spawn</code>, <code>comms_agents</code>, <code>comms_status</code>, <code>comms_agent_info</code>, <code>comms_send</code> (normal teamwork; live-gated), <code>comms_listen</code> (stdio only), <code>comms_inbox</code>, <code>comms_unsend</code>, <code>comms_search</code></li>
+        <li><b>Messaging:</b> <code>comms_register</code>, <code>comms_envs</code>, <code>comms_spawn</code>, <code>comms_compact</code>, <code>comms_agents</code>, <code>comms_status</code>, <code>comms_agent_info</code>, <code>comms_send</code> (normal teamwork; live-gated), <code>comms_listen</code> (stdio only), <code>comms_inbox</code>, <code>comms_unsend</code>, <code>comms_search</code></li>
         <li><b>Advanced run control:</b> <code>comms_dispatch</code> (debug/strict run tracking), <code>comms_run_status</code>, <code>comms_run_interrupt</code>. Normal users and agents should send messages, not dispatches.</li>
         <li><b>Channels:</b> <code>comms_channel_create</code>, <code>comms_channel_join</code> (+ invite others), <code>comms_channel_send</code> (live-gated), <code>comms_channel_read</code>, <code>comms_channel_list</code>. In the dashboard, channels live inside Chat.</li>
         <li><b>File sharing:</b> <code>comms_share</code> (text + binary), <code>comms_read</code>, <code>comms_files</code></li>
@@ -2074,19 +2100,12 @@ function sessionResumeCommand(session, agentInfo = {}) {
   return '';
 }
 
-function copySessionResumeCommand(sessionId) {
-  const session = (window._sessions || []).find(item => item.id === sessionId);
-  if (!session) {
-    toast('Session not found', '#f85149');
-    return;
-  }
-  const agentInfo = (window._allAgents || []).find(([id]) => id === session.agentId)?.[1] || {};
-  const command = sessionResumeCommand(session, agentInfo);
-  if (!command) {
-    toast('No CLI resume handle recorded yet. Send one message or recover the session first.', '#f85149');
-    return;
-  }
-  copyText(command, 'CLI resume command copied');
+function sessionResumeCommandBlock(command, label = 'CLI resume command') {
+  if (!command) return '';
+  return `<div class="cli-command-card">` +
+    `<div class="cli-command-label"><span>${esc(label)}</span><span class="copy-hint">Click command to copy</span></div>` +
+    `<pre class="copy-code" title="Click to copy this command" onclick="copyText(this.textContent, 'CLI resume command copied')">${esc(command)}</pre>` +
+    `</div>`;
 }
 
 async function takeOverSessionInCli(sessionId) {
@@ -2669,12 +2688,11 @@ function renderChatInspector(meta, messages) {
         `<dt>Records</dt><dd>${sessionCount}${sessionCount > 1 ? ' backing records' : ' backing record'}</dd>` +
         `<dt>Caps</dt><dd class="clip-2"${titleAttr(capLabels.join(', '))}>${esc(capLabels.join(', ') || 'none reported')}</dd>` +
         '</dl>' +
-        (resumeCommand ? `<details class="chat-run-note"><summary>CLI resume command</summary><pre>${esc(resumeCommand)}</pre></details>` : '') +
+        sessionResumeCommandBlock(resumeCommand) +
         '<div class="btn-row">' +
         actionButton('Sessions', 'Open the Sessions page filtered mentally to this agent', "showPage('sessions')") +
-        (resumeCommand ? actionButtonFn('Take over in CLI', 'Pause dashboard delivery for this session and copy the native CLI resume command', () => takeOverSessionInCli(session.id)) : '') +
-        (resumeCommand ? actionButtonFn('Copy CLI resume', 'Copy the native CLI resume command without changing dashboard ownership', () => copySessionResumeCommand(session.id)) : '') +
-        actionButtonFn('Continue as', 'Create a new managed session from this agent context', () => continueSessionAs(session.id)) +
+        (resumeCommand ? actionButtonFn('Pause for CLI', 'Pause dashboard delivery for this session and copy the native CLI resume command', () => takeOverSessionInCli(session.id)) : '') +
+        actionButtonFn('Compact / continue', 'Create a new managed session from an editable compact handoff packet', () => continueSessionAs(session.id)) +
         actionButtonFn('Restart', 'Queue a restart from this session specification', () => controlSession(session.id, 'restart')) +
         `</div>`;
     } else {
@@ -2910,18 +2928,18 @@ function renderSpawnRequests(spawnRequests) {
     return;
   }
   const note = hidden ? `<p class="em">${hidden} successful spawn record(s) hidden. Turn on history to inspect old started sessions.</p>` : '';
-  let html = '<table><thead><tr><th>Created</th><th>Agent</th><th>Environment</th><th>Runtime</th><th>Status</th><th>Workspace</th><th>Bridge / Error</th></tr></thead><tbody>';
+  let html = '<table class="spawn-queue-grid"><thead><tr><th>Created</th><th>Agent</th><th>Environment</th><th>Runtime</th><th>Status</th><th>Workspace</th><th>Bridge / Error</th></tr></thead><tbody>';
   for (const req of visibleRequests) {
     const detail = req.error || req.claimedByBridgeId || '';
     const statusLabel = spawnRequestStatusLabel(req);
     html += `<tr>` +
-      `<td class="t">${esc(req.createdAt || '')}</td>` +
-      `<td><b>${esc(req.agentId || '')}</b><br><span class="t">${esc(req.role || '')}</span></td>` +
+      `<td class="t"><span class="clip-1"${titleAttr(req.createdAt || '')}>${esc(req.createdAt || '')}</span></td>` +
+      `<td><b class="clip-1"${titleAttr(req.agentId || '')}>${esc(req.agentId || '')}</b><br><span class="t clip-1"${titleAttr(req.role || '')}>${esc(req.role || '')}</span></td>` +
       `<td class="t"${titleAttr(req.environmentId || '')}><span class="clip-1">${esc(req.environmentId || '')}</span></td>` +
-      `<td>${esc(req.runtime || '')}</td>` +
-      `<td><span class="st-${esc(req.status || 'queued')}"${titleAttr(statusLabel.title)}>${esc(statusLabel.label)}</span></td>` +
+      `<td><span class="clip-1"${titleAttr(req.runtime || '')}>${esc(req.runtime || '')}</span></td>` +
+      `<td><span class="clip-1 st-${esc(req.status || 'queued')}"${titleAttr(statusLabel.title)}>${esc(statusLabel.label)}</span></td>` +
       `<td class="t"${titleAttr(req.workspace || '')}><span class="clip-1">${esc(req.workspace || '')}</span></td>` +
-      `<td class="t"${titleAttr(detail)}><span class="clip-1">${esc(detail)}</span></td>` +
+      `<td class="t"${titleAttr(detail)}><span class="clip-2">${esc(detail)}</span></td>` +
       `</tr>`;
   }
   html += '</tbody></table>';
@@ -3016,14 +3034,13 @@ function renderSessions(sessions) {
       actionButtonFn('Edit agent', 'Edit the agent identity backed by this session', () => openAgentEditor(session.agentId)),
       activeRun ? actionButtonFn('Interrupt', 'Ask the active run for this session to stop', () => interruptRun(activeRun.id), 'btn-danger') : '',
       spawnControl,
-      resumeCommand ? actionButtonFn('Take over in CLI', 'Pause dashboard delivery for this session and copy the native CLI resume command', () => takeOverSessionInCli(session.id)) : '',
-      resumeCommand ? actionButtonFn('Copy CLI resume', 'Copy the native CLI resume command without changing dashboard ownership', () => copySessionResumeCommand(session.id)) : '',
+      resumeCommand ? actionButtonFn('Pause for CLI', 'Pause dashboard delivery for this session and copy the native CLI resume command', () => takeOverSessionInCli(session.id)) : '',
       actionButtonFn('Clear resume state', 'Forget saved runtime thread/session handles so the next run starts fresh. Messages and identity remain.', () => resetWorkerState(session.agentId)),
-      actionButtonFn('Continue as', 'Create a new managed agent/session from an editable handoff packet', () => continueSessionAs(session.id)),
+      actionButtonFn('Compact / continue', 'Create a new managed agent/session from an editable compact handoff packet', () => continueSessionAs(session.id)),
       canStopSession ? actionButtonFn('Stop', 'Stop this managed session and interrupt/cancel work where supported', () => controlSession(session.id, 'stop'), 'btn-danger') : '',
     ];
     html += `<tr>` +
-      `<td><b>${esc(session.agentId)}</b><br><span class="t clip-1"${titleAttr(session.id)}>${esc(session.id)}</span>${resumeCommand ? `<details class="session-helper"><summary>CLI resume</summary><pre>${esc(resumeCommand)}</pre>${actionButtonFn('Take over', 'Pause dashboard delivery and copy the native CLI resume command', () => takeOverSessionInCli(session.id))}${actionButtonFn('Copy command', 'Copy the native CLI resume command without pausing dashboard ownership', () => copySessionResumeCommand(session.id))}</details>` : ''}</td>` +
+      `<td><b>${esc(session.agentId)}</b><br><span class="t clip-1"${titleAttr(session.id)}>${esc(session.id)}</span>${resumeCommand ? `<details class="session-helper"><summary>CLI resume</summary>${sessionResumeCommandBlock(resumeCommand, 'Resume command')}${actionButtonFn('Pause for CLI', 'Pause dashboard delivery and copy the native CLI resume command', () => takeOverSessionInCli(session.id))}</details>` : ''}</td>` +
       `<td>${esc(session.runtime || '')}<br><span class="t"${titleAttr(runtimeAttachNote(session))}>${esc(modeLabel)}</span></td>` +
       `<td class="t"${titleAttr(session.environmentId || '')}><span class="clip-1">${esc(session.environmentId || '')}</span></td>` +
       `<td class="t"${titleAttr(session.workspace || '')}><span class="clip-1">${esc(session.workspace || '')}</span></td>` +
@@ -3050,7 +3067,7 @@ async function continueSessionAs(sessionId) {
   const packet = continuePacketForSession(session, 24);
   openModal('Continue Session', `
     <div class="modal-section">
-      <p class="worker-note">Create a fresh managed-warm session from this session spec plus an editable message/context packet. Keep the packet short enough for a clean start.</p>
+      <p class="worker-note">Create a fresh managed-warm session from this session spec plus an editable compact handoff packet. This is portable aify-comms compaction, not native in-place Claude/Codex compaction.</p>
       <div class="send-row">
         <div class="form-group"><label>New agent ID</label><input id="cont-agent-id" value="${esc(`${session.agentId}-next`)}"></div>
         <div class="form-group"><label>Role</label><select id="cont-role">
