@@ -91,6 +91,26 @@ install_claude_wrapper() {
   cat > "$wrapper_path" <<EOF
 #!/bin/bash
 set -euo pipefail
+
+CLAUDE_RESUME_ID="\${CLAUDE_SESSION_ID:-}"
+PREV_ARG=""
+for ARG in "\$@"; do
+  if [ "\$PREV_ARG" = "--resume" ] || [ "\$PREV_ARG" = "--session-id" ]; then
+    CLAUDE_RESUME_ID="\$ARG"
+    break
+  fi
+  case "\$ARG" in
+    --resume=*|--session-id=*)
+      CLAUDE_RESUME_ID="\${ARG#*=}"
+      break
+      ;;
+  esac
+  PREV_ARG="\$ARG"
+done
+if [ -n "\$CLAUDE_RESUME_ID" ]; then
+  export CLAUDE_SESSION_ID="\$CLAUDE_RESUME_ID"
+fi
+
 claude --dangerously-load-development-channels server:aify-comms-channel "\$@"
 STATUS=\$?
 exit "\$STATUS"

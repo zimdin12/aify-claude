@@ -170,6 +170,8 @@ Stopping a resident from the dashboard disables wake/dispatch in the control pla
 
 To move an existing resident identity under dashboard-managed control, open **Team -> Manual / Resident CLI Identities**, choose **Edit** or **Actions -> Adopt env**, and assign an online environment, runtime, and workspace. This does not attach the already-open CLI process to an environment. It converts the identity into a managed teammate by creating a spawn spec and a recoverable session record for the selected environment/workspace/runtime. After adoption, close or stop the old resident CLI tab for that same `agentId`, then use **Sessions -> Recover/Restart** to run future work through the environment bridge.
 
+If you are moving a dashboard-managed session into the native CLI temporarily, use **Take over in CLI** first, run the copied resume command, then call `comms_register(...)` from that same CLI with the same `agentId` and runtime handle. `claude-aify --resume <id>` exports `CLAUDE_SESSION_ID=<id>` for the MCP process, so a normal Claude registration can capture it. Codex should register with `$CODEX_THREAD_ID` and `$AIFY_CODEX_APP_SERVER_URL` when available. That registration updates the saved Claude session ID, Codex thread ID, or OpenCode session ID. When you close the CLI and return to the dashboard, **Recover** or **Restart** should reuse that handle. Fresh native handles should come from a new spawn or explicit **Clear resume state**, not from ordinary adopt/recover/restart.
+
 ## Verify
 
 1. Open `http://localhost:8800/api/v1/dashboard`.

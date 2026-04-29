@@ -123,6 +123,8 @@ If you want the resumed CLI to match managed-agent permissions, use `--dangerous
 
 Use dashboard **Take over in CLI** before opening a managed Claude session directly. It sets the agent to a paused/disabled dashboard state so new dashboard chat sends fail fast instead of trying to write into a Claude session already owned by your terminal. Use **Recover** or **Restart** from Sessions after closing the CLI if you want dashboard control back.
 
+After opening the native CLI, re-register from that same session with the same `agentId`. That is how the dashboard learns the current native handle. If the agent forgets CLI conversation after returning to dashboard, check whether the session's stored handle changed or was cleared during adopt/restart. Current code should preserve handles across same-runtime adopt/recover/restart; a new handle should only appear after a new spawn or explicit **Clear resume state**.
+
 **Resident caveat.** Resident Claude sessions are not silently swapped, because their session ID is the visible CLI binding. If a resident session hits this, close the duplicate Claude tab/process, restart with `claude-aify`, and re-register from the live session.
 
 ## Machine ID shows `win32:unknown-host`

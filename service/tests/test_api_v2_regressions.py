@@ -502,16 +502,18 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(assigned.status_code, 200, assigned.text)
         self.assertEqual(assigned.json()["environmentId"], "linux:new-host:default")
 
-        agent = self._fetchone("SELECT cwd, launch_mode, session_mode, status FROM agents WHERE id = ?", ("move-me",))
-        session = self._fetchone("SELECT environment_id, workspace, status FROM agent_sessions WHERE agent_id = ?", ("move-me",))
+        agent = self._fetchone("SELECT cwd, launch_mode, session_mode, session_handle, status FROM agents WHERE id = ?", ("move-me",))
+        session = self._fetchone("SELECT environment_id, workspace, status, session_handle FROM agent_sessions WHERE agent_id = ?", ("move-me",))
         spec = self._fetchone("SELECT environment_id, workspace FROM spawn_specs WHERE agent_id = ?", ("move-me",))
         self.assertEqual(agent["cwd"], "/newroot/project")
         self.assertEqual(agent["launch_mode"], "none")
         self.assertEqual(agent["session_mode"], "managed")
+        self.assertEqual(agent["session_handle"], "thread-1")
         self.assertEqual(agent["status"], "offline")
         self.assertEqual(session["environment_id"], "linux:new-host:default")
         self.assertEqual(session["workspace"], "/newroot/project")
         self.assertEqual(session["status"], "lost")
+        self.assertEqual(session["session_handle"], "thread-1")
         self.assertEqual(spec["environment_id"], "linux:new-host:default")
         self.assertEqual(spec["workspace"], "/newroot/project")
 
@@ -534,20 +536,33 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(assigned.status_code, 200, assigned.text)
 
         agent = self._fetchone("SELECT cwd, launch_mode, session_mode, session_handle, status FROM agents WHERE id = ?", ("resident-manager",))
-        session = self._fetchone("SELECT environment_id, runtime, workspace, status, spawn_spec_id FROM agent_sessions WHERE agent_id = ?", ("resident-manager",))
+        session = self._fetchone("SELECT id, environment_id, runtime, workspace, status, session_handle, spawn_spec_id FROM agent_sessions WHERE agent_id = ?", ("resident-manager",))
         spec = self._fetchone("SELECT environment_id, runtime, workspace FROM spawn_specs WHERE agent_id = ?", ("resident-manager",))
         self.assertEqual(agent["session_mode"], "managed")
         self.assertEqual(agent["launch_mode"], "none")
-        self.assertEqual(agent["session_handle"], "")
+        self.assertEqual(agent["session_handle"], "thread-old")
         self.assertEqual(agent["status"], "offline")
         self.assertIsNotNone(session)
         self.assertEqual(session["environment_id"], "linux:new-host:default")
         self.assertEqual(session["runtime"], "codex")
         self.assertEqual(session["workspace"], "/newroot/project")
+        self.assertEqual(session["session_handle"], "thread-old")
         self.assertEqual(session["status"], "stopped")
         self.assertTrue(session["spawn_spec_id"])
         self.assertEqual(spec["environment_id"], "linux:new-host:default")
         self.assertEqual(spec["workspace"], "/newroot/project")
+
+        restarted = self.client.post(
+            f"/api/v1/sessions/{session['id']}/control",
+            json={"action": "restart", "from_agent": "dashboard", "subject": "restart resident-manager"},
+        )
+        self.assertEqual(restarted.status_code, 200, restarted.text)
+        spawn_request = self._fetchone(
+            "SELECT resume_policy, session_handle FROM spawn_requests WHERE id = ?",
+            (restarted.json()["spawnRequest"]["id"],),
+        )
+        self.assertEqual(spawn_request["resume_policy"], "native_first")
+        self.assertEqual(spawn_request["session_handle"], "thread-old")
 
     def test_rename_agent_identity_cascades_history_and_blocks_stale_old_id(self):
         self._heartbeat_environment(cwdRoots=["/workspace"])
@@ -1233,6 +1248,17 @@ class ApiV2RegressionTests(unittest.TestCase):
         sent_payload = sent.json()
         self.assertFalse(sent_payload["ok"])
         self.assertIn("agent status is", sent_payload["notStarted"][0]["reason"])
+
+        self._register(
+            "takeover-coder",
+            runtime="codex",
+            cwd="/workspace/repo",
+            sessionMode="resident",
+            sessionHandle="thread-from-cli",
+            launchMode="codex-live",
+        )
+        session = self._fetchone("SELECT session_handle FROM agent_sessions WHERE id = ?", (session_id,))
+        self.assertEqual(session["session_handle"], "thread-from-cli")
 
     def test_list_sessions_repairs_superseded_recovering_rows(self):
         self._heartbeat_environment()

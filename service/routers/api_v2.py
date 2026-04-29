@@ -139,6 +139,27 @@ def _normalize_runtime(runtime: Any) -> str:
     return _RUNTIME_ALIASES.get(key, key or "generic")
 
 
+def _runtime_handle_from_state(runtime: Any, runtime_state: Any) -> str:
+    state = runtime_state if isinstance(runtime_state, dict) else _json_loads_or(runtime_state, {})
+    normalized = _normalize_runtime(runtime)
+    if normalized == "codex":
+        return str(state.get("threadId") or state.get("sessionId") or "").strip()
+    return str(state.get("sessionId") or state.get("threadId") or "").strip()
+
+
+def _runtime_state_with_handle(runtime: Any, runtime_state: Any, session_handle: str) -> dict[str, Any]:
+    state = runtime_state if isinstance(runtime_state, dict) else _json_loads_or(runtime_state, {})
+    result = dict(state or {})
+    handle = str(session_handle or "").strip()
+    if not handle:
+        return result
+    if _normalize_runtime(runtime) == "codex":
+        result["threadId"] = handle
+    else:
+        result["sessionId"] = handle
+    return result
+
+
 def _machine_family(machine_id: Any) -> str:
     return str(machine_id or "").strip().split(":", 1)[0].lower()
 
@@ -2724,7 +2745,10 @@ async def update_spawn_request(spawn_request_id: str, req: SpawnRequestUpdate, r
 
         if status_value == "running":
             session_id = session_id or f"sess_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
-            agent_capabilities = _default_capabilities_for(row["runtime"], "managed", req.sessionHandle or "")
+            effective_session_handle = req.sessionHandle or row["session_handle"] or ""
+            if effective_session_handle:
+                runtime_state = _runtime_state_with_handle(row["runtime"], runtime_state, effective_session_handle)
+            agent_capabilities = _default_capabilities_for(row["runtime"], "managed", effective_session_handle)
             await db.execute(
                 """
                 INSERT INTO agents (
@@ -2764,7 +2788,7 @@ async def update_spawn_request(spawn_request_id: str, req: SpawnRequestUpdate, r
                     row["claim_machine_id"] or "",
                     "managed",
                     "managed",
-                    req.sessionHandle or "",
+                    effective_session_handle,
                     row["created_by"] or "dashboard",
                     json.dumps(agent_capabilities),
                     "{}",
@@ -2807,7 +2831,7 @@ async def update_spawn_request(spawn_request_id: str, req: SpawnRequestUpdate, r
                     row["workspace"] or "",
                     row["mode"] or "managed-warm",
                     req.processId or "",
-                    req.sessionHandle or "",
+                    effective_session_handle,
                     "",
                     row["spawn_spec_id"],
                     row["id"],
@@ -2982,8 +3006,8 @@ async def control_session(session_id: str, req: SessionControlRequest, request: 
                 INSERT INTO spawn_requests (
                     id, spawn_spec_id, created_by, environment_id, agent_id, role, name, runtime,
                     workspace, workspace_root, initial_message, priority, subject, mode,
-                    resume_policy, status, created_at, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    resume_policy, status, session_handle, created_at, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     request_id,
@@ -3000,8 +3024,9 @@ async def control_session(session_id: str, req: SessionControlRequest, request: 
                     req.priority or "normal",
                     req.subject or f"{action.title()} {agent_id}",
                     spawn_spec_row["mode"] or session["mode"] or "managed-warm",
-                    "native_first" if action in {"recover", "resume"} else "fresh",
+                    "native_first",
                     "queued",
+                    session["session_handle"] or "",
                     now,
                     now,
                 ),
@@ -3186,11 +3211,30 @@ async def register_agent(req: AgentRegister, request: Request):
         bridge_id = (req.bridgeId or "").strip()
         await db.execute(
             """
-            INSERT OR REPLACE INTO agents (
+            INSERT INTO agents (
                 id, role, name, cwd, model, description, instructions, status, status_note, runtime, machine_id,
                 launch_mode, session_mode, session_handle, managed_by, capabilities,
                 runtime_config, runtime_state, registered_at, last_seen
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET
+                role = excluded.role,
+                name = excluded.name,
+                cwd = excluded.cwd,
+                model = excluded.model,
+                description = excluded.description,
+                instructions = excluded.instructions,
+                status = excluded.status,
+                status_note = excluded.status_note,
+                runtime = excluded.runtime,
+                machine_id = excluded.machine_id,
+                launch_mode = excluded.launch_mode,
+                session_mode = excluded.session_mode,
+                session_handle = excluded.session_handle,
+                managed_by = excluded.managed_by,
+                capabilities = excluded.capabilities,
+                runtime_config = excluded.runtime_config,
+                runtime_state = excluded.runtime_state,
+                last_seen = excluded.last_seen
             """,
             (
                 req.agentId, req.role, req.name or req.agentId, resolved_cwd, req.model or "",
@@ -3203,6 +3247,45 @@ async def register_agent(req: AgentRegister, request: Request):
                 existing_state, row["registered_at"] if row and row["registered_at"] else now, now
             )
         )
+        if session_handle:
+            app_server_url = ""
+            if isinstance(runtime_config, dict):
+                app_server_url = str(runtime_config.get("appServerUrl") or "").strip()
+            session_runtime_state = _runtime_state_with_handle(normalized_runtime, {}, session_handle)
+            await db.execute(
+                """
+                UPDATE agent_sessions
+                SET session_handle = ?,
+                    app_server_url = CASE WHEN ? != '' THEN ? ELSE app_server_url END,
+                    last_seen = ?,
+                    capabilities = CASE
+                        WHEN COALESCE(NULLIF(capabilities, ''), '{}') = '{}' THEN ?
+                        ELSE capabilities
+                    END,
+                    telemetry = CASE
+                        WHEN COALESCE(NULLIF(telemetry, ''), '{}') = '{}' THEN ?
+                        ELSE telemetry
+                    END
+                WHERE id = (
+                    SELECT id
+                    FROM agent_sessions
+                    WHERE agent_id = ?
+                      AND runtime = ?
+                    ORDER BY last_seen DESC
+                    LIMIT 1
+                )
+                """,
+                (
+                    session_handle,
+                    app_server_url,
+                    app_server_url,
+                    now,
+                    json.dumps({"persistent": True, "nativeResume": True, "bridgeResume": True, "cliAttach": True}),
+                    json.dumps({"registeredHandle": session_runtime_state}),
+                    req.agentId,
+                    normalized_runtime,
+                ),
+            )
         if bridge_id:
             await db.execute(
                 """
@@ -3393,6 +3476,26 @@ async def assign_agent_environment(agent_id: str, req: AgentEnvironmentAssignReq
             raise HTTPException(400, f'Environment "{environment_id}" does not advertise runtime "{runtime}"')
         workspace, workspace_root = _workspace_for_environment(environment, req.workspace, agent["cwd"] or "")
         now = _now()
+        previous_runtime = _normalize_runtime(agent["runtime"] or runtime)
+        latest_session = await (await db.execute(
+            """
+            SELECT *
+            FROM agent_sessions
+            WHERE agent_id = ?
+            ORDER BY
+                CASE WHEN COALESCE(NULLIF(session_handle, ''), '') != '' THEN 0 ELSE 1 END,
+                last_seen DESC
+            LIMIT 1
+            """,
+            (agent_id,),
+        )).fetchone()
+        latest_session_handle = str((latest_session["session_handle"] if latest_session else "") or "").strip()
+        agent_runtime_state = _json_loads_or(agent["runtime_state"], {})
+        state_handle = _runtime_handle_from_state(previous_runtime, agent_runtime_state)
+        preserve_handle = ""
+        if previous_runtime == runtime:
+            preserve_handle = str(agent["session_handle"] or latest_session_handle or state_handle or "").strip()
+        preserved_runtime_state = _runtime_state_with_handle(runtime, {}, preserve_handle)
 
         spec_cursor = await db.execute(
             "SELECT * FROM spawn_specs WHERE agent_id = ? ORDER BY updated_at DESC LIMIT 1",
@@ -3447,13 +3550,14 @@ async def assign_agent_environment(agent_id: str, req: AgentEnvironmentAssignReq
             SET environment_id = ?,
                 runtime = ?,
                 workspace = ?,
+                session_handle = ?,
                 spawn_spec_id = COALESCE(NULLIF(spawn_spec_id, ''), ?),
                 status = CASE WHEN status IN ('starting','running','recovering','restarting') THEN 'lost' ELSE status END,
                 ended_at = CASE WHEN status IN ('starting','running','recovering','restarting') THEN COALESCE(ended_at, ?) ELSE ended_at END,
                 last_seen = ?
             WHERE agent_id = ?
             """,
-            (environment_id, runtime, workspace, spec_id, now, now, agent_id),
+            (environment_id, runtime, workspace, preserve_handle, spec_id, now, now, agent_id),
         )
         session_cursor = await db.execute(
             "SELECT id FROM agent_sessions WHERE agent_id = ? ORDER BY last_seen DESC LIMIT 1",
@@ -3478,11 +3582,11 @@ async def assign_agent_environment(agent_id: str, req: AgentEnvironmentAssignReq
                     workspace,
                     "managed-warm",
                     "",
-                    "",
+                    preserve_handle,
                     "",
                     spec_id,
                     None,
-                    json.dumps({"persistent": True, "bridgeResume": True, "adopted": True}),
+                    json.dumps({"persistent": True, "nativeResume": bool(preserve_handle), "bridgeResume": True, "adopted": True}),
                     "{}",
                     "stopped",
                     now,
@@ -3503,7 +3607,7 @@ async def assign_agent_environment(agent_id: str, req: AgentEnvironmentAssignReq
             """,
             (environment_id, runtime, workspace, workspace_root, now, agent_id),
         )
-        capabilities = _default_capabilities_for(runtime, "managed", "")
+        capabilities = _default_capabilities_for(runtime, "managed", preserve_handle)
         await db.execute(
             """
             UPDATE agents
@@ -3512,15 +3616,24 @@ async def assign_agent_environment(agent_id: str, req: AgentEnvironmentAssignReq
                 machine_id = ?,
                 launch_mode = 'none',
                 session_mode = 'managed',
-                session_handle = '',
+                session_handle = ?,
                 capabilities = ?,
                 runtime_config = '{}',
-                runtime_state = '{}',
+                runtime_state = ?,
                 status = CASE WHEN status = 'stopped' THEN status ELSE 'offline' END,
                 last_seen = ?
             WHERE id = ?
             """,
-            (workspace, runtime, environment.get("machineId") or "", json.dumps(capabilities), now, agent_id),
+            (
+                workspace,
+                runtime,
+                environment.get("machineId") or "",
+                preserve_handle,
+                json.dumps(capabilities),
+                json.dumps(preserved_runtime_state),
+                now,
+                agent_id,
+            ),
         )
         await db.commit()
         ws = await _get_ws(request)

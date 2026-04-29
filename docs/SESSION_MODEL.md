@@ -80,6 +80,14 @@ The bridge should prefer native runtime state when it is reliable, but it must s
 
 Native runtime handles must not be silently discarded. If a Claude session ID is locked or a user wants a fresh backing thread/session, that should be an explicit operator action such as **Clear resume state**. Recover should preserve the stored handle when possible; restart should use the saved spawn spec, but it still should not erase native memory unless the operator asks for a reset.
 
+Native runtime handles also must not be silently invented during ordinary recovery. A new Claude session ID, Codex thread ID, or OpenCode session ID is expected only when:
+
+- the operator creates a new managed teammate through spawn
+- the operator resumes/starts directly in the native CLI and re-registers that exact live session
+- the operator explicitly clears resume state or chooses a fresh-start path
+
+When a managed session is taken over in CLI, the CLI should re-register with the same `agentId` and its real runtime handle. The backend records that handle on the latest session. Later **Adopt env**, **Recover**, and **Restart** should carry that stored handle forward when the runtime is unchanged. If the handle is missing or locked, the system should surface the problem instead of quietly creating a contextless replacement.
+
 ## Capability Flags
 
 Each session should expose capability flags. The dashboard must use these flags instead of assuming every runtime behaves like Codex or Claude.
@@ -194,6 +202,7 @@ Dashboard rule:
 - Show **Open in CLI** only when `cliAttach=true`.
 - Show **Copy CLI resume** when a runtime handle is known but attach is not guaranteed. This is a takeover/resume command, not proof that the dashboard and human CLI can safely write the same session concurrently.
 - Prefer **Take over in CLI** before opening the native CLI. It pauses dashboard delivery for that agent so normal chat sends fail fast instead of racing the open CLI and producing runtime lock errors. Use **Recover** or **Restart** when returning control to the dashboard.
+- After the native CLI opens, re-register from that same CLI session. This updates the dashboard's stored handle so returning to dashboard control can resume the conversation instead of starting from a blank backing.
 - Show **View transcript/logs** for all persistent sessions.
 - If the bridge owns an active managed session, attaching a human CLI must either pause bridge ownership or use explicit shared-session locking to avoid races.
 

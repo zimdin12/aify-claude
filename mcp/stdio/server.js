@@ -962,22 +962,30 @@ async function runSpawnLoop() {
 
     const runtime = normalizeRuntime(spawnRequest.runtime || "generic");
     const runtimeConfig = {};
-    const capabilities = defaultCapabilitiesForRuntime(runtime, "managed", "", runtimeConfig);
+    const requestedSessionHandle = String(spawnRequest.sessionHandle || "").trim();
+    const capabilities = defaultCapabilitiesForRuntime(runtime, "managed", requestedSessionHandle, runtimeConfig);
     const runtimeState = {
       bridgeInstanceId: BRIDGE_INSTANCE_ID,
       environmentId: environment.id,
       spawnRequestId: spawnRequest.id,
       mode: spawnRequest.mode || "managed-warm",
     };
+    if (requestedSessionHandle) {
+      if (runtime === "codex") {
+        runtimeState.threadId = requestedSessionHandle;
+      } else {
+        runtimeState.sessionId = requestedSessionHandle;
+      }
+    }
     await httpCall("PATCH", `/spawn-requests/${encodeURIComponent(spawnRequest.id)}`, {
       status: "running",
       bridgeId: BRIDGE_INSTANCE_ID,
       processId: String(process.pid),
-      sessionHandle: "",
+      sessionHandle: requestedSessionHandle,
       runtimeState,
       capabilities: {
         persistent: true,
-        nativeResume: runtime === "codex" || runtime === "opencode",
+        nativeResume: Boolean(requestedSessionHandle) || runtime === "codex" || runtime === "opencode",
         bridgeResume: true,
         cliAttach: false,
         interrupt: true,
@@ -1001,7 +1009,7 @@ async function runSpawnLoop() {
         machineId: MACHINE_ID,
         launchMode: "managed",
         sessionMode: "managed",
-        sessionHandle: "",
+        sessionHandle: requestedSessionHandle,
         managedBy: spawnRequest.createdBy || "dashboard",
         capabilities,
         runtimeConfig,
