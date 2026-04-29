@@ -56,6 +56,7 @@ Important starting docs:
 - [docs/WEB_APP_DESIGN.md](docs/WEB_APP_DESIGN.md) — web application UX/architecture principles.
 - [docs/DASHBOARD_REVIEW.md](docs/DASHBOARD_REVIEW.md) — current dashboard critique, semantics, and design rules.
 - [docs/BRIDGE_SETUP.md](docs/BRIDGE_SETUP.md) — WSL/Linux/Windows bridge setup and launcher semantics.
+- [docs/COMMUNICATION_GUIDE.md](docs/COMMUNICATION_GUIDE.md) — focused team messaging rules for agents and managers.
 - [docs/AGENT_GUIDE.md](docs/AGENT_GUIDE.md) — concise engineering guide for future coding agents.
 - [docs/UNINSTALL.md](docs/UNINSTALL.md) — clean uninstall for Docker service, data, wrappers, MCP config, hooks, and skills.
 - [docs/SKILLS.md](docs/SKILLS.md) — installed Codex/Claude skill inventory and relevance.

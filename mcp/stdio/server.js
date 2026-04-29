@@ -1917,7 +1917,7 @@ server.tool(
   "Send a message to an agent by ID, or to all agents with a given role. " +
     "This is live-delivery gated: if the target is offline, stale, stopped, already working, already has queued work, or lacks a live wake path, the message is not written. Agent-reported blocked/completed states are status notes, not delivery blockers. " +
     "Resident sessions trigger only when that exact runtime/session handle supports resident execution; environment-managed sessions remain the persistent fallback. " +
-    "Agents should normally answer messages, and should always reply to requests, reviews, and errors with comms_send(type=\"response\", inReplyTo=...) unless told otherwise. The requireReply override is only for edge cases.",
+    "Agents should normally answer messages, and should always reply to requests, reviews, and errors with comms_send(type=\"response\", inReplyTo=...) unless told otherwise. Keep messages scoped to one topic, state what you checked when truth matters, ask one clear question when blocked, and avoid reviving unrelated older context. The requireReply override is only for edge cases.",
   {
     from: z.string().describe("Your agent ID"),
     to: z.string().optional().describe("Target agent ID"),

@@ -180,6 +180,8 @@ Managed runtimes have a 12-hour hard dispatch timeout by default. Managed Codex 
 
 Managed agent-to-agent prompts prefer explicit `comms_send(..., inReplyTo=...)` replies. If the comms tool path is blocked or appears stalled, the prompt tells the runtime to finish with plain text instead; the bridge can mirror that final text as the handoff only when no explicit reply was recorded. Mirrored fallback handoffs are stored in the original sender's inbox and best-effort queued for live delivery to that sender when the sender is startable.
 
+Managed prompts also include a focused team-communication contract: stay on the current ask, verify state/history before asserting it, answer with result/evidence/blocker/next action, and split unrelated topics instead of dragging all recent context into one turn. The injected direct-message context is intentionally compact and should be treated as background, not as a command to continue every old thread.
+
 ## Verify
 
 1. Open `http://localhost:8800/api/v1/dashboard`.

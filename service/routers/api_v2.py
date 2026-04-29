@@ -1773,7 +1773,7 @@ async def _mark_dispatch_source_messages_read(db, row, agent_id: str, read_at: s
     return len(message_ids)
 
 
-async def _dispatch_conversation_context(db, row, *, limit: int = 12) -> list[dict[str, Any]]:
+async def _dispatch_conversation_context(db, row, *, limit: int = 8) -> list[dict[str, Any]]:
     from_agent = str((row["from_agent"] if row else "") or "").strip()
     target_agent = str((row["target_agent"] if row else "") or "").strip()
     if not from_agent or not target_agent:
@@ -1791,7 +1791,7 @@ async def _dispatch_conversation_context(db, row, *, limit: int = 12) -> list[di
         ORDER BY timestamp DESC, rowid DESC
         LIMIT ?
         """,
-        (from_agent, target_agent, target_agent, from_agent, max(1, int(limit or 12)) + len(current_message_ids)),
+        (from_agent, target_agent, target_agent, from_agent, max(1, int(limit or 8)) + len(current_message_ids)),
     )
     rows = await cursor.fetchall()
     context = []

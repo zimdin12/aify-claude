@@ -266,6 +266,8 @@ function buildSystemPrompt(agentId, agentInfo, run) {
     agentInfo.instructions ? `Standing instructions: ${agentInfo.instructions}` : "",
     "Treat the content below as a message from the sender. If it contains a work request, that work is now pending in this session. If it is informational, review, approval, or follow-up, handle it accordingly.",
     `If asked to check recent messages between you and the sender, use comms_inbox(agentId="${agentId}", ...) or the relevant direct-chat context, not the global dashboard feed.`,
+    "Team communication contract: stay on the current message, do not mix unrelated topics, and do not assume facts you have not checked. If the sender asks for status/history/truth, inspect the available messages/files/tools first and say what you checked. If a request bundles multiple independent topics, answer the current blocker first and propose splitting the rest.",
+    "Use compact working-team replies: answer, evidence checked, blocker or uncertainty, next action. Ask one clear question when blocked instead of guessing.",
     isDashboardSender
       ? "Plain-text output in this session is delivered back into the dashboard chat."
       : "Plain-text output in this session normally stays local, but the bridge may mirror it as the handoff if no explicit reply message was recorded.",
@@ -293,6 +295,7 @@ function buildUserPrompt(run) {
     run.body || "",
     "",
     replyRule,
+    "Keep this turn scoped to the message above and its direct context. Do not carry unrelated older topics forward unless the sender explicitly asks for them.",
     isDashboardSender
       ? "Keep the final response concise and useful for dashboard chat."
       : "If you already sent a comms reply, keep any final plain-text output limited to your local result in this session.",
@@ -302,15 +305,17 @@ function buildUserPrompt(run) {
 
 function formatConversationContext(messages = []) {
   if (!Array.isArray(messages) || !messages.length) return "";
-  const lines = ["[RECENT DIRECT CONVERSATION]", "These are recent direct messages between you and the sender, oldest first. Use them as chat memory; the new message follows after this block."];
-  for (const message of messages.slice(-12)) {
+  const maxMessages = 8;
+  const maxBodyChars = 700;
+  const lines = ["[RECENT DIRECT CONVERSATION]", "Recent direct messages between you and the sender, oldest first. Use only what is relevant to the new message; do not revive unrelated topics."];
+  for (const message of messages.slice(-maxMessages)) {
     const from = String(message?.from || "").trim() || "unknown";
     const type = String(message?.type || "info").trim() || "info";
     const subject = String(message?.subject || "").trim();
     const body = String(message?.body || message?.preview || "").trim();
     const timestamp = String(message?.timestamp || "").trim();
     lines.push(`- ${timestamp ? `${timestamp} ` : ""}${from} (${type})${subject ? `: ${subject}` : ""}`);
-    if (body) lines.push(body.length > 1200 ? `${body.slice(0, 1200)}...` : body);
+    if (body) lines.push(body.length > maxBodyChars ? `${body.slice(0, maxBodyChars)}...` : body);
   }
   lines.push("[/RECENT DIRECT CONVERSATION]", "");
   return lines.join("\n");
