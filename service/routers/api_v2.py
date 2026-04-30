@@ -3151,7 +3151,7 @@ async def list_sessions(request: Request, agentId: Optional[str] = None, environ
 @router.post("/sessions/{session_id}/control")
 async def control_session(session_id: str, req: SessionControlRequest, request: Request):
     action = str(req.action or "").strip().lower()
-    if action not in {"stop", "restart", "recover", "resume", "cli_takeover"}:
+    if action not in {"stop", "restart", "recover", "resume", "recreate", "cli_takeover"}:
         raise HTTPException(400, f'Unsupported session control action "{req.action}"')
 
     db = await get_db()
@@ -3177,7 +3177,7 @@ async def control_session(session_id: str, req: SessionControlRequest, request: 
         spawn_request_row = None
         spawn_spec_row = None
         cancelled_spawns = 0
-        if action in {"restart", "recover", "resume"}:
+        if action in {"restart", "recover", "resume", "recreate"}:
             pending_cursor = await db.execute(
                 """
                 SELECT *
@@ -3196,7 +3196,7 @@ async def control_session(session_id: str, req: SessionControlRequest, request: 
                     f'Agent "{agent_id}" already has pending spawn request "{pending_spawn["id"]}" ({pending_spawn["status"]}).',
                 )
 
-        if action in {"restart", "recover", "resume"}:
+        if action in {"restart", "recover", "resume", "recreate"}:
             spec_id = str(session["spawn_spec_id"] or "").strip()
             if not spec_id:
                 raise HTTPException(409, f'Session "{session_id}" has no stored spawn spec to resume')
@@ -3217,6 +3217,8 @@ async def control_session(session_id: str, req: SessionControlRequest, request: 
             workspace = spawn_spec_row["workspace"] or session["workspace"] or ""
             workspace_root = _workspace_root_for(environment, workspace)
             request_id = f"spawn_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+            resume_policy = "fresh_context" if action == "recreate" else "native_first"
+            request_session_handle = "" if action == "recreate" else (session["session_handle"] or "")
             await db.execute(
                 """
                 INSERT INTO spawn_requests (
@@ -3240,26 +3242,38 @@ async def control_session(session_id: str, req: SessionControlRequest, request: 
                     req.priority or "normal",
                     req.subject or f"{action.title()} {agent_id}",
                     spawn_spec_row["mode"] or session["mode"] or "managed-warm",
-                    "native_first",
+                    resume_policy,
                     "queued",
-                    session["session_handle"] or "",
+                    request_session_handle,
                     now,
                     now,
                 ),
             )
             spawn_request_row = await (await db.execute("SELECT * FROM spawn_requests WHERE id = ?", (request_id,))).fetchone()
+            if action == "recreate":
+                await db.execute(
+                    """
+                    UPDATE agents
+                    SET session_handle = '',
+                        runtime_state = '{}',
+                        last_seen = ?
+                    WHERE id = ?
+                    """,
+                    (now, agent_id),
+                )
 
         next_status = {
             "stop": "stopped",
             "restart": "restarting",
             "recover": "recovering",
             "resume": "recovering",
+            "recreate": "ended",
             "cli_takeover": "cli-takeover",
         }[action]
         await db.execute(
             """
             UPDATE agent_sessions
-            SET status = ?, last_seen = ?, ended_at = CASE WHEN ? IN ('stopped','restarting','recovering') THEN ? ELSE ended_at END
+            SET status = ?, last_seen = ?, ended_at = CASE WHEN ? IN ('stopped','restarting','recovering','ended') THEN ? ELSE ended_at END
             WHERE id = ?
             """,
             (next_status, now, next_status, now, session_id),

@@ -905,7 +905,7 @@ aify-comms</pre>
   -> re-register same agentId from the CLI
   -> do direct terminal work
   -> close CLI
-  -> Recover or Restart in Sessions
+  -> Restart in Sessions
   -> dashboard control resumes with the saved handle</div>
       <div class="guide-steps">
         <div class="guide-card">
@@ -923,11 +923,11 @@ aify-comms</pre>
             <li>Open <b>Team → Manual / Resident CLI Identities</b>.</li>
             <li>Use <b>Edit</b> or <b>Adopt env</b>.</li>
             <li>Assign an online environment, runtime, and workspace.</li>
-            <li>Close or stop the old CLI tab for that same <code>agentId</code>, then use <b>Recover</b> or <b>Restart</b> in Sessions.</li>
+            <li>Close or stop the old CLI tab for that same <code>agentId</code>, then use <b>Restart</b> in Sessions.</li>
           </ol>
         </div>
       </div>
-      <p>Adoption creates managed backing for future dashboard work. It does not magically attach the currently open CLI process. <b>Clear resume state</b> is the explicit reset that forgets saved Claude session IDs or Codex thread IDs; use it only when you accept starting fresh.</p>
+      <p>Adoption creates managed backing for future dashboard work. It does not magically attach the currently open CLI process. <b>Recreate</b> is the explicit reset that leaves the old native session behind and starts a fresh Claude session ID or Codex thread ID; use it only when you accept losing native chat context.</p>
       <p>Codex CLI note: for resident live wakeups, start Codex through <code>codex-aify</code> and register with <code>sessionHandle="$CODEX_THREAD_ID"</code> and <code>appServerUrl="$AIFY_CODEX_APP_SERVER_URL"</code> when available.</p>
       <p>Claude CLI note: resident wakeups require <code>claude-aify</code>. The resume command may include <code>--dangerously-skip-permissions</code>; <code>--permanently-skip-permissions</code> is not a Claude Code option.</p>
 
@@ -948,7 +948,7 @@ aify-comms</pre>
 
       <h3>Continue / Compact</h3>
       <p>Open <b>Sessions</b> and use <b>Compact / continue</b>. The dashboard opens an editable continuation form with new agent ID, role, environment, runtime, workspace, and a generated packet. The packet includes the last selected number of direct messages involving the source agent plus channel posts authored by it, then queues a fresh managed-warm spawn. This is the current aify-comms compaction path: portable handoff into a new backing session, not native Claude/Codex in-place <code>/compact</code>.</p>
-      <p><b>Recover</b> tries to keep the saved runtime handle. <b>Restart</b> uses the saved spawn spec and carries the saved handle forward when the runtime is unchanged. <b>Pause for CLI</b> pauses dashboard delivery and copies the native resume command for direct project work. Re-register from that CLI session before returning to dashboard control. <b>Clear resume state</b> is the explicit reset: it forgets saved Claude session IDs or Codex thread IDs so the next run starts fresh. The bridge should not silently clear native memory or invent blank replacement sessions on lock errors. If managed Claude reports a session ID is already in use, the Windows bridge tries to release a matching stale headless Claude process and retries once; interactive CLI sessions remain protected.</p>
+      <p><b>Restart</b> restores dashboard control with the saved spawn spec and saved native handle. If the handle is locked or cannot be resumed, the run fails loudly instead of pretending context was retained. <b>Pause for CLI</b> pauses dashboard delivery and copies the native resume command for direct project work. Re-register from that CLI session before returning to dashboard control. <b>Recreate</b> is the explicit reset: it leaves the old native session behind and starts fresh. The bridge should not silently clear native memory or invent blank replacement sessions on lock errors. If managed Claude reports a session ID is already in use, the Windows bridge tries to release a matching stale headless Claude process and retries once; interactive CLI sessions remain protected.</p>
 
       <h3>Tools</h3>
       <ul>
@@ -974,7 +974,7 @@ aify-comms</pre>
         <li><code>GET/POST /api/v1/spawn-requests</code> — Dashboard spawn queue</li>
         <li><code>POST /api/v1/spawn-requests/claim</code> — Bridge claim next spawn for an environment</li>
         <li><code>GET /api/v1/sessions</code> — Runtime session records</li>
-        <li><code>POST /api/v1/sessions/{id}/control</code> — Stop, restart, recover, or resume a managed session</li>
+        <li><code>POST /api/v1/sessions/{id}/control</code> — Stop, restart, recreate, or resume a managed session</li>
         <li><code>PATCH /api/v1/agents/{id}</code> — Update status + note</li>
         <li><code>GET /api/v1/agents/{id}/last-read</code> — Last message agent read</li>
         <li><code>POST /api/v1/agents/{id}/heartbeat</code> — Alive signal</li>
@@ -1501,7 +1501,7 @@ function backingFreshnessNote(session, agentInfo = {}) {
     return 'The agent identity refreshed after this backing record. It may be startable, but this backing timestamp is stale.';
   }
   if (sessionSeen && Date.now() - sessionSeen > 30 * 60 * 1000) {
-    return 'This backing has not refreshed recently. Send a message or recover/restart if it does not respond.';
+    return 'This backing has not refreshed recently. Send a message or restart if it does not respond.';
   }
   return '';
 }
@@ -1663,7 +1663,7 @@ function renderWorkers(workers) {
       actionButtonFn('Assign task', 'Open chat composer as a request to this managed agent', () => prefillWorkerMessage(id, 'request')),
       actionButtonFn('Assign env', 'Open identity editor to retarget this teammate and saved spawn spec to another online environment', () => openAgentEditor(id)),
       activeRunId ? actionButtonFn('Interrupt', 'Ask the active managed run to stop at the next supported interruption point', () => interruptRun(activeRunId), 'btn-danger') : '',
-      actionButtonFn('Clear Resume State', 'Forget saved runtime thread/session handles. Messages and identity remain.', () => resetWorkerState(id)),
+      actionButtonFn('Recreate', 'Leave the old native session behind and queue a fresh managed backing. Messages and identity remain.', () => recreateAgent(id), 'btn-danger'),
       actionButtonFn('Remove', 'Unregister this managed agent and cancel queued work', () => deleteAgent(id), 'btn-danger'),
     ];
     html += `<tr><td><b>${esc(id)}</b></td>` +
@@ -1721,7 +1721,7 @@ function openAgentEditor(agentId) {
       <div class="btn-row">
         ${actionButtonFn('Save', 'Save identity and environment changes', () => saveAgentEditor(agentId), 'btn-primary')}
         ${actionButtonFn('Assign task', 'Open chat composer as a request', () => { closeModal(); prefillWorkerMessage(agentId, 'request'); })}
-        ${actionButtonFn('Clear Resume State', 'Forget saved runtime thread/session handles', () => resetWorkerState(agentId))}
+        ${actionButtonFn('Recreate', 'Leave the old native session behind and queue a fresh managed backing', () => recreateAgent(agentId), 'btn-danger')}
         ${actionButtonFn('Remove', 'Unregister this identity and cancel queued work', () => { closeModal(); deleteAgent(agentId); }, 'btn-danger')}
       </div>
     </div>`);
@@ -1868,8 +1868,8 @@ function renderHomeInsights(stats, agents, environments, sessions, spawnRequests
   });
   if (failedOrLostSessions) attention.push({
     title: 'Sessions need attention',
-    body: `${failedOrLostSessions} session(s) are failed or lost. Recover or restart them when you still need that teammate.`,
-    action: actionButton('Open Sessions', 'Recover, restart, or stop session records', "showPage('sessions')")
+    body: `${failedOrLostSessions} session(s) are failed or lost. Restart them when you still need that teammate.`,
+    action: actionButton('Open Sessions', 'Restart, recreate, or stop session records', "showPage('sessions')")
   });
   if (handoffPending) attention.push({
     title: 'Pending handoffs',
@@ -2358,10 +2358,10 @@ async function takeOverSessionInCli(sessionId) {
   const agentInfo = (window._allAgents || []).find(([id]) => id === session.agentId)?.[1] || {};
   const command = sessionResumeCommand(session, agentInfo);
   if (!command) {
-    toast('No CLI resume handle recorded yet. Send one message or recover the session first.', '#f85149');
+    toast('No CLI resume handle recorded yet. Send one message or restart the session first.', '#f85149');
     return;
   }
-  if (!confirm(`Pause dashboard delivery for "${session.agentId}" and copy the CLI resume command?\n\nWhile this is paused, dashboard chat sends to this agent will fail fast instead of colliding with the open CLI session. Use Sessions -> Recover or Restart when you want dashboard control back.`)) return;
+  if (!confirm(`Pause dashboard delivery for "${session.agentId}" and copy the CLI resume command?\n\nWhile this is paused, dashboard chat sends to this agent will fail fast instead of colliding with the open CLI session. Use Sessions -> Restart when you want dashboard control back.`)) return;
   try {
     const res = await apiFetch(API + `/sessions/${encodeURIComponent(sessionId)}/control`, {
       method: 'POST',
@@ -2396,7 +2396,7 @@ function openEnvironmentEditor(environmentId) {
       <label>Label<input value="${esc(env.label || env.id)}" disabled></label>
       <label>Workspace roots<textarea id="env-edit-roots">${esc(roots)}</textarea></label>
       <label>Start command<textarea id="env-edit-start" readonly>${esc(startCommand)}</textarea></label>
-      <p class="worker-note">Roots are spawn safety boundaries. Already-running agents are not moved; new and recovered managed spawns use this effective root list after the bridge's next heartbeat.</p>
+      <p class="worker-note">Roots are spawn safety boundaries. Already-running agents are not moved; new and restarted managed spawns use this effective root list after the bridge's next heartbeat.</p>
       <div class="btn-row">
         ${actionButtonFn('Save', 'Save workspace roots for this environment', () => saveEnvironmentEditor(env.id), 'btn-primary')}
         ${actionButtonFn('Copy start', 'Copy the command to start this bridge again', () => copyText(startCommand, 'Start command copied'))}
@@ -2900,6 +2900,11 @@ function renderChatMessage(m, currentFrom) {
   const runDetail = relatedRun && (deliveryDetail || relatedRun.status)
     ? `<details class="chat-run-note"><summary>${esc(deliveryLabel || 'run')} · ${esc(relatedRun.id || '')}${relatedRun.resultMessageId ? ' · reply linked' : ''}</summary><pre>${esc(deliveryDetail || relatedRun.status || '')}</pre></details>`
     : '';
+  const subjectText = String(m.subject || '').trim();
+  const isThreadReplySubject = !!m.parentContext && /^(re|reply|response)\s*:/i.test(subjectText);
+  const subjectLine = subjectText && !isThreadReplySubject
+    ? `<div class="t clip-1"${titleAttr(subjectText)}>${esc(subjectText)}</div>`
+    : '';
   const actions = [
     (!mine && m.source !== 'channel') ? actionButtonFn('Reply', 'Prefill the composer as a threaded reply to this message', () => replyToChat(m.from, m.id, m.subject, m.body || m.preview || '')) : '',
     followTarget ? actionButtonFn('Follow up', 'Open a request to this message target and link it to this message', () => followUpChatMessage(followTarget, m.id, m.subject, m.body || m.preview || '')) : '',
@@ -2913,7 +2918,7 @@ function renderChatMessage(m, currentFrom) {
   return `<article class="chat-bubble${klass}">` +
     `<div class="chat-bubble-head"><span class="chat-from">${esc(m.from || '')}</span><span class="chat-time">${fmtTime(m.timestamp)}</span>${type}${priority}</div>` +
     parent +
-    `${m.subject ? `<div class="t clip-1"${titleAttr(m.subject)}>${esc(m.subject)}</div>` : ''}` +
+    subjectLine +
     `<div class="chat-text">${esc(m.body || m.preview || '')}</div>` +
     runDetail +
     `<div class="chat-badges">${delivery}${deliveryLabel ? `<span class="mb mb-dispatch"${titleAttr(deliveryDetail)}>${esc(deliveryLabel)}</span>` : ''}${readBadge}</div>` +
@@ -3011,7 +3016,7 @@ function renderChatInspector(meta, messages) {
         actionButton('Sessions', 'Open the Sessions page filtered mentally to this agent', "showPage('sessions')") +
         (resumeCommand ? actionButtonFn('Pause for CLI', 'Pause dashboard delivery for this session and copy the native CLI resume command', () => takeOverSessionInCli(session.id)) : '') +
         actionButtonFn('Compact / continue', 'Create a new managed session from an editable compact handoff packet', () => continueSessionAs(session.id)) +
-        actionButtonFn('Restart', 'Queue a restart from this session specification', () => controlSession(session.id, 'restart')) +
+        actionButtonFn('Restart', 'Restore dashboard control using the saved spawn spec and native resume handle', () => controlSession(session.id, 'restart')) +
         `</div>`;
     } else {
       html += '<h3>Runtime Backing</h3><p class="em">No managed session is recorded for this identity. It may be a manual/resident CLI binding or a historical chat identity.</p>' +
@@ -3375,14 +3380,13 @@ function renderSessions(sessions) {
     const canStopSession = !['stopped', 'failed', 'lost', 'ended', 'completed', 'cancelled'].includes(sessionStatus);
     const spawnControl = pendingSpawn
       ? disabledActionButton('Spawn pending', `Pending ${pendingSpawn.status} spawn request ${pendingSpawn.id}. Stop the session to cancel it, or wait for the bridge to finish.`)
-      : actionButtonFn('Restart', 'Queue a new spawn from this session specification', () => controlSession(session.id, 'restart')) +
-        actionButtonFn('Recover', 'Queue recovery using saved session/spec metadata', () => controlSession(session.id, 'recover'));
+      : actionButtonFn('Restart', 'Restore dashboard control using the saved spawn spec and native resume handle', () => controlSession(session.id, 'restart'));
     const sessionActions = [
       actionButtonFn('Edit agent', 'Edit the agent identity backed by this session', () => openAgentEditor(session.agentId)),
       activeRun ? actionButtonFn('Interrupt', 'Ask the active run for this session to stop', () => interruptRun(activeRun.id), 'btn-danger') : '',
       spawnControl,
       resumeCommand ? actionButtonFn('Pause for CLI', 'Pause dashboard delivery for this session and copy the native CLI resume command', () => takeOverSessionInCli(session.id)) : '',
-      actionButtonFn('Clear resume state', 'Forget saved runtime thread/session handles so the next run starts fresh. Messages and identity remain.', () => resetWorkerState(session.agentId)),
+      actionButtonFn('Recreate', 'Leave the old native session behind and queue a fresh managed backing. Messages and identity remain.', () => controlSession(session.id, 'recreate'), 'btn-danger'),
       actionButtonFn('Compact / continue', 'Create a new managed agent/session from an editable compact handoff packet', () => continueSessionAs(session.id)),
       canStopSession ? actionButtonFn('Stop', 'Stop this managed session and interrupt/cancel work where supported', () => controlSession(session.id, 'stop'), 'btn-danger') : '',
     ];
@@ -3550,8 +3554,12 @@ async function controlSession(sessionId, action) {
   if (action === 'stop') {
     if (!confirm(`Stop session ${sessionId}?`)) return;
     body = 'Stop this session from the dashboard.';
+  } else if (action === 'recreate') {
+    if (!confirm(`Recreate ${session.agentId || sessionId}?\n\nThis leaves the old native session/thread behind and starts a fresh managed backing. Use Restart instead if you want to preserve context.`)) return;
+    body = prompt(`Recreate ${session.agentId || sessionId} with optional fresh-start instructions:`, '');
+    if (body === null) return;
   } else {
-    body = prompt(`${action === 'restart' ? 'Restart' : 'Recover'} ${session.agentId || sessionId} with optional instructions:`, '');
+    body = prompt(`Restart ${session.agentId || sessionId} with optional instructions:`, '');
     if (body === null) return;
   }
   try {
@@ -3562,7 +3570,7 @@ async function controlSession(sessionId, action) {
     }).then(r => r.json());
     if (res.ok) {
       const queued = res.spawnRequest ? ` Spawn queued: ${res.spawnRequest.id}` : '';
-      toast(`${action} requested.${queued}`);
+      toast(`${action === 'recreate' ? 'Recreate' : action} requested.${queued}`);
       refreshDashboard();
     } else {
       toast(res.detail || `${action} failed`, '#f85149');
@@ -4193,23 +4201,13 @@ function prefillWorkerMessage(agentId, mode) {
   toast(`${mode === 'request' ? 'Request' : 'Message'} composer opened for ${agentId}`);
 }
 
-async function resetWorkerState(agentId) {
-  if (!confirm(`Clear resume state for "${agentId}"?\n\nThis forgets saved runtime thread/session handles so the next run starts fresh. It does not delete messages, files, dispatch history, or the agent identity.`)) return;
-  try {
-    const res = await apiFetch(API + `/agents/${encodeURIComponent(agentId)}/runtime-state`, {
-      method: 'PATCH',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({runtimeState: {}}),
-    }).then(r => r.json());
-    if (res.ok) {
-      toast(`Cleared resume state for ${agentId}`);
-      refreshDashboard();
-    } else {
-      toast(res.detail || res.error || 'Clear resume state failed', '#f85149');
-    }
-  } catch (e) {
-    toast('Clear resume state failed', '#f85149');
+function recreateAgent(agentId) {
+  const session = primarySessionForAgent(agentId);
+  if (!session?.id) {
+    toast(`No managed session record for ${agentId}; spawn a fresh managed agent from Environments.`, '#f85149');
+    return;
   }
+  controlSession(session.id, 'recreate');
 }
 
 async function createSpawnRequest() {

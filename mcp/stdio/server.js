@@ -994,6 +994,7 @@ async function runSpawnLoop() {
       environmentId: environment.id,
       spawnRequestId: spawnRequest.id,
       mode: spawnRequest.mode || "managed-warm",
+      resumePolicy: spawnRequest.resumePolicy || "native_first",
     };
     if (requestedSessionHandle) {
       if (runtime === "codex") {

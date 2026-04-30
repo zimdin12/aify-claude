@@ -122,7 +122,7 @@ Bridge:
 Dashboard:
 
 - show transcript/log placeholder
-- show Recover when an agent has backing but no live session
+- show Restart when an agent has backing but no live session
 
 Tests:
 

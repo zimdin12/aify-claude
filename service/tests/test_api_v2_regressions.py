@@ -1036,6 +1036,49 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(payload["spawnRequest"]["workspace"], "/workspace/repo")
         self.assertEqual(payload["spawnRequest"]["initialMessage"], "continue from the dashboard")
 
+    def test_session_recreate_is_explicit_fresh_context_reset(self):
+        self._heartbeat_environment()
+        created = self.client.post(
+            "/api/v1/spawn-requests",
+            json={
+                "createdBy": "dashboard",
+                "environmentId": "linux:test-host:default",
+                "agentId": "recreate-coder",
+                "role": "coder",
+                "runtime": "codex",
+                "workspace": "/workspace/repo",
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        spawn_id = created.json()["spawnRequest"]["id"]
+        self.client.post(
+            "/api/v1/spawn-requests/claim",
+            json={"environmentId": "linux:test-host:default", "bridgeId": "bridge-current", "machineId": "linux:test-host"},
+        )
+        running = self.client.patch(
+            f"/api/v1/spawn-requests/{spawn_id}",
+            json={"status": "running", "bridgeId": "bridge-current", "processId": "1234", "sessionHandle": "thread-old"},
+        )
+        self.assertEqual(running.status_code, 200, running.text)
+        session_id = running.json()["spawnRequest"]["sessionId"]
+
+        recreated = self.client.post(
+            f"/api/v1/sessions/{session_id}/control",
+            json={"action": "recreate", "from_agent": "dashboard", "subject": "recreate worker", "body": "fresh start"},
+        )
+        self.assertEqual(recreated.status_code, 200, recreated.text)
+        self.assertEqual(recreated.json()["session"]["status"], "ended")
+        spawn_request = self._fetchone(
+            "SELECT resume_policy, session_handle, initial_message FROM spawn_requests WHERE id = ?",
+            (recreated.json()["spawnRequest"]["id"],),
+        )
+        self.assertEqual(spawn_request["resume_policy"], "fresh_context")
+        self.assertEqual(spawn_request["session_handle"], "")
+        self.assertEqual(spawn_request["initial_message"], "fresh start")
+        agent = self._fetchone("SELECT session_handle, runtime_state FROM agents WHERE id = ?", ("recreate-coder",))
+        self.assertEqual(agent["session_handle"], "")
+        self.assertEqual(agent["runtime_state"], "{}")
+
     def test_recovered_session_running_ends_previous_recovering_session(self):
         self._heartbeat_environment()
         created = self.client.post(

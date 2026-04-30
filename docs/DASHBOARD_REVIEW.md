@@ -24,7 +24,7 @@ This dashboard is now treated as the product surface, not as a raw admin page.
 - **Agents**: managed agent identities spawned or controlled by the bridge, plus a separate manual/resident CLI section. Managed agents may have saved resume state without a currently running process.
 - **Environments**: connected host/WSL/Windows/Linux bridges and the managed-warm spawn form.
 - **Spawn Queue**: active spawn requests and failures. Successful `running` spawn requests are historical "session started" records, not active work, and should be hidden by default.
-- **Sessions**: concrete runtime/session backing records. Stop/restart/recover/continue belongs here when a real managed session exists. Ended/completed/cancelled rows are hidden by default and shown only through the debug-history toggle.
+- **Sessions**: concrete runtime/session backing records. Stop/restart/continue belongs here when a real managed session exists. Ended/completed/cancelled rows are hidden by default and shown only through the debug-history toggle.
 - **Runs**: dispatch attempts, handoff state, events, steering, and interrupts.
 - **Artifacts**: shared files.
 - **Help/Settings**: support and policy surfaces.
@@ -59,7 +59,7 @@ What was corrected in this pass:
 Remaining high-value fixes:
 
 1. **Logs/transcripts**: Sessions and Runs show runtime output, summaries, and events, but a richer transcript/log drawer would make long investigations easier.
-2. **Replace remaining browser prompts**: steering, restart/recover instructions, pagination, and some destructive confirmations still use `prompt()`/`confirm()`. Move these to proper modals/drawers.
+2. **Replace remaining browser prompts**: steering, restart instructions, pagination, and some destructive confirmations still use `prompt()`/`confirm()`. Move these to proper modals/drawers.
 3. **Group chat policy**: channels exist, but loop budgets, auto-reply controls, and private multi-agent groups are still not fully modeled.
 4. **Unread semantics**: read marking is scoped to "Viewing as", which is correct, but unread counts need a clearer per-identity/global distinction in Home and Chat.
 5. **Environment cleanup UX**: bridge replacement now makes the newer bridge current and queues a stop for the old bridge. Fresh bridges ignore stale stop controls that predate their own start time, so reconnecting should not immediately kill the new process. Forget hides an obsolete execution target without deleting teammate identity/session/spec records. Remaining polish: show clearer banners for detached teammates.

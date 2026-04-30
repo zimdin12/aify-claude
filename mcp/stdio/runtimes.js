@@ -1153,6 +1153,8 @@ export function isClaudeSessionInUseError(text) {
 function createCodexController({ agentId, agentInfo, run, runtimeState, callbacks }) {
   const config = getRuntimeConfig(agentInfo);
   const launcher = defaultCodexCommand();
+  const resumePolicy = String(runtimeState?.resumePolicy || agentInfo?.runtimeState?.resumePolicy || "native_first").trim().toLowerCase();
+  const allowFreshContext = resumePolicy === "fresh_context";
   const timeoutMs = Number(config.timeoutMs || 12 * 60 * 60 * 1000);
   const configuredQuietTimeout = Number(config.quietTimeoutMs ?? config.silenceTimeoutMs ?? 30 * 60 * 1000);
   const quietTimeoutMs = configuredQuietTimeout <= 0
@@ -1448,15 +1450,17 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
               { cause: error },
             );
           }
-          // Auto-heal for both managed and resident modes. Resident mode
-          // previously threw here because silently creating a new thread
-          // would break the visible-TUI wake guarantee. But if the stored
-          // rollout is unloadable, the visible TUI is ALREADY broken:
-          // the user can't interact with a thread Codex can't load. Having
-          // the dispatch fail forever is strictly worse than having it run
-          // in a fresh background thread. We create a new thread, notify
-          // the caller via onSessionHandleChange so the backend's stored
-          // sessionHandle is updated, and continue.
+          if (!allowFreshContext) {
+            throw new Error(
+              `Codex thread/resume failed for saved thread ${activeThreadId} (${failure.healReason}: ${resumeMessage}). ` +
+              `The bridge did not create a fresh thread because that would discard native chat memory. ` +
+              `Use Dashboard -> Sessions -> Recreate only when you intentionally want a new context.`,
+              { cause: error },
+            );
+          }
+          // Only explicit fresh-context requests may create a replacement
+          // thread. Ordinary restart/recovery must fail loudly instead of
+          // silently discarding native chat memory.
           const previousThreadId = activeThreadId;
           const reasonLabel = failure.corruptRollout
             ? `Rollout for thread ${previousThreadId} is corrupt (${resumeMessage})`

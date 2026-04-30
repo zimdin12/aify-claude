@@ -212,7 +212,7 @@ Do not show stop/kill-style actions for rows that only represent offline identit
 
 Ended/completed/cancelled sessions are debug history. The normal Sessions page should hide them by default and expose a **Show ended/debug sessions** toggle for lifecycle investigation.
 
-Manual/resident identities may expose **Edit** and **Adopt env** when at least one environment is online. Adoption should be explicit: it creates managed backing for future dashboard work, but it does not magically attach the currently open CLI process. The UI should tell the operator to close/stop the old resident CLI for that `agentId` and recover/restart the new managed session from Sessions.
+Manual/resident identities may expose **Edit** and **Adopt env** when at least one environment is online. Adoption should be explicit: it creates managed backing for future dashboard work, but it does not magically attach the currently open CLI process. The UI should tell the operator to close/stop the old resident CLI for that `agentId` and restart the managed session from Sessions.
 
 ## Continue From Session Flow
 
@@ -289,7 +289,7 @@ Actions:
 
 - open chat
 - edit identity in a modal: change ID, environment, runtime, and workspace; destructive/advanced actions live under Actions, not as a row full of buttons
-- spawn/recover
+- restart from saved backing
 - continue from latest session
 - stop active session
 - edit instructions
@@ -297,9 +297,9 @@ Actions:
 - view sessions
 - archive/remove identity
 
-If an agent has no live session but has a spawn spec, show **Recover** instead of making the user re-create it manually.
+If an agent has no live session but has a spawn spec, show **Restart** to restore it with the saved handle. Show **Recreate** only as the explicit fresh-context reset.
 
-Use **Clear Resume State** rather than **Reset State** when forgetting saved runtime thread/session handles. It must be clear that messages, files, dispatch history, and the agent identity remain.
+Use **Recreate** for the explicit fresh-context reset. It must be clear that messages, files, dispatch history, and the agent identity remain, but the native Claude session ID / Codex thread ID is intentionally left behind.
 
 ## Visual Design Direction
 

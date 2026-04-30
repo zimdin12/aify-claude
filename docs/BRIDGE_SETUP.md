@@ -60,7 +60,7 @@ If you start `aify-comms` again for the same environment before killing an older
 
 If a bridge is superseded immediately after spawning or messaging a managed Claude/Codex agent, update and reinstall the bridge launcher. Older launchers used an inherited `AIFY_ENVIRONMENT_BRIDGE=1` environment variable; managed child MCP servers could inherit it and briefly impersonate the environment bridge from the agent workspace. Current launchers pass `--environment-bridge` only to the real bridge process, and managed child processes strip bridge-only environment variables.
 
-Killing a bridge stops the execution target, not the team identity. Managed teammates that were backed by that environment are marked offline/detached and their active sessions become lost; chats and identity records remain. Restart the bridge, or assign the teammate to another online environment from **Team**, then recover/restart from **Sessions**.
+Killing a bridge stops the execution target, not the team identity. Managed teammates that were backed by that environment are marked offline/detached and their active sessions become lost; chats and identity records remain. Restart the bridge, or assign the teammate to another online environment from **Team**, then restart from **Sessions**.
 
 Forgetting an environment hides that execution target from normal dashboard lists. It does not delete agent identities, chats, saved spawn specs, or session records. A forgotten environment can reappear if its bridge starts heartbeating again.
 
@@ -166,7 +166,7 @@ The headless environment bridge is enough for dashboard-managed spawns. Resident
 - Claude Code: install Claude support, start with `claude-aify`, then register from that session.
 - OpenCode: register with a real `sessionHandle` for resident resume, or use managed dashboard spawns.
 
-Stopping a resident from the dashboard disables wake/dispatch in the control plane and interrupts active work when a runtime control path exists. It does not forcibly close a human's terminal window. Managed sessions spawned through the bridge can be stopped/restarted/recovered through their stored spawn spec.
+Stopping a resident from the dashboard disables wake/dispatch in the control plane and interrupts active work when a runtime control path exists. It does not forcibly close a human's terminal window. Managed sessions spawned through the bridge can be stopped or restarted through their stored spawn spec; Recreate is the explicit fresh-context reset.
 
 System shape:
 
@@ -191,7 +191,7 @@ Resident -> managed:
 2. Choose **Edit** or **Actions -> Adopt env**.
 3. Assign an online environment, runtime, and workspace.
 4. Close or stop the old resident CLI tab for that same `agentId`.
-5. Use **Sessions -> Recover/Restart** to run future work through the environment bridge.
+5. Use **Sessions -> Restart** to run future work through the environment bridge.
 
 This does not attach the already-open CLI process to an environment. It converts the identity into a managed teammate by creating a spawn spec and a recoverable session record for the selected environment/workspace/runtime.
 
@@ -202,9 +202,9 @@ Managed -> resident CLI:
 3. Run the shown resume command. The dashboard shows it as a code block; click it to copy.
 4. Call `comms_register(...)` from that same CLI with the same `agentId` and runtime handle.
 5. Do the direct terminal work.
-6. Close the CLI and use **Recover** or **Restart** when returning dashboard control.
+6. Close the CLI and use **Restart** when returning dashboard control.
 
-`claude-aify --resume <id>` exports `CLAUDE_SESSION_ID=<id>` for the MCP process, so a normal Claude registration can capture it. Codex should register with `$CODEX_THREAD_ID` and `$AIFY_CODEX_APP_SERVER_URL` when available. That registration updates the saved Claude session ID, Codex thread ID, or OpenCode session ID. Fresh native handles should come from a new spawn or explicit **Clear resume state**, not from ordinary adopt/recover/restart.
+`claude-aify --resume <id>` exports `CLAUDE_SESSION_ID=<id>` for the MCP process, so a normal Claude registration can capture it. Codex should register with `$CODEX_THREAD_ID` and `$AIFY_CODEX_APP_SERVER_URL` when available. That registration updates the saved Claude session ID, Codex thread ID, or OpenCode session ID. Fresh native handles should come from a new spawn or explicit **Recreate**, not from ordinary adopt/restart.
 
 Claude Code has two different native continuation flags: `--session-id` creates a specific new session, while `--resume <id>` continues an existing transcript. The bridge now checks for the transcript under `.claude/projects/...` and uses `--resume` after the first managed turn, so dashboard messages keep native Claude memory instead of colliding with the already-created session file.
 
