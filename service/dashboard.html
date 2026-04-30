@@ -1056,6 +1056,8 @@ let dashboardSocket;
 let websocketRetryTimer;
 let refreshDebounceTimer;
 let currentPage = 'dashboard';
+let refreshInFlight = false;
+let refreshPending = false;
 const _urlParams = new URLSearchParams(window.location.search);
 const _apiKey = _urlParams.get('api_key') || '';
 const _authHeaders = _apiKey ? {'X-API-Key': _apiKey} : {};
@@ -1076,6 +1078,7 @@ window._chatReadMarking = new Set();
 window._chatInspectorHidden = localStorage.getItem('aifyChatInspectorHidden') === '1';
 window._recentMessages = [];
 window._analytics = null;
+window._dashboardStats = null;
 window._analyticsRange = localStorage.getItem('aifyAnalyticsRange') || 'hour';
 window._showOfflineManualBindings = localStorage.getItem('aifyShowOfflineManualBindings') === '1';
 
@@ -1122,8 +1125,18 @@ function showPage(name, updateHistory = true) {
   if (updateHistory) history.replaceState({page: name}, '', pageUrl(name));
   if (name === 'chat') renderChat();
   if (name === 'analytics') renderAnalytics(window._analytics || {});
-  if (name === 'dispatches') applyRunFiltersAndRender();
-  if (name === 'environments') renderEnvironments(window._environments || []);
+  if (name === 'dispatches') {
+    renderDispatchStats(window._dashboardStats || {});
+    applyFiltersAndRender();
+    applyRunFiltersAndRender();
+  }
+  if (name === 'dashboard') renderHomeFromState();
+  if (name === 'workers') renderTeamFromState();
+  if (name === 'environments') {
+    renderEnvironments(window._environments || []);
+    renderSpawnRequests(window._spawnRequests || []);
+    syncSpawnControls(window._environments || []);
+  }
   if (name === 'sessions') renderSessions(window._sessions || []);
   if (name === 'channels') loadChannels();
   if (name === 'files') loadFiles();
@@ -1157,6 +1170,67 @@ function scheduleRealtimeRefresh() {
   refreshDebounceTimer = setTimeout(() => refreshDashboard(), 250);
 }
 
+function captureDashboardViewState() {
+  const activePage = document.querySelector('.page.active');
+  const activeElement = document.activeElement;
+  const focusState = activeElement && activeElement.id && /^(INPUT|TEXTAREA|SELECT)$/.test(activeElement.tagName)
+    ? {
+        id: activeElement.id,
+        selectionStart: typeof activeElement.selectionStart === 'number' ? activeElement.selectionStart : null,
+        selectionEnd: typeof activeElement.selectionEnd === 'number' ? activeElement.selectionEnd : null,
+      }
+    : null;
+  const scrollState = {};
+  for (const id of ['chat-timeline', 'chat-rail']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    scrollState[id] = {
+      top: el.scrollTop,
+      left: el.scrollLeft,
+      nearBottom: el.scrollHeight - el.scrollTop - el.clientHeight < 120,
+    };
+  }
+  return {
+    page: currentPage,
+    pageScrollTop: activePage ? activePage.scrollTop : 0,
+    pageScrollLeft: activePage ? activePage.scrollLeft : 0,
+    openDetails: [...document.querySelectorAll('details[open][data-stable-key]')].map(el => el.getAttribute('data-stable-key')).filter(Boolean),
+    focusState,
+    scrollState,
+  };
+}
+
+function restoreDashboardViewState(state) {
+  if (!state || state.page !== currentPage) return;
+  requestAnimationFrame(() => {
+    for (const key of state.openDetails || []) {
+      const el = document.querySelector(`details[data-stable-key="${cssSel(key)}"]`);
+      if (el) el.open = true;
+    }
+    const activePage = document.querySelector('.page.active');
+    if (activePage) {
+      activePage.scrollTop = state.pageScrollTop || 0;
+      activePage.scrollLeft = state.pageScrollLeft || 0;
+    }
+    for (const [id, item] of Object.entries(state.scrollState || {})) {
+      if (item.nearBottom) continue;
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.scrollTop = item.top || 0;
+      el.scrollLeft = item.left || 0;
+    }
+    if (state.focusState?.id) {
+      const el = document.getElementById(state.focusState.id);
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) {
+        el.focus({preventScroll: true});
+        if (typeof state.focusState.selectionStart === 'number' && typeof el.setSelectionRange === 'function') {
+          el.setSelectionRange(state.focusState.selectionStart, state.focusState.selectionEnd);
+        }
+      }
+    }
+  });
+}
+
 function connectDashboardSocket() {
   if (dashboardSocket && (dashboardSocket.readyState === WebSocket.OPEN || dashboardSocket.readyState === WebSocket.CONNECTING)) return;
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1182,6 +1256,7 @@ function connectDashboardSocket() {
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 function titleAttr(s) { return s ? ` title="${esc(s)}"` : ''; }
 function jsArg(s) { return JSON.stringify(String(s || '')); }
+function cssSel(s) { return window.CSS?.escape ? CSS.escape(String(s || '')) : String(s || '').replace(/["\\]/g, '\\$&'); }
 function actionButton(label, title, onclick, classes = '') {
   return `<button class="btn btn-sm ${esc(classes)}"${titleAttr(title || label)} onclick="${esc(onclick)}">${esc(label)}</button>`;
 }
@@ -1195,10 +1270,11 @@ function actionButtonFn(label, title, handler, classes = '') {
   window._dashboardActions.set(id, handler);
   return `<button class="btn btn-sm ${esc(classes)}"${titleAttr(title || label)} ${dashboardActionAttr(id)}>${esc(label)}</button>`;
 }
-function actionsMenu(items, label = 'Actions') {
+function actionsMenu(items, label = 'Actions', stableKey = '') {
   const content = (items || []).filter(Boolean).join('');
   if (!content) return '';
-  return `<details class="actions-menu"><summary class="btn btn-sm"${titleAttr(label)}>${esc(label)}</summary><div class="actions-menu-panel">${content}</div></details>`;
+  const keyAttr = stableKey ? ` data-stable-key="${esc(stableKey)}"` : '';
+  return `<details class="actions-menu"${keyAttr}><summary class="btn btn-sm"${titleAttr(label)}>${esc(label)}</summary><div class="actions-menu-panel">${content}</div></details>`;
 }
 async function runDashboardAction(id) {
   const handler = window._dashboardActions?.get(id);
@@ -1544,7 +1620,7 @@ function renderAgents(agents, containerId = 'manual-agents-table') {
       `<td><div class="run-controls">` +
       actionButtonFn('Chat', 'Open a direct chat with this agent identity', () => openAgentChat(id)) +
       actionButtonFn('Edit', 'Edit identity ID or adopt into an environment', () => openAgentEditor(id)) +
-      actionsMenu(controls) +
+      actionsMenu(controls, 'Actions', `manual:${id}`) +
       `</div></td></tr>`;
   }
   html += '</tbody></table>';
@@ -1598,7 +1674,7 @@ function renderWorkers(workers) {
       `<td><div class="run-controls">` +
       actionButtonFn('Chat', 'Open a direct chat with this managed agent', () => openAgentChat(id)) +
       actionButtonFn('Edit', 'Edit identity ID, environment, runtime, and workspace', () => openAgentEditor(id)) +
-      actionsMenu(actionItems) +
+      actionsMenu(actionItems, 'Actions', `worker:${id}`) +
       `</div></td></tr>`;
   }
   html += '</tbody></table>';
@@ -1984,6 +2060,49 @@ function renderHomeControlRoom(stats, agents, managedAgents, residentAgents, env
     `</div>`;
 }
 
+function renderHomeFromState() {
+  renderHomeControlRoom(
+    window._dashboardStats || {},
+    window._allAgents || [],
+    window._managedWorkers || [],
+    window._residentAgents || [],
+    window._environments || [],
+    window._sessions || [],
+    window._spawnRequests || [],
+    window._allRuns || [],
+    window._allMsgs || [],
+    window._recentMessages || []
+  );
+}
+
+function renderTeamFromState() {
+  const residentAgents = window._residentAgents || [];
+  const visibleResidentAgents = residentAgents.filter(([, info]) => shouldShowManualBinding(info));
+  renderAgents(visibleResidentAgents, 'manual-agents-table');
+  renderWorkers(window._managedWorkers || []);
+}
+
+async function renderCurrentPageFromState() {
+  if (currentPage === 'dashboard') renderHomeFromState();
+  if (currentPage === 'workers') renderTeamFromState();
+  if (currentPage === 'environments') {
+    renderEnvironments(window._environments || []);
+    renderSpawnRequests(window._spawnRequests || []);
+    syncSpawnControls(window._environments || []);
+  }
+  if (currentPage === 'sessions') renderSessions(window._sessions || []);
+  if (currentPage === 'dispatches') {
+    renderDispatchStats(window._dashboardStats || {});
+    applyFiltersAndRender();
+    applyRunFiltersAndRender();
+  }
+  if (currentPage === 'analytics') renderAnalytics(window._analytics || {});
+  if (currentPage === 'chat') {
+    await refreshSelectedChannelMessages();
+    renderChat();
+  }
+}
+
 function setAnalyticsRange(range) {
   window._analyticsRange = ['hour', 'day', 'month'].includes(range) ? range : 'hour';
   localStorage.setItem('aifyAnalyticsRange', window._analyticsRange);
@@ -2148,7 +2267,7 @@ function renderEnvironments(environments) {
         isOnline
           ? actionButtonFn('Kill bridge', 'Ask this host bridge process to exit. After it stops, the row can be forgotten.', () => controlEnvironment(env.id, 'stop'), 'btn-danger')
           : actionButtonFn('Forget', 'Hide this offline environment target. Agent identities, chats, and saved session/spec records remain.', () => controlEnvironment(env.id, 'forget'), 'btn-danger'),
-      ]) +
+      ], 'Actions', `env:${env.id}`) +
       `</div>` +
       `</section>`;
   }
@@ -2624,7 +2743,7 @@ function renderChat() {
   }
   timeline.dataset.chatKey = window._chatSelected || '';
   timeline.dataset.lastMessage = latestKey;
-  if (previousKey !== (window._chatSelected || '') || previousLast !== latestKey || nearBottom) {
+  if (previousKey !== (window._chatSelected || '') || nearBottom) {
     timeline.scrollTop = timeline.scrollHeight;
   }
   renderChatInspector(meta, messages);
@@ -3181,6 +3300,35 @@ function isQuietSession(session) {
   return QUIET_SESSION_STATUSES.has(String(session.status || '').toLowerCase());
 }
 
+function sessionDisplayOrder(sessions) {
+  const rank = {
+    running: 0,
+    claimed: 1,
+    starting: 2,
+    recovering: 3,
+    failed: 4,
+    lost: 4,
+    stopped: 5,
+    active: 6,
+    idle: 7,
+    ended: 20,
+    completed: 21,
+    cancelled: 22,
+  };
+  return [...sessions].sort((a, b) => {
+    const agentCmp = String(a.agentId || '').localeCompare(String(b.agentId || ''));
+    if (agentCmp) return agentCmp;
+    const ar = rank[String(a.status || '').toLowerCase()] ?? 10;
+    const br = rank[String(b.status || '').toLowerCase()] ?? 10;
+    if (ar !== br) return ar - br;
+    const runtimeCmp = String(a.runtime || '').localeCompare(String(b.runtime || ''));
+    if (runtimeCmp) return runtimeCmp;
+    const envCmp = String(a.environmentId || '').localeCompare(String(b.environmentId || ''));
+    if (envCmp) return envCmp;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+}
+
 function renderSessionStats(sessions, visibleSessions = sessions) {
   const running = sessions.filter(session => session.status === 'running').length;
   const starting = sessions.filter(session => session.status === 'starting').length;
@@ -3201,7 +3349,7 @@ function renderSessions(sessions) {
   const showEnded = showEndedSessions();
   const toggle = document.getElementById('show-ended-sessions');
   if (toggle) toggle.checked = showEnded;
-  const visibleSessions = showEnded ? sessions : sessions.filter(session => !isQuietSession(session));
+  const visibleSessions = sessionDisplayOrder(showEnded ? sessions : sessions.filter(session => !isQuietSession(session)));
   renderSessionStats(sessions, visibleSessions);
   if (!sessions.length) {
     container.innerHTML = '<p class="em">No runtime sessions yet. Spawn an agent from Environments.</p>';
@@ -3236,7 +3384,7 @@ function renderSessions(sessions) {
       canStopSession ? actionButtonFn('Stop', 'Stop this managed session and interrupt/cancel work where supported', () => controlSession(session.id, 'stop'), 'btn-danger') : '',
     ];
     html += `<tr>` +
-      `<td><b>${esc(session.agentId)}</b><br><span class="t clip-1"${titleAttr(session.id)}>${esc(session.id)}</span>${resumeCommand ? `<details class="session-helper"><summary>CLI resume</summary>${sessionResumeCommandBlock(resumeCommand, 'Resume command')}${actionButtonFn('Pause for CLI', 'Pause dashboard delivery and copy the native CLI resume command', () => takeOverSessionInCli(session.id))}</details>` : ''}</td>` +
+      `<td><b>${esc(session.agentId)}</b><br><span class="t clip-1"${titleAttr(session.id)}>${esc(session.id)}</span>${resumeCommand ? `<details class="session-helper" data-stable-key="session-helper:${esc(session.id)}"><summary>CLI resume</summary>${sessionResumeCommandBlock(resumeCommand, 'Resume command')}${actionButtonFn('Pause for CLI', 'Pause dashboard delivery and copy the native CLI resume command', () => takeOverSessionInCli(session.id))}</details>` : ''}</td>` +
       `<td>${esc(session.runtime || '')}<br><span class="t"${titleAttr(runtimeAttachNote(session))}>${esc(modeLabel)}</span></td>` +
       `<td class="t"${titleAttr(session.environmentId || '')}><span class="clip-1">${esc(session.environmentId || '')}</span></td>` +
       `<td class="t"${titleAttr(session.workspace || '')}><span class="clip-1">${esc(session.workspace || '')}</span></td>` +
@@ -3245,7 +3393,7 @@ function renderSessions(sessions) {
       `<td class="t">${esc(session.lastSeen || '')}</td>` +
       `<td><div class="run-controls">` +
       actionButtonFn('Chat', 'Open chat with the agent backed by this session', () => openAgentChat(session.agentId)) +
-      actionsMenu(sessionActions) +
+      actionsMenu(sessionActions, 'Actions', `session:${session.id}`) +
       `</div></td>` +
       `</tr>`;
   }
@@ -3424,6 +3572,12 @@ async function controlSession(sessionId, action) {
 // ─── Dashboard ──────────────────────────────
 
 async function refreshDashboard() {
+  if (refreshInFlight) {
+    refreshPending = true;
+    return;
+  }
+  refreshInFlight = true;
+  const viewState = captureDashboardViewState();
   try {
     const [statsRes, agentsRes, runsRes, envRes, spawnRes, sessionsRes, channelsRes, recentRes] = await Promise.all([
       apiFetch(API + '/stats').then(r => r.json()),
@@ -3449,6 +3603,7 @@ async function refreshDashboard() {
     window._allRuns = runs;
     window._recentMessages = recentMessages;
     window._analytics = analyticsRes;
+    window._dashboardStats = statsRes;
     const agents = Object.entries(agentsRes.agents || {});
     const residentAgents = agents.filter(([, info]) => !isManagedWorker(info));
     const managedWorkers = agents.filter(([, info]) => isManagedWorker(info));
@@ -3458,7 +3613,6 @@ async function refreshDashboard() {
     window._residentAgents = residentAgents;
     window._managedWorkers = managedWorkers;
 
-    renderDispatchStats(statsRes);
     const bannerParts = [];
     if (statsRes.channel_unread_messages) {
       bannerParts.push(`${statsRes.channel_unread_messages} unread message(s) came from channels and are shown in Chat, not in the direct-message audit table.`);
@@ -3484,12 +3638,6 @@ async function refreshDashboard() {
     document.getElementById('dashboard-banner').innerHTML =
       bannerParts.length ? `<div class="banner"><div class="banner-row"><span>${bannerParts.join(' ')}</span>${orphanAction}</div></div>` : '';
 
-    renderAgents(visibleResidentAgents, 'manual-agents-table');
-    renderWorkers(managedWorkers);
-    renderEnvironments(environments);
-    renderSpawnRequests(spawnRequests);
-    renderSessions(sessions);
-    syncSpawnControls(environments);
     const agentIds = agents.map(([id]) => id);
     syncSelectOptions('af1', 'From: All', agentIds.concat('dashboard'));
     syncSelectOptions('af2', 'To: All', agentIds.concat('dashboard'));
@@ -3513,14 +3661,8 @@ async function refreshDashboard() {
     allMsgs.sort((a,b) => (b.timestamp||0) - (a.timestamp||0));
     window._allMsgs = allMsgs;
     window._msgPage = window._msgPage || 0;
-    applyFiltersAndRender();
-    applyRunFiltersAndRender();
-    renderHomeControlRoom(statsRes, agents, managedWorkers, residentAgents, environments, sessions, spawnRequests, runs, allMsgs, recentMessages);
-    if (currentPage === 'analytics') renderAnalytics(analyticsRes);
-    if (currentPage === 'chat') {
-      await refreshSelectedChannelMessages();
-      renderChat();
-    }
+    await renderCurrentPageFromState();
+    restoreDashboardViewState(viewState);
 
     document.getElementById('last-update').textContent = 'Updated: ' + new Date().toLocaleTimeString();
     document.getElementById('status-dot').style.color = '#3fb950';
@@ -3537,6 +3679,12 @@ async function refreshDashboard() {
     if (topbarLive) {
       topbarLive.textContent = 'Disconnected';
       topbarLive.classList.add('disconnected');
+    }
+  } finally {
+    refreshInFlight = false;
+    if (refreshPending) {
+      refreshPending = false;
+      scheduleRealtimeRefresh();
     }
   }
 }
