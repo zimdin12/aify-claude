@@ -273,10 +273,11 @@ tr:hover{background:#19212a}
 .actions-menu summary::-webkit-details-marker{display:none}
 .actions-menu[open]{z-index:260}
 .actions-menu[open] .actions-menu-panel{display:flex}
-.actions-menu-panel{display:none;position:absolute;right:0;top:calc(100% + 4px);z-index:260;min-width:190px;flex-direction:column;gap:6px;background:#0f151c;border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 18px 46px #000c}
+.actions-menu-panel{display:none;position:absolute;right:0;top:calc(100% + 4px);z-index:260;min-width:190px;max-width:min(280px,calc(100vw - 32px));flex-direction:column;gap:6px;background:#0f151c;border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 18px 46px #000c}
 .actions-menu-panel .btn{justify-content:flex-start;width:100%}
 .actions-table{overflow:visible}
-.actions-table th:last-child,.actions-table td:last-child{overflow:visible}
+.actions-table th,.actions-table td{min-width:0}
+.actions-table th:last-child,.actions-table td:last-child{overflow:visible;width:120px}
 .actions-table tr:has(.actions-menu[open]){position:relative;z-index:240}
 .actions-table .actions-menu{z-index:40}
 .actions-table tbody tr:nth-last-child(-n+3) .actions-menu-panel{top:auto;bottom:calc(100% + 4px)}
@@ -397,7 +398,7 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .sidebar-footer{background:#121517;border:1px solid #252a2d;border-radius:10px;padding:10px 12px;margin-top:auto}
 .main{padding:18px 22px 22px;background:transparent;display:flex;flex-direction:column;overflow:hidden}
 .page{min-height:0}
-.page.active{flex:1 1 auto;min-height:0;overflow:auto}
+.page.active{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
 #page-chat.active{overflow:hidden}
 .app-topbar{position:relative;top:auto;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:-18px -22px 18px;padding:14px 22px;background:#0b0c0ecc;border-bottom:1px solid #25292d;backdrop-filter:blur(12px);flex:0 0 auto}
 .app-kicker{display:block;color:var(--teal);font-size:.72em;text-transform:uppercase;font-weight:800;letter-spacing:.7px;margin-bottom:2px}
@@ -508,6 +509,18 @@ tr:hover{background:#1b1f21}
 .status-bar-track{height:8px;border-radius:999px;background:#0a0b0c;border:1px solid #282d30;overflow:hidden}
 .status-bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--teal),var(--blue))}
 .status-bar-value{text-align:right;color:var(--muted);font-size:.78em}
+.table-wrap{width:100%;max-width:100%;overflow:visible}
+.sessions-grid{table-layout:fixed}
+.sessions-grid th:nth-child(1),.sessions-grid td:nth-child(1){width:18%}
+.sessions-grid th:nth-child(2),.sessions-grid td:nth-child(2){width:12%}
+.sessions-grid th:nth-child(3),.sessions-grid td:nth-child(3){width:15%}
+.sessions-grid th:nth-child(4),.sessions-grid td:nth-child(4){width:17%}
+.sessions-grid th:nth-child(5),.sessions-grid td:nth-child(5){width:9%}
+.sessions-grid th:nth-child(6),.sessions-grid td:nth-child(6){width:14%}
+.sessions-grid th:nth-child(7),.sessions-grid td:nth-child(7){width:9%}
+.sessions-grid th:nth-child(8),.sessions-grid td:nth-child(8){width:118px}
+.compact-table{table-layout:fixed}
+.compact-table td,.compact-table th{overflow:hidden}
 @media (max-width:1100px){.analytics-layout{grid-template-columns:1fr}.analytics-wide{grid-column:auto}}
 .env-card,.send-form,.modal,.advanced-panel{border-radius:14px;background:#151718;border-color:#2b3033;box-shadow:0 14px 44px #00000030}
 .env-pill,.home-tag,.rb,.tb,.mb{border-radius:999px}
@@ -649,8 +662,8 @@ tr:hover{background:#1b1f21}
             <input id="chat-subject-input" placeholder="Subject for tasks / handoffs">
             <input id="chat-artifact-file" type="file" style="display:none" onchange="uploadChatArtifactFile(event)">
             <button class="btn" title="Upload a file artifact and insert its reference into this message" onclick="chooseChatArtifactFile()">Artifact</button>
-            <button class="btn" title="Queue this message for the next turn instead of steering an active run. Direct messages and channels only." onclick="sendChatMessage({queueIfBusy:true})">Queue</button>
-            <button class="btn btn-primary" title="Send now. If the recipient is busy and steer-capable, inject it into the active run between tool calls." onclick="sendChatMessage()">Send</button>
+            <button class="btn" id="chat-queue-btn" title="Queue this message for the next turn instead of steering an active run. Direct messages and channels only." onclick="sendChatMessage({queueIfBusy:true})">Queue</button>
+            <button class="btn btn-primary" id="chat-send-btn" title="Send now. If the recipient is busy and steer-capable, inject it into the active run between tool calls." onclick="sendChatMessage()">Send</button>
           </div>
           <textarea id="chat-body" placeholder="Message agents or channels from here. Use @agent names naturally in the text."></textarea>
         </div>
@@ -830,7 +843,7 @@ aify-comms</pre>
       <p><b>Manual vs managed:</b> <code>comms_register</code> binds a live resident CLI session you opened yourself. Those rows are shown as manual CLI bindings, and offline entries are historical identities, not killable processes. Dashboard-spawned managed agents are the normal control-plane path: they have environment, workspace, runtime, spawn spec, session state, and recovery metadata. Normal chat should use <code>comms_send(...)</code> or the Chat page.</p>
       <p><b>Live send:</b> messages still fail instead of being stored when the target is offline, stale, stopped, or lacks a live wake path. If the target is busy and steer-capable, normal sends steer into the active run between tool calls. Use <b>Queue</b> only for work that should run after the active turn.</p>
       <p><b>Dashboard composer:</b> <b>Send</b> is the normal teamwork path. It starts idle agents and steers busy steer-capable agents. <b>Queue</b> is the explicit next-turn path.</p>
-      <p><b>Peek mode:</b> turn it on in Chat when you want to watch a conversation without automatically marking incoming messages read. Explicit per-message <b>Mark read</b> still acknowledges the message for the selected <b>Viewing as</b> identity.</p>
+      <p><b>Peek mode:</b> turn it on in Chat when you want to watch a conversation without automatically marking incoming messages read. <b>Mark read</b> acknowledges a direct message or the selected channel for the selected <b>Viewing as</b> identity.</p>
       <p><b>Team communication:</b> keep each message scoped to one ask, result, blocker, or status update. Agents should verify state before asserting it, use direct replies for owned handoffs, use channels for shared context, and split unrelated topics instead of carrying them in one thread.</p>
 
       <h3>Core Concepts</h3>
@@ -1113,8 +1126,17 @@ document.addEventListener('click', event => {
   const target = event.target.closest('[data-dashboard-action]');
   if (!target) return;
   event.preventDefault();
+  const menu = target.closest('.actions-menu');
+  if (menu) menu.open = false;
   runDashboardAction(target.getAttribute('data-dashboard-action'));
 });
+document.addEventListener('toggle', event => {
+  const menu = event.target.closest?.('.actions-menu');
+  if (!menu || !menu.open) return;
+  document.querySelectorAll('.actions-menu[open]').forEach(other => {
+    if (other !== menu) other.open = false;
+  });
+}, true);
 document.addEventListener('change', event => {
   const target = event.target.closest('[data-channel-member-select]');
   if (target) {
@@ -2498,12 +2520,21 @@ function renderChat() {
   const messages = messagesForSelectedChat(meta);
   const timeline = document.getElementById('chat-timeline');
   if (!timeline) return;
+  const previousKey = timeline.dataset.chatKey || '';
+  const previousLast = timeline.dataset.lastMessage || '';
+  const latestMessage = messages[messages.length - 1] || {};
+  const latestKey = latestMessage.id || String(latestMessage.timestamp || '');
+  const nearBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight < 120;
   const prelude = chatPeekBanner() + chatLiveWarning(meta);
   if (!messages.length) {
     timeline.innerHTML = prelude + '<p class="em">No messages in this conversation yet.</p>';
   } else {
     const from = chatIdentity();
     timeline.innerHTML = prelude + messages.map(m => renderChatMessage(m, from)).join('');
+  }
+  timeline.dataset.chatKey = window._chatSelected || '';
+  timeline.dataset.lastMessage = latestKey;
+  if (previousKey !== (window._chatSelected || '') || previousLast !== latestKey || nearBottom) {
     timeline.scrollTop = timeline.scrollHeight;
   }
   renderChatInspector(meta, messages);
@@ -2661,7 +2692,11 @@ function renderChatMessage(m, currentFrom) {
     (!mine && m.source !== 'channel') ? actionButtonFn('Reply', 'Prefill the composer as a threaded reply to this message', () => replyToChat(m.from, m.id, m.subject, m.body || m.preview || '')) : '',
     followTarget ? actionButtonFn('Follow up', 'Open a request to this message target and link it to this message', () => followUpChatMessage(followTarget, m.id, m.subject, m.body || m.preview || '')) : '',
   ].filter(Boolean);
-  if (incoming && !m.read) actions.push(actionButtonFn('Mark read', 'Mark this direct message read for the selected identity only', () => markMessageRead(m.id, currentFrom)));
+  if (incoming && !m.read) {
+    actions.push(m.source === 'channel'
+      ? actionButtonFn('Mark read', 'Mark this channel read for the selected identity', () => markSelectedChatRead())
+      : actionButtonFn('Mark read', 'Mark this direct message read for the selected identity only', () => markMessageRead(m.id, currentFrom)));
+  }
   if (mine && m.id) actions.push(actionButtonFn('Unsend', 'Delete this sent message and matching channel fan-out copies where applicable', () => unsendChatMessage(m.id), 'btn-danger'));
   return `<article class="chat-bubble${klass}">` +
     `<div class="chat-bubble-head"><span class="chat-from">${esc(m.from || '')}</span><span class="chat-time">${fmtTime(m.timestamp)}</span>${type}${priority}</div>` +
@@ -2717,6 +2752,9 @@ function renderChatInspector(meta, messages) {
     window._channelMemberDrafts = window._channelMemberDrafts || {};
     const draft = availableMembers.includes(window._channelMemberDrafts[meta.id]) ? window._channelMemberDrafts[meta.id] : (availableMembers[0] || '');
     window._channelMemberDrafts[meta.id] = draft;
+    const addMemberControl = availableMembers.length
+      ? actionButtonFn('Add member', 'Add the selected agent to this channel', () => addSelectedChannelMember(meta.id))
+      : disabledActionButton('Add member', 'All known agents are already members of this channel');
     html += '<h3>Members</h3>' +
       (members.length
         ? `<div class="mini-list">${members.slice().sort((a, b) => a.localeCompare(b)).map(member => `<div class="mini-row"><span class="env-pill">${esc(member)}</span>${actionButtonFn('Remove', `Remove ${member} from #${meta.id}`, () => removeChannelMember(meta.id, member), 'btn-danger')}</div>`).join('')}</div>`
@@ -2727,7 +2765,7 @@ function renderChatInspector(meta, messages) {
             ? availableMembers.map(id => `<option value="${esc(id)}"${id === draft ? ' selected' : ''}>${esc(id)}</option>`).join('')
             : '<option value="">All known agents are members</option>') +
         `</select>` +
-        actionButtonFn('Add member', 'Add the selected agent to this channel', () => addSelectedChannelMember(meta.id)) +
+        addMemberControl +
       `</div>`;
   } else {
     if (session) {
@@ -2996,7 +3034,7 @@ function renderSpawnRequests(spawnRequests) {
     return;
   }
   const note = hidden ? `<p class="em">${hidden} successful spawn record(s) hidden. Turn on history to inspect old started sessions.</p>` : '';
-  let html = '<table class="spawn-queue-grid"><thead><tr><th>Created</th><th>Agent</th><th>Environment</th><th>Runtime</th><th>Status</th><th>Workspace</th><th>Bridge / Error</th></tr></thead><tbody>';
+  let html = '<div class="table-wrap"><table class="spawn-queue-grid compact-table"><thead><tr><th>Created</th><th>Agent</th><th>Environment</th><th>Runtime</th><th>Status</th><th>Workspace</th><th>Bridge / Error</th></tr></thead><tbody>';
   for (const req of visibleRequests) {
     const detail = req.error || req.claimedByBridgeId || '';
     const statusLabel = spawnRequestStatusLabel(req);
@@ -3010,7 +3048,7 @@ function renderSpawnRequests(spawnRequests) {
       `<td class="t"${titleAttr(detail)}><span class="clip-2">${esc(detail)}</span></td>` +
       `</tr>`;
   }
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   el.innerHTML = note + html;
 }
 
@@ -3083,7 +3121,7 @@ function renderSessions(sessions) {
     container.innerHTML = '<p class="em">Only ended/debug sessions are recorded. Turn on "Show ended/debug sessions" to inspect them.</p>';
     return;
   }
-  let html = '<table class="actions-table"><thead><tr><th>Agent</th><th>Runtime</th><th>Environment</th><th>Workspace</th><th>Status</th><th>Capabilities</th><th>Last Seen</th><th></th></tr></thead><tbody>';
+  let html = '<div class="table-wrap"><table class="actions-table sessions-grid"><thead><tr><th>Agent</th><th>Runtime</th><th>Environment</th><th>Workspace</th><th>Status</th><th>Capabilities</th><th>Last Seen</th><th></th></tr></thead><tbody>';
   for (const session of visibleSessions) {
     const caps = session.capabilities || {};
     const capLabels = ['nativeResume','bridgeResume','cliAttach','interrupt','streaming'].filter(key => caps[key]).map(key => key.replace(/[A-Z]/g, m => ' ' + m.toLowerCase())).join(', ');
@@ -3121,7 +3159,7 @@ function renderSessions(sessions) {
       `</div></td>` +
       `</tr>`;
   }
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   container.innerHTML = html;
 }
 
@@ -3418,7 +3456,7 @@ function renderRuns(runs, containerId = 'dispatch-runs-table') {
     document.getElementById(containerId).innerHTML = '<p class="em">No dispatch runs yet.</p>';
     return;
   }
-  let html = '<table class="runs-grid"><thead><tr><th>Requested</th><th>From → Target</th><th>Status</th><th>Mode</th><th>Runtime</th><th>Subject</th><th>Summary / Error</th><th></th></tr></thead><tbody>';
+  let html = '<div class="table-wrap"><table class="runs-grid actions-table"><thead><tr><th>Requested</th><th>From → Target</th><th>Status</th><th>Mode</th><th>Runtime</th><th>Subject</th><th>Summary / Error</th><th></th></tr></thead><tbody>';
   for (const run of runs) {
     const status = run.status || 'queued';
     const blocked = run.blockedByActiveRun;
@@ -3448,7 +3486,7 @@ function renderRuns(runs, containerId = 'dispatch-runs-table') {
       `</div></td>` +
       `</tr>`;
   }
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   document.getElementById(containerId).innerHTML = html;
 }
 
@@ -3537,7 +3575,7 @@ function renderMessages(msgs, page) {
   const start = pg * MSG_PER_PAGE;
   const slice = msgs.slice(start, start + MSG_PER_PAGE);
 
-  let html = '<table id="mt"><thead><tr><th>Time</th><th>From &rarr; To</th><th>Type</th><th>Subject</th><th>Body</th></tr></thead><tbody>';
+  let html = '<div class="table-wrap"><table id="mt" class="compact-table"><thead><tr><th>Time</th><th>From &rarr; To</th><th>Type</th><th>Subject</th><th>Body</th></tr></thead><tbody>';
   for (const m of slice) {
     const cls = m.read ? 'mr' : 'mu';
     const pri = (m.priority && m.priority !== 'normal') ? `<br><span class="p-${esc(m.priority)}">${esc(m.priority).toUpperCase()}</span>` : '';
@@ -3549,7 +3587,7 @@ function renderMessages(msgs, page) {
       `<td><div class="msg-subject"><b>${esc(m.subject)}</b></div></td>` +
       `<td><div class="msg-body" onclick="this.classList.toggle('expanded')">${esc(m.body||'')}</div></td></tr>`;
   }
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   if (totalPages > 1) {
     html += `<div class="pagination">`;
     if (pg > 0) html += actionButton('Newer', 'Show newer direct-message audit rows', 'msgPage(-1)');
@@ -3630,18 +3668,18 @@ async function showChannelList() {
       document.getElementById('channels-list').innerHTML = '<h2>Channels</h2><p class="em">No channels.</p>';
       return;
     }
-    let html = '<h2>Channels</h2><table><thead><tr><th>Channel</th><th>Members</th><th>Messages</th><th>Unread</th><th>Created By</th></tr></thead><tbody>';
+    let html = '<h2>Channels</h2><div class="table-wrap"><table class="compact-table"><thead><tr><th>Channel</th><th>Members</th><th>Messages</th><th>Unread</th><th>Created By</th></tr></thead><tbody>';
     for (const ch of channels) {
       const actionId = `channel_${++window._dashboardActionSeq}`;
       window._dashboardActions.set(actionId, () => openChannel(ch.name));
       html += `<tr style="cursor:pointer" ${dashboardActionAttr(actionId)}>` +
-        `<td><b style="color:#58a6ff">#${esc(ch.name)}</b><br><span class="t">${esc(ch.description||'')}</span></td>` +
-        `<td>${(ch.members||[]).join(', ')}</td>` +
+        `<td><b style="color:#58a6ff">#${esc(ch.name)}</b><br><span class="t clip-1"${titleAttr(ch.description || '')}>${esc(ch.description||'')}</span></td>` +
+        `<td><span class="clip-2"${titleAttr((ch.members||[]).join(', '))}>${esc((ch.members||[]).join(', '))}</span></td>` +
         `<td>${ch.messageCount || 0}</td>` +
         `<td>${ch.unreadCount || 0}</td>` +
         `<td class="t">${esc(ch.createdBy)}</td></tr>`;
     }
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     document.getElementById('channels-list').innerHTML = html;
   } catch(e) {
     document.getElementById('channels-list').innerHTML = '<h2>Channels</h2><p class="em">Failed to load.</p>';
@@ -3721,14 +3759,14 @@ async function loadFiles() {
       document.getElementById('files-table').innerHTML = '<p class="em">No shared files.</p>';
       return;
     }
-    let html = '<table><thead><tr><th>Name</th><th>From</th><th>Size</th><th>Description</th><th>Shared At</th><th></th></tr></thead><tbody>';
+    let html = '<div class="table-wrap"><table class="compact-table actions-table"><thead><tr><th>Name</th><th>From</th><th>Size</th><th>Description</th><th>Shared At</th><th></th></tr></thead><tbody>';
     for (const f of files) {
-      html += `<tr><td><b>${esc(f.name)}</b></td><td>${esc(f.from)}</td>` +
-        `<td>${fmtSize(f.size)}</td><td>${esc(f.description)}</td>` +
-        `<td class="t">${esc(f.sharedAt)}</td>` +
+      html += `<tr><td><b class="clip-1"${titleAttr(f.name)}>${esc(f.name)}</b></td><td><span class="clip-1"${titleAttr(f.from)}>${esc(f.from)}</span></td>` +
+        `<td>${fmtSize(f.size)}</td><td><span class="clip-2"${titleAttr(f.description)}>${esc(f.description)}</span></td>` +
+        `<td class="t"><span class="clip-1"${titleAttr(f.sharedAt)}>${esc(f.sharedAt)}</span></td>` +
         `<td>${actionButtonFn('Delete', 'Delete this shared artifact from the bridge store', () => deleteFile(f.name), 'btn-danger')}</td></tr>`;
     }
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     document.getElementById('files-table').innerHTML = html;
   } catch(e) {
     document.getElementById('files-table').innerHTML = '<p class="em">Failed to load files.</p>';
@@ -3779,6 +3817,7 @@ async function runRotation() {
 }
 
 async function sendChatMessage(options = {}) {
+  if (window._chatSending) return;
   const meta = selectedChatMeta();
   const from = document.getElementById('chat-from').value || 'dashboard';
   const type = document.getElementById('chat-type').value;
@@ -3790,6 +3829,8 @@ async function sendChatMessage(options = {}) {
   if (!meta.kind) { toast('Select a conversation', '#f85149'); return; }
   if (!body) { toast('Write a message first', '#f85149'); return; }
   const subject = subjectInput || body.split(/\s+/).slice(0, 10).join(' ');
+  window._chatSending = true;
+  setChatSending(true, queueIfBusy);
   try {
     if (meta.kind === 'channel') {
       const sendChannel = () => apiFetch(API + `/channels/${encodeURIComponent(meta.id)}/send`, {
@@ -3845,6 +3886,22 @@ async function sendChatMessage(options = {}) {
     await refreshDashboard();
   } catch (e) {
     toast(e.message || 'Send failed', '#f85149');
+  } finally {
+    window._chatSending = false;
+    setChatSending(false);
+  }
+}
+
+function setChatSending(sending, queueing = false) {
+  const send = document.getElementById('chat-send-btn');
+  const queue = document.getElementById('chat-queue-btn');
+  if (send) {
+    send.disabled = sending;
+    send.textContent = sending && !queueing ? 'Sending...' : 'Send';
+  }
+  if (queue) {
+    queue.disabled = sending;
+    queue.textContent = sending && queueing ? 'Queueing...' : 'Queue';
   }
 }
 

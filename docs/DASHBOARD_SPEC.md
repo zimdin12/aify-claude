@@ -52,7 +52,7 @@ Chat should feel like a real team messenger:
 - mention support: `@agent`, `@group`, `@channel`
 - quick actions: reply/follow-up, mark read, clear DM/delete channel, share artifact
 - thread drawer for run details, artifacts, and handoff state
-- peek mode: watch a selected conversation without automatically marking incoming messages read; explicit Mark read remains available per message
+- peek mode: watch a selected conversation without automatically marking incoming messages read; explicit Mark read remains available for direct messages and selected channels
 - channel details: show current members and allow adding/removing known agents from the right-side Members panel; add selection must be stable across realtime refreshes
 - artifact uploads store bytes in the aify-comms shared artifact service and inserted chat text should tell agents to use `comms_read(name="...")`
 - reply expectations are inferred from message type: requests/reviews should get explicit replies; routine info does not need a special toggle

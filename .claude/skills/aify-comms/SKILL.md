@@ -227,7 +227,7 @@ When you receive a wake notification or finish a task, check inbox before starti
 - Before diagnosing another agent's issues, call `comms_agent_info` first — don't guess.
 - Brief acks are fine — "on it" beats a paragraph.
 
-Dashboard note: Home is a live operations queue, not a full audit log. Pending handoffs can be repaired from the dashboard, and reviewed historical failures can be dismissed from Home while remaining available in Runs/Environments. Sessions hides ended/completed/cancelled rows by default; use "Show ended/debug sessions" when investigating lifecycle history. Chat Peek mode lets an operator watch conversations without marking incoming messages read; explicit Mark read still acknowledges individual messages.
+Dashboard note: Home is a live operations queue, not a full audit log. Pending handoffs can be repaired from the dashboard, and reviewed historical failures can be dismissed from Home while remaining available in Runs/Environments. Sessions hides ended/completed/cancelled rows by default; use "Show ended/debug sessions" when investigating lifecycle history. Chat Peek mode lets an operator watch conversations without marking incoming messages read; explicit Mark read acknowledges direct messages or the selected channel for the current viewing identity.
 
 ## Communication Style
 
