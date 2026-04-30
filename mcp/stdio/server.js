@@ -2536,13 +2536,13 @@ server.tool(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 5d. comms_listen -- Block until messages arrive (replaces polling)
+// 5d. comms_listen -- Deprecated compatibility/debug long-poll
 // ═══════════════════════════════════════════════════════════════════════════════
 
 server.tool(
   "comms_listen",
-  "Wait for incoming messages. Blocks until a message arrives or timeout. " +
-    "Call this only when you're idle — it replaces polling loops and is not for active managed dispatch turns. " +
+  "Deprecated compatibility/debug long-poll for incoming messages. Blocks until a message arrives or timeout. " +
+    "Do not use for normal teamwork or active managed dispatch turns; use bridge wake delivery, comms_inbox, and comms_send instead. " +
     "Returns immediately if you already have unread messages.",
   {
     agentId: z.string().describe("Your agent ID"),
@@ -2571,7 +2571,7 @@ server.tool(
         const res = await fetch(url, options);
         const r = await res.json();
         if (!r.messages || r.messages.length === 0) {
-          return { content: [{ type: "text", text: "No messages received (timeout). Call comms_listen again to keep waiting." }] };
+          return { content: [{ type: "text", text: "No messages received (timeout). comms_listen is deprecated compatibility/debug long-polling; use bridge wake delivery and comms_inbox for normal work." }] };
         }
         const registry = {};
         try { const a = await httpCall("GET", "/agents"); registry.agents = a.agents; } catch {}
@@ -2581,7 +2581,7 @@ server.tool(
         };
       } catch (e) {
         if (e.name === "TimeoutError" || e.name === "AbortError" || /fetch failed|ECONNREFUSED|ECONNRESET|ETIMEDOUT|socket/i.test(e.message)) {
-          return { content: [{ type: "text", text: "No messages received (connection interrupted). Call comms_listen again to keep waiting." }] };
+          return { content: [{ type: "text", text: "No messages received (connection interrupted). comms_listen is deprecated compatibility/debug long-polling; use bridge wake delivery and comms_inbox for normal work." }] };
         }
         return { content: [{ type: "text", text: `Listen error: ${e.message}` }], isError: true };
       }
@@ -2606,7 +2606,7 @@ server.tool(
       }
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
-    return { content: [{ type: "text", text: "No messages received (timeout). Call comms_listen again to keep waiting." }] };
+    return { content: [{ type: "text", text: "No messages received (timeout). comms_listen is deprecated compatibility/debug long-polling; use bridge wake delivery and comms_inbox for normal work." }] };
   }
 );
 

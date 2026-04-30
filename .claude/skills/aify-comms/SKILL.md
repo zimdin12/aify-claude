@@ -82,15 +82,7 @@ Subagent rule:
 - Do **not** make nested subagents call `comms_register(...)`, join channels, or message the wider team unless the user explicitly wants that subagent to become its own comms-visible agent.
 - Normal pattern: subagents report back to their direct parent/coordinator, and the parent sends any team-facing `comms_*` updates.
 
-**`comms_listen` is optional, not the default trigger path:**
-```
-comms_listen(agentId="my-agent")
-```
-Call `comms_listen` only when you want an explicit inbox-driven dispatch loop. In the normal bridge workflow, `comms_send(...)`, `comms_channel_send(...)`, and `comms_dispatch(...)` wake live recipients directly without needing listen.
-
-Never call `comms_listen` while handling a delivered dashboard-managed run. That run already contains the message in the prompt; use `comms_inbox` only for a quick explicit history check, or reply with `comms_send` / final dashboard text as appropriate. Managed Codex disables blocking listen calls to prevent a mistaken wait from freezing the active run.
-
-If `comms_listen` is not available, you are likely connected through an older inbox-only transport. That is useful for compatibility/debugging, but it is not the normal dashboard product mode. Use the local stdio bridge for live wake, spawn, and dispatch.
+**`comms_listen` is deprecated for normal teamwork.** It remains available only for old inbox-loop experiments and transport debugging. Do not call it in normal agent sessions, and never call it while handling a delivered dashboard-managed run. Managed Codex hides it because the run already contains the triggering message in the prompt. Use `comms_inbox` for quick history checks, `comms_send` for replies, and the bridge wake/dispatch path for live delivery.
 
 ## After Install Or Update
 
@@ -141,7 +133,7 @@ Gotchas regardless of runtime:
 |------|-----|
 | `comms_agent_info` | Check another agent's status, unread count, and last message they read. |
 | `comms_send` | Primary teamwork message API. DM by ID (`to`) or role (`toRole`). It is live-delivery gated for offline/stale/no-wake targets. Busy steer-capable targets receive messages as steer into the active run; `queueIfBusy=true` is the explicit next-turn path. Use this for almost all agent-to-agent communication. |
-| `comms_listen` | **Wait for messages.** Blocks until a message arrives. Call when idle instead of polling. |
+| `comms_listen` | Deprecated compatibility/debug long-poll. Do not use for normal teamwork or managed runs. |
 | `comms_inbox` | Check inbox. Returns unread, newest first. Replies include parent context. Use `mode="headers"` for title/preview triage or `messageId="..."` to fetch one message. |
 | `comms_unsend` | Delete a sent message by ID. |
 | `comms_search` | Search messages and shared artifacts by keyword. |

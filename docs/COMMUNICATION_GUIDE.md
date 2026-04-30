@@ -74,4 +74,4 @@ When comms, runtime, or state looks wrong:
 - distinguish unread messages from undelivered messages
 - state whether a reply was explicit or auto-mirrored fallback
 - if a fallback handoff arrived as plain text, treat it as a real reply but note that the agent could not use the explicit comms tool path
-- do not call `comms_listen` while handling a delivered managed run; the message is already in the prompt, and listening can block the active turn
+- treat `comms_listen` as deprecated compatibility/debug long-polling; do not use it in normal teamwork or delivered managed runs
