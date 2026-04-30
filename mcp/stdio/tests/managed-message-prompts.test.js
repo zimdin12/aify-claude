@@ -17,9 +17,10 @@ const dashboardUser = buildUserPrompt({
   requireReply: true,
 });
 assert.match(dashboardSystem, /human\/operator/);
-assert.match(dashboardSystem, /comms_send\(from="sc-coder", to="dashboard"/);
-assert.match(dashboardSystem, /Dashboard is store-only/);
-assert.match(dashboardUser, /Reply to the dashboard user with comms_send\(to="dashboard"/);
+assert.match(dashboardSystem, /final plain text is the chat reply/);
+assert.match(dashboardSystem, /stores that final answer in dashboard chat/);
+assert.doesNotMatch(dashboardSystem, /comms_send\(from="sc-coder", to="dashboard"/);
+assert.match(dashboardUser, /Reply to the dashboard user in final plain text/);
 
 const channelSystem = buildSystemPrompt("sc-coder", agentInfo, {
   from: "sc-manager",
@@ -36,18 +37,19 @@ const channelUser = buildUserPrompt({
 assert.match(channelSystem, /channel\/group message/);
 assert.match(channelSystem, /Reply in the channel only when you are named/);
 assert.match(channelSystem, /managed background run/);
-assert.match(channelSystem, /Use comms_send for the current reply/);
-assert.match(channelSystem, /proactive status message with comms_send\(to="dashboard"/);
-assert.match(channelUser, /Reply with comms_send\(type="response"\) if this message asks/);
-assert.match(channelUser, /Reply delivery: send the current reply with comms_send/);
+assert.match(channelSystem, /Final plain text is the current reply/);
+assert.match(channelSystem, /Use comms_send only for separate out-of-band messages/);
+assert.match(channelUser, /answer in final plain text/);
+assert.match(channelUser, /Reply delivery: final plain text is threaded and delivered/);
 assert.match(channelUser, /Do not create broad acknowledgement loops/);
-assert.match(channelUser, /send the dashboard\/human a concise status message/);
+assert.match(channelUser, /Use comms_send only for separate out-of-band updates/);
 
 const directSystem = buildSystemPrompt("sc-coder", agentInfo, {
   from: "sc-manager",
   subject: "Review this",
   requireReply: true,
 });
-assert.match(directSystem, /reply with comms_send/);
+assert.match(directSystem, /put the reply in final plain text/);
+assert.match(directSystem, /do not call comms_send for this current reply/);
 
 console.log("managed-message-prompts.test.js: all assertions passed");

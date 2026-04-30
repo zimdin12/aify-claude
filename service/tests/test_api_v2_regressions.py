@@ -2779,8 +2779,7 @@ class ApiV2RegressionTests(unittest.TestCase):
         inbox = self.client.get(f"/api/v1/messages/inbox/lead?messageId={result_message_id}")
         self.assertEqual(inbox.status_code, 200, inbox.text)
         message = inbox.json()["messages"][0]
-        self.assertIn("Auto-mirrored dispatch result", message["body"])
-        self.assertIn("ready for review", message["body"])
+        self.assertEqual(message["body"], "ready for review")
 
     def test_claude_delivery_only_runs_do_not_count_as_pending_handoffs(self):
         self._register("lead", runtime="codex", sessionMode="managed")

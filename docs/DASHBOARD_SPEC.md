@@ -58,9 +58,9 @@ Chat should feel like a real team messenger:
 - reply expectations are inferred from message type: requests/reviews should get explicit replies; routine info does not need a special toggle
 - normal dashboard chat has one send path; strict dispatch remains an advanced API/debug path, not a primary composer option
 - conversation context should stay focused: managed prompts should include only compact recent direct context, tell agents not to revive unrelated topics, and require evidence checks before status/history claims
-- dashboard-origin direct messages are human/operator chat: managed agents should answer with `comms_send(to="dashboard", type="response", ...)`; dashboard is store-only and does not wake a runtime
-- asynchronous manager updates should use `comms_send(to="dashboard", type="info" or "response", ...)` when completing a dashboard promise; captured final output remains run summary/fallback repair
-- delivered managed agent-to-agent requests/reviews/errors should answer with `comms_send(type="response", inReplyTo=...)`; final plain-text output is run-level diagnostics/fallback, not the primary chat path
+- dashboard-origin direct messages are human/operator chat: managed agents answer the current delivered run in final plain text, and the bridge stores that final answer in dashboard chat
+- asynchronous manager updates outside the current delivered run should use `comms_send(to="dashboard", type="info" or "response", ...)` when completing a dashboard promise; captured final output remains a backend safety net
+- delivered managed agent-to-agent requests/reviews/errors should answer the current message in final plain text; the bridge captures and threads that answer into chat
 
 The existing inbox/message tables can remain as an admin/debug view, but the default user experience should be conversational.
 
@@ -75,7 +75,7 @@ Message states:
 - `handoff pending`: reply expected
 - `closed`: handoff complete or explicitly dismissed
 
-Dashboard-origin managed messages use `comms_send(to="dashboard")` as the primary chat reply path. Delivered managed agent-to-agent runs use `comms_send(type="response", inReplyTo=...)` for threaded chat replies. Captured final plain-text output remains visible in Runs as summary/diagnostics and can be mirrored by fallback repair if the tool path fails or the agent ignores protocol. Later teammate-triggered manager/operator results that complete a dashboard promise should be sent with `comms_send(to="dashboard")`; backend summary mirroring is a safety net, not the expected path.
+Dashboard-origin managed messages use final plain text as the primary chat reply path. Delivered managed agent-to-agent runs also use final plain text for the current threaded reply. The bridge captures that final output into Runs and stores/threads it into chat so managed replies do not depend on an extra MCP tool call. Later teammate-triggered manager/operator results outside the current delivered run should still be sent with `comms_send(to="dashboard")`; backend summary mirroring is a safety net.
 
 Group chat must prevent accidental loops:
 

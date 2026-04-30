@@ -451,14 +451,13 @@ function autoReplySubjectForRun(run = {}, terminalStatus = "completed") {
 }
 
 function autoReplyBodyForRun(run = {}, terminalStatus = "completed", detailText = "") {
-  const intro =
-    terminalStatus === "failed"
-      ? "Auto-mirrored dispatch failure because no explicit reply message was sent during the run."
-      : terminalStatus === "cancelled"
-        ? "Auto-mirrored dispatch cancellation because no explicit reply message was sent during the run."
-        : "Auto-mirrored dispatch result because no explicit reply message was sent during the run.";
   const detail = String(detailText || "").trim() ||
     (terminalStatus === "failed" ? "Run failed." : terminalStatus === "cancelled" ? "Run cancelled." : "Run completed.");
+  if (terminalStatus === "completed") return detail;
+  const intro =
+    terminalStatus === "failed"
+      ? "The run failed before the agent sent a chat reply."
+      : "The run was cancelled before the agent sent a chat reply.";
   return `${intro}\n\n${detail}`;
 }
 
@@ -1964,7 +1963,7 @@ server.tool(
     "This is live-delivery gated: if the target is offline, stale, stopped, or lacks a live wake path, the message is not written. If the target is busy and steer-capable, ordinary sends steer into the active run between tool calls. If the target is busy but cannot steer, ordinary sends queue or merge as next-turn work. Use queueIfBusy=true only when the message should run after the active turn even when steer is available. Agent-reported blocked/completed states are status notes, not delivery blockers. " +
     "The special target dashboard stores a message for the human/operator without trying to start a runtime. " +
     "Resident sessions trigger only when that exact runtime/session handle supports resident execution; environment-managed sessions remain the persistent fallback. " +
-    "Agents should normally answer messages, and should reply to requests, reviews, errors, dashboard chat, and useful teammate updates with comms_send(type=\"response\", inReplyTo=...) unless told otherwise. Final plain-text output is captured for run summaries/diagnostics and fallback repair; it is not the primary chat delivery path. Keep messages scoped to one topic, state what you checked when truth matters, ask one clear question when blocked, and avoid reviving unrelated older context. The requireReply override is only for edge cases.",
+    "Agents should normally answer messages. In resident/live CLI sessions, reply with comms_send(type=\"response\", inReplyTo=...) when you are answering an inbox message. In dashboard-managed delivered runs, answer the current message in final plain text; the bridge captures and threads that final answer into chat. Use comms_send from managed runs only for separate out-of-band/proactive messages. Keep messages scoped to one topic, state what you checked when truth matters, ask one clear question when blocked, and avoid reviving unrelated older context. The requireReply override is only for edge cases.",
   {
     from: z.string().describe("Your agent ID"),
     to: z.string().optional().describe("Target agent ID"),

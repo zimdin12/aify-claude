@@ -52,7 +52,7 @@ What was corrected in this pass:
 - **Analytics**: replaced old row stacks with a switched traffic chart (`24h`, `30d`, `12m`), live-health cards, and a run-status mix chart.
 - **Live failure visibility**: Home includes live-binding issues in Needs Attention, and DM chat shows a warning banner when a target is not live-wake capable.
 - **Live-only spawn model**: dashboard/API now reject new non-managed-warm spawn modes. Legacy values may still exist in old data, but they are not product choices.
-- **Dashboard chat handoffs**: delivered managed runs use structured `comms_send(...)` replies as the primary chat path. Final runtime text remains visible in Runs as summary/diagnostics and fallback repair.
+- **Dashboard chat handoffs**: delivered managed runs use final plain text as the current reply. The bridge captures it into Runs and stores/threads it into chat; `comms_send(...)` is reserved for separate out-of-band/proactive updates from managed runs.
 - **Fragile button handlers**: dynamic dashboard actions now use registered function handlers instead of interpolating arbitrary IDs/names into inline JavaScript string literals.
 - **Issue queue cleanup**: Home exposes handoff repair and local dismissal for reviewed historical failures so "Needs Attention" stays actionable.
 

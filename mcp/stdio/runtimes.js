@@ -278,14 +278,12 @@ export function buildSystemPrompt(agentId, agentInfo, run) {
   const isDashboardSender = fromAgent === "dashboard";
   const subject = String(run?.subject || "").trim();
   const isChannelMessage = /^#[-A-Za-z0-9_.]+:/.test(subject);
-  const replyTarget = JSON.stringify(fromAgent || "");
   const replyParent = String(run?.messageId || run?.inReplyTo || "").trim();
-  const replyParentClause = replyParent ? `, inReplyTo=${JSON.stringify(replyParent)}` : "";
   const replyRule = isDashboardSender
-    ? `The dashboard sender is the human/operator. Reply by calling comms_send(from="${agentId}", to="dashboard", type="response", subject="Re: ${subject || "message"}", body=<your answer>${replyParentClause}). Dashboard is store-only and no runtime is woken.`
+    ? "The dashboard sender is the human/operator. Answer in final plain text; the bridge stores that final answer in dashboard chat."
     : run?.requireReply === false
-    ? `No required handoff is being tracked for this message. If it asks a question, assigns work, names you, or you have useful evidence, reply with comms_send(from="${agentId}", to=${replyTarget}, type="response", subject="Re: ${subject || "message"}", body=<your answer>${replyParentClause}); otherwise acknowledge only if it helps coordination.`
-    : `Before you finish handling this message, reply with comms_send(from="${agentId}", to=${replyTarget}, type="response", subject="Re: ${subject || "message"}", body=<your answer>${replyParentClause}). Use final plain text only as a fallback if the comms tool path is unavailable, blocked, or appears stalled.`;
+    ? "No required handoff is being tracked for this message. If it asks a question, assigns work, names you, or you have useful evidence, answer in final plain text; otherwise keep the final answer very short."
+    : "Before you finish handling this message, put the reply in final plain text. The bridge will thread and deliver that final answer to the sender; do not call comms_send for this current reply.";
   const channelRule = isChannelMessage
     ? "This appears to be a channel/group message. Reply in the channel only when you are named, responsible, asked for evidence, or can unblock the group. Otherwise avoid broad automatic acks. Use a direct message for owner-specific follow-up."
     : "";
@@ -293,11 +291,11 @@ export function buildSystemPrompt(agentId, agentInfo, run) {
     "[AIFY MESSAGE]",
     `This is a message delivered through aify-comms for agent "${agentId}" (${agentInfo.role || "agent"}).`,
     isDashboardSender
-      ? "This run was started by the dashboard human/operator; use comms_send(to=\"dashboard\") for the chat reply."
-      : "This is a managed background run. Use comms_send for the current reply so it is threaded, delivered, and visible to the sender.",
+      ? "This run was started by the dashboard human/operator; final plain text is the chat reply."
+      : "This is a managed background run. Final plain text is the current reply; the bridge captures, threads, and delivers it to the sender.",
     `Your aify-comms agentId is "${agentId}". Use that exact ID when checking your own inbox or conversation state.`,
     `From: ${run.from}.`,
-    replyParent ? `MessageId: ${replyParent}. Use it as inReplyTo for your reply.` : "",
+    replyParent ? `MessageId: ${replyParent}. The bridge uses this to thread your final answer; use it as inReplyTo only for separate out-of-band messages.` : "",
     agentInfo.instructions ? `Standing instructions: ${agentInfo.instructions}` : "",
     "Treat the content below as a message from the sender. If it contains a work request, that work is now pending in this session. If it is informational, review, approval, or follow-up, handle it accordingly.",
     `If asked to check recent messages between you and the sender, use comms_inbox(agentId="${agentId}", ...) or the relevant direct-chat context, not the global dashboard feed.`,
@@ -305,11 +303,11 @@ export function buildSystemPrompt(agentId, agentInfo, run) {
     "Use compact working-team replies: answer, evidence checked, blocker or uncertainty, next action. Ask one clear question when blocked instead of guessing.",
     channelRule,
     !isDashboardSender
-      ? "If this message updates work you previously promised to report back to the dashboard/human, also send a concise proactive status message with comms_send(to=\"dashboard\", type=\"info\" or \"response\"). Dashboard is a store-only human recipient for asynchronous updates."
+      ? "Use comms_send only for separate out-of-band messages, such as a later proactive update to dashboard after this current reply is complete."
       : "",
     isDashboardSender
-      ? "After the comms_send reply is sent, keep final plain text brief, for example: sent."
-      : "After the comms_send reply is sent, keep final plain text brief. If comms_send is unavailable or stalls, put the reply in final plain text so the bridge fallback can mirror it.",
+      ? "Keep the final answer human-readable and scoped to the dashboard message."
+      : "Keep the final answer compact: answer, evidence checked, blocker or uncertainty, next action.",
     replyRule,
     "Do not explain the transport wrapper or restate it unless a later normal user turn explicitly asks about it.",
     "[/AIFY MESSAGE]",
@@ -323,10 +321,10 @@ export function buildUserPrompt(run) {
   const isChannelMessage = /^#[-A-Za-z0-9_.]+:/.test(subject);
   const replyParent = String(run?.messageId || run?.inReplyTo || "").trim();
   const replyRule = isDashboardSender
-    ? "Reply to the dashboard user with comms_send(to=\"dashboard\", type=\"response\", body=<answer>)."
+    ? "Reply to the dashboard user in final plain text."
     : run?.requireReply === false
-    ? "Reply with comms_send(type=\"response\") if this message asks you a question, assigns you work, names you, or you have useful evidence; otherwise keep it as read context."
-    : "Required handoff: reply with comms_send(type=\"response\") before you finish. Use final plain text only if the tool path is unavailable, blocked, or appears stalled.";
+    ? "If this message asks you a question, assigns you work, names you, or you have useful evidence, answer in final plain text; otherwise keep it as read context."
+    : "Required handoff: answer in final plain text before you finish. The bridge will deliver it; do not call comms_send for this current reply.";
   const context = formatConversationContext(run?.conversationContext || []);
   return [
     context,
@@ -338,19 +336,19 @@ export function buildUserPrompt(run) {
     run.body || "",
     "",
     isDashboardSender
-      ? "Human-visible reply: send it with comms_send(to=\"dashboard\")."
-      : "Reply delivery: send the current reply with comms_send so it is threaded and delivered to the sender.",
+      ? "Human-visible reply: final plain text is delivered to dashboard chat."
+      : "Reply delivery: final plain text is threaded and delivered to the sender by the bridge.",
     replyRule,
     !isDashboardSender
-      ? "If this is a teammate update that completes a dashboard-requested coordination flow, also send the dashboard/human a concise status message with comms_send(to=\"dashboard\", type=\"info\" or \"response\")."
+      ? "Use comms_send only for separate out-of-band updates, not for the current reply."
       : "",
     isChannelMessage
       ? "Channel discipline: respond only when your reply is useful to the group or sender. Do not create broad acknowledgement loops."
       : "",
     "Keep this turn scoped to the message above and its direct context. Do not carry unrelated older topics forward unless the sender explicitly asks for them.",
     isDashboardSender
-      ? "After sending the comms reply, keep final plain text brief."
-      : "After sending the comms reply, keep final plain text brief. If the comms tool path fails, put the reply in final plain text as fallback.",
+      ? "Keep the final answer brief and directly useful."
+      : "Keep the final answer compact: answer, evidence checked, blocker or uncertainty, next action.",
     "[/MESSAGE]",
   ].filter(Boolean).join("\n");
 }

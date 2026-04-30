@@ -7,7 +7,7 @@
 Agents should:
 
 - answer messages that ask for work, review, debugging, approval, or status
-- treat dashboard direct messages as coming from the human/operator and answer them with `comms_send(to="dashboard", type="response", ...)`
+- treat dashboard direct messages as coming from the human/operator and answer the current delivered run in final plain text
 - keep each message focused on one ask, one result, or one blocker
 - verify before asserting when the sender asks about state, history, files, tests, or another agent
 - use direct messages for owned handoffs and channels for shared team context
@@ -39,13 +39,13 @@ Rules:
 
 ## Reply Discipline
 
-For delivered managed runs, answer the current sender with `comms_send(type="response", inReplyTo=...)`. The bridge captures final plain-text output for run summaries, diagnostics, and fallback repair, but chat delivery should depend on tool calls.
+For delivered dashboard-managed runs, answer the current sender in final plain text. The bridge captures that final answer as run output and stores/threads it into chat. This avoids making the current reply depend on an extra MCP `comms_send` call from inside the managed runtime.
 
-For dashboard-origin direct messages, send `comms_send(to="dashboard", type="response", ...)`. Dashboard is a store-only human recipient, so this writes chat without trying to wake a runtime.
+For dashboard-origin direct messages, final plain text is the human-visible chat reply. Dashboard is a store-only human recipient, so no runtime is woken for the reply.
 
-For later asynchronous updates that were triggered by another agent, the manager should send `comms_send(to="dashboard", type="info" or "response", ...)` when the update completes a dashboard promise. The backend may still store manager/operator summaries as fallback repair, but the intended path is explicit tool delivery.
+For later asynchronous updates outside the current delivered run, the manager should send `comms_send(to="dashboard", type="info" or "response", ...)` when the update completes a dashboard promise. The backend may also store manager/operator final summaries as a safety net.
 
-In managed background runs, final plain text is run-level output. Do not assume the user or teammate sees it in chat unless `comms_send` succeeds or fallback repair mirrors it.
+In normal resident/live CLI sessions, keep using `comms_send(type="response", inReplyTo=...)` for inbox replies. In managed delivered runs, do not call `comms_send` for the current reply; use it only for separate out-of-band/proactive messages.
 
 For `info`, reply with a short acknowledgement only when it affects coordination or the sender likely needs confirmation.
 

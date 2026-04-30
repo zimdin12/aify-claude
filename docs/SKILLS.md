@@ -19,8 +19,8 @@ Current dashboard behavior reflected by the skills:
 
 - normal teamwork uses `comms_send`; `comms_dispatch` is a lower-level debug/run-control tool
 - normal sends are live-delivery gated for offline/stale/stopped/no-wake targets; busy steer-capable targets receive normal sends as current-run steer, busy non-steer targets queue/merge as next-turn work, and `queueIfBusy=true` forces explicit next-turn delivery
-- delivered managed runs should answer with `comms_send(type="response", inReplyTo=...)`; final plain-text output is retained as run summary/diagnostics and fallback repair only
-- if a later teammate reply completes a promise to report back to the human, managers/operators should send `comms_send(to="dashboard", type="info" or "response", ...)`; dashboard is a store-only human recipient, and backend summary mirroring is only a safety net
+- delivered dashboard-managed runs should answer the current message in final plain text; the bridge captures and stores/threads that answer into chat
+- if a later teammate reply completes a promise to report back to the human outside the current delivered run, managers/operators should send `comms_send(to="dashboard", type="info" or "response", ...)`; dashboard is a store-only human recipient, and backend summary mirroring is only a safety net
 - channel/group messages should prompt bounded discussion: reply when named, responsible, asked a question, or holding useful evidence; avoid broad automatic acknowledgement loops
 - persistent teammates are created through dashboard Environment spawn, `comms_spawn`, or `comms_compact`, not ordinary one-off subagents
 - existing resident/manual identities can be adopted from the dashboard Team page by opening **Edit** and assigning an online environment/runtime/workspace; agents should still close or stop the old CLI session for that same ID after adoption

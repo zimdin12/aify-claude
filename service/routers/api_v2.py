@@ -1873,6 +1873,25 @@ def _serialize_inbox_message(row, *, include_body: bool) -> dict[str, Any]:
     return msg
 
 
+def _is_replaceable_auto_handoff_message(existing_message, replied_run) -> bool:
+    if not existing_message or not replied_run:
+        return True
+    existing_body = str((existing_message["body"] if "body" in existing_message.keys() else "") or "")
+    if existing_body.startswith("Auto-mirrored dispatch "):
+        return True
+    return (
+        existing_body == _auto_handoff_body_for_run(replied_run)
+        and str((existing_message["subject"] if "subject" in existing_message.keys() else "") or "").strip()
+        == _auto_handoff_subject_for_run(replied_run)
+        and str((existing_message["from_agent"] if "from_agent" in existing_message.keys() else "") or "").strip()
+        == str((replied_run["target_agent"] if "target_agent" in replied_run.keys() else "") or "").strip()
+        and str((existing_message["to_agent"] if "to_agent" in existing_message.keys() else "") or "").strip()
+        == str((replied_run["from_agent"] if "from_agent" in replied_run.keys() else "") or "").strip()
+        and str((existing_message["in_reply_to"] if "in_reply_to" in existing_message.keys() else "") or "").strip()
+        == str((replied_run["message_id"] if "message_id" in replied_run.keys() else "") or "").strip()
+    )
+
+
 async def _link_reply_message_to_dispatch_run(
     db,
     *,
@@ -1896,10 +1915,9 @@ async def _link_reply_message_to_dispatch_run(
         return False
     existing_result_id = str(replied_run["result_message_id"] or "").strip()
     if existing_result_id:
-        existing_cursor = await db.execute("SELECT body FROM messages WHERE id = ?", (existing_result_id,))
+        existing_cursor = await db.execute("SELECT * FROM messages WHERE id = ?", (existing_result_id,))
         existing_message = await existing_cursor.fetchone()
-        existing_body = str((existing_message["body"] if existing_message else "") or "")
-        if not existing_body.startswith("Auto-mirrored dispatch "):
+        if not _is_replaceable_auto_handoff_message(existing_message, replied_run):
             return False
 
     current_status = str(replied_run["status"] or "").strip().lower()
@@ -1968,10 +1986,9 @@ async def _link_unthreaded_reply_to_recent_dispatch_run(
         return False
     existing_result_id = str(replied_run["result_message_id"] or "").strip()
     if existing_result_id:
-        existing_cursor = await db.execute("SELECT body FROM messages WHERE id = ?", (existing_result_id,))
+        existing_cursor = await db.execute("SELECT * FROM messages WHERE id = ?", (existing_result_id,))
         existing_message = await existing_cursor.fetchone()
-        existing_body = str((existing_message["body"] if existing_message else "") or "")
-        if not existing_body.startswith("Auto-mirrored dispatch "):
+        if not _is_replaceable_auto_handoff_message(existing_message, replied_run):
             return False
 
     await db.execute(
@@ -2012,9 +2029,7 @@ def _auto_handoff_body_for_run(row) -> str:
         intro = "Auto-mirrored dispatch cancellation because no explicit reply message was recorded for the run."
     else:
         detail = str((row["summary"] if row else "") or "Run completed.").strip()
-        if from_agent == "dashboard":
-            return detail
-        intro = "Auto-mirrored dispatch result because no explicit reply message was recorded for the run."
+        return detail
     return f"{intro}\n\n{detail}"
 
 
