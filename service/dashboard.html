@@ -1176,6 +1176,7 @@ function captureDashboardViewState() {
   const focusState = activeElement && activeElement.id && /^(INPUT|TEXTAREA|SELECT)$/.test(activeElement.tagName)
     ? {
         id: activeElement.id,
+        value: typeof activeElement.value === 'string' ? activeElement.value : null,
         selectionStart: typeof activeElement.selectionStart === 'number' ? activeElement.selectionStart : null,
         selectionEnd: typeof activeElement.selectionEnd === 'number' ? activeElement.selectionEnd : null,
       }
@@ -1222,8 +1223,10 @@ function restoreDashboardViewState(state) {
     if (state.focusState?.id) {
       const el = document.getElementById(state.focusState.id);
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) {
-        el.focus({preventScroll: true});
-        if (typeof state.focusState.selectionStart === 'number' && typeof el.setSelectionRange === 'function') {
+        const alreadyFocused = document.activeElement === el;
+        if (!alreadyFocused) el.focus({preventScroll: true});
+        const valueUnchanged = typeof el.value !== 'string' || state.focusState.value === null || el.value === state.focusState.value;
+        if (!alreadyFocused && valueUnchanged && typeof state.focusState.selectionStart === 'number' && typeof el.setSelectionRange === 'function') {
           el.setSelectionRange(state.focusState.selectionStart, state.focusState.selectionEnd);
         }
       }

@@ -259,6 +259,11 @@ function describeCodexItem(item = {}) {
   return bits.join(" ");
 }
 
+export function isAifyCommsMcpToolItem(label) {
+  const text = String(label || "");
+  return /mcpToolCall/i.test(text) && /aify-comms/i.test(text);
+}
+
 export function isFatalCodexRuntimeLog(line) {
   const text = String(line || "");
   return (
@@ -1155,6 +1160,10 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
   const quietTimeoutMs = configuredQuietTimeout <= 0
     ? 0
     : Math.max(10 * 60 * 1000, configuredQuietTimeout);
+  const configuredAifyMcpToolTimeout = Number(config.mcpToolTimeoutMs ?? config.commsToolTimeoutMs ?? 90 * 1000);
+  const aifyMcpToolTimeoutMs = configuredAifyMcpToolTimeout <= 0
+    ? 0
+    : Math.max(10 * 1000, configuredAifyMcpToolTimeout);
   const hostCwd = agentInfo.cwd || process.cwd();
   const model = agentInfo.model || config.model || "gpt-5.4";
   const effort = config.effort || "medium";
@@ -1221,10 +1230,10 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
       if (params.item?.id) activeItems.delete(params.item.id);
     } else if (message.method === "item/started" && params.item?.id) {
       const itemType = describeCodexItem(params.item);
-      activeItems.set(params.item.id, itemType);
+      activeItems.set(params.item.id, { label: itemType, startedAt: Date.now() });
       callbacks.onEvent?.("codex", `Started ${itemType}`);
     } else if (message.method === "item/completed" && params.item?.id) {
-      const itemType = activeItems.get(params.item.id) || describeCodexItem(params.item);
+      const itemType = activeItems.get(params.item.id)?.label || describeCodexItem(params.item);
       activeItems.delete(params.item.id);
       callbacks.onEvent?.("codex", `Completed ${itemType}`);
     } else if (message.method === "error" && params.error?.message) {
@@ -1259,9 +1268,11 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
   const promise = new Promise(async (resolve, reject) => {
     rejectPromise = reject;
     let quietTimer = null;
+    let mcpToolTimer = null;
     const timer = setTimeout(() => {
       if (!settled) {
         clearInterval(quietTimer);
+        clearInterval(mcpToolTimer);
         try {
           terminateProcessTree(proc);
         } catch {
@@ -1281,7 +1292,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
         const idleFor = Date.now() - lastActivityAt;
         if (idleFor < quietTimeoutMs) return;
         const activeLabel = activeItems.size
-          ? ` Active Codex item(s): ${[...new Set(activeItems.values())].join(", ")}.`
+          ? ` Active Codex item(s): ${[...new Set([...activeItems.values()].map(item => item.label))].join(", ")}.`
           : "";
         const message =
           `Codex run produced no runtime activity for ${quietTimeoutMs}ms after ${activityLabel}.` +
@@ -1292,6 +1303,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
         settled = true;
         clearTimeout(timer);
         clearInterval(quietTimer);
+        clearInterval(mcpToolTimer);
         try {
           callbacks.onEvent?.("stalled", message);
         } catch {
@@ -1309,6 +1321,41 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
         }
         reject(new Error(message));
       }, Math.min(60 * 1000, Math.max(10 * 1000, Math.floor(quietTimeoutMs / 6))));
+    }
+    if (aifyMcpToolTimeoutMs > 0) {
+      mcpToolTimer = setInterval(() => {
+        if (settled) return;
+        const now = Date.now();
+        const stuck = [...activeItems.values()].find(item => (
+          isAifyCommsMcpToolItem(item.label) && now - item.startedAt >= aifyMcpToolTimeoutMs
+        ));
+        if (!stuck) return;
+        const message =
+          `Codex aify-comms MCP tool call produced no completion for ${aifyMcpToolTimeoutMs}ms. ` +
+          `The turn was terminated before the general quiet-stall timeout. Retry the message after the bridge is updated/restarted; if it repeats, inspect the aify-comms MCP server logs.`;
+        finalStatus = "failed";
+        finalError = message;
+        settled = true;
+        clearTimeout(timer);
+        clearInterval(quietTimer);
+        clearInterval(mcpToolTimer);
+        try {
+          callbacks.onEvent?.("mcp_tool_stalled", message);
+        } catch {
+          // best effort
+        }
+        try {
+          terminateProcessTree(proc);
+        } catch {
+          // ignore shutdown errors
+        }
+        try {
+          rpc?.close?.();
+        } catch {
+          // ignore close errors
+        }
+        reject(new Error(message));
+      }, Math.min(10 * 1000, Math.max(2 * 1000, Math.floor(aifyMcpToolTimeoutMs / 6))));
     }
 
     try {
@@ -1493,6 +1540,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
         clearInterval(poll);
         clearTimeout(timer);
         clearInterval(quietTimer);
+        clearInterval(mcpToolTimer);
         if (finalStatus === "completed") {
           resolve({
             status: "completed",
@@ -1547,6 +1595,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
     } catch (error) {
       clearTimeout(timer);
       clearInterval(quietTimer);
+      clearInterval(mcpToolTimer);
       reject(error);
       try {
         terminateProcessTree(proc);
