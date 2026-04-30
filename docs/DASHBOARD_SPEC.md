@@ -58,6 +58,8 @@ Chat should feel like a real team messenger:
 - reply expectations are inferred from message type: requests/reviews should get explicit replies; routine info does not need a special toggle
 - normal dashboard chat has one send path; strict dispatch remains an advanced API/debug path, not a primary composer option
 - conversation context should stay focused: managed prompts should include only compact recent direct context, tell agents not to revive unrelated topics, and require evidence checks before status/history claims
+- dashboard-origin direct messages are human/operator chat: managed agents should answer in final plain text and the bridge records the response in chat, not by requiring a fake `comms_send(to="dashboard")`
+- agent-to-agent direct requests/reviews/errors should get explicit threaded `comms_send(type="response", inReplyTo=...)` replies; final plain-text mirroring is a fallback, not the preferred path
 
 The existing inbox/message tables can remain as an admin/debug view, but the default user experience should be conversational.
 
@@ -81,6 +83,7 @@ Group chat must prevent accidental loops:
 - release/extend budget button
 - per-group policy for whether agents may mention each other automatically
 - manager summaries should route work by owner/topic and avoid broad team pings when one agent can answer
+- agents reply in channels when named, responsible, asked a question, or holding useful evidence; they should avoid broad automatic acks
 
 ## Spawn Agent Flow
 

@@ -7,6 +7,7 @@
 Agents should:
 
 - answer messages that ask for work, review, debugging, approval, or status
+- treat dashboard direct messages as coming from the human/operator and answer them in the run's final chat response
 - keep each message focused on one ask, one result, or one blocker
 - verify before asserting when the sender asks about state, history, files, tests, or another agent
 - use direct messages for owned handoffs and channels for shared team context
@@ -40,9 +41,13 @@ Rules:
 
 For `request`, `review`, and `error` messages, reply explicitly with `comms_send(type="response", inReplyTo=...)` unless the sender clearly says no reply is needed.
 
+For dashboard-origin direct messages, do not try to send `comms_send(to="dashboard")`. The managed runtime should answer the human/operator in its final plain-text response; the bridge records that response in dashboard chat.
+
 For `info`, reply with a short acknowledgement only when it affects coordination or the sender likely needs confirmation.
 
-For channel messages, avoid automatic loops. Reply when you are named, responsible, or have useful evidence. Use direct messages for owner-specific follow-up.
+For channel messages, avoid automatic loops. Reply when you are named, responsible, asked a question, or have useful evidence. Use direct messages for owner-specific follow-up. Managers should ask named agents or owners for evidence instead of sending broad "everyone answer" prompts.
+
+Agents may send multiple messages in a row when it helps coordination, for example an acknowledgement followed by a result, or a blocker followed by a fix. Do not split one coherent answer into chat spam.
 
 ## Manager Pattern
 
@@ -53,6 +58,7 @@ A manager agent should:
 - summarize decisions back to the channel or user
 - route blockers to exactly the agent that can resolve them
 - avoid pinging the whole team when one owner is enough
+- collect direct replies from owners before telling the user "everyone agreed" or "both teammates acked"
 
 ## Failure Pattern
 
@@ -62,4 +68,4 @@ When comms, runtime, or state looks wrong:
 - inspect `comms_run_status` before assuming a run is stuck
 - distinguish unread messages from undelivered messages
 - state whether a reply was explicit or auto-mirrored fallback
-
+- if a fallback handoff arrived as plain text, treat it as a real reply but note that the agent could not use the explicit comms tool path

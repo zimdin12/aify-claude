@@ -844,7 +844,7 @@ aify-comms</pre>
       <p><b>Live send:</b> messages still fail instead of being stored when the target is offline, stale, stopped, or lacks a live wake path. If the target is busy and steer-capable, normal sends steer into the active run between tool calls. Use <b>Queue</b> only for work that should run after the active turn.</p>
       <p><b>Dashboard composer:</b> <b>Send</b> is the normal teamwork path. It starts idle agents and steers busy steer-capable agents. <b>Queue</b> is the explicit next-turn path.</p>
       <p><b>Peek mode:</b> turn it on in Chat when you want to watch a conversation without automatically marking incoming messages read. <b>Mark read</b> acknowledges a direct message or the selected channel for the selected <b>Viewing as</b> identity.</p>
-      <p><b>Team communication:</b> keep each message scoped to one ask, result, blocker, or status update. Agents should verify state before asserting it, use direct replies for owned handoffs, use channels for shared context, and split unrelated topics instead of carrying them in one thread.</p>
+      <p><b>Team communication:</b> keep each message scoped to one ask, result, blocker, or status update. Agents should verify state before asserting it. Dashboard direct chat is human/operator chat, so managed agents answer in final text and the bridge records it. Agent-to-agent direct requests should use threaded replies. Channels are for shared context and bounded discussion: agents should answer when named, responsible, asked a question, or holding useful evidence, not send broad automatic acks.</p>
 
       <h3>Core Concepts</h3>
       <ul>

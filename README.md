@@ -6,6 +6,8 @@ Dashboard-driven communication and control plane for AI coding teams.
 
 The dashboard is the product surface. Messages are the work interface; runs, sessions, bridges, and handoffs are operational telemetry around those messages.
 
+The intended team behavior is conversational but disciplined: dashboard direct chat is human/operator chat, direct agent requests should receive threaded replies, and channel discussion should happen when an agent is named, responsible, asked a question, or has evidence to contribute.
+
 ## Product Direction
 
 `aify-comms` keeps the original communication core:

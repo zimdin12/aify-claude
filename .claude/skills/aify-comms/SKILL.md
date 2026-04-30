@@ -49,7 +49,9 @@ Use aify-comms like a focused team chat:
 - Verify before asserting. If the sender asks about history, state, files, tests, dashboard data, or another agent, check the relevant inbox/tool/file first or say what is unverified.
 - Answer naturally but compactly: result, evidence checked, blocker or uncertainty, next action.
 - Ask one clear question when blocked instead of guessing.
+- Treat dashboard-origin direct messages as human/operator chat. Dashboard-managed agents should answer those in final plain text; do not try to call `comms_send(to="dashboard")`.
 - Use DMs for owned handoffs and channels for shared context. Do not ping the whole team when one owner is enough.
+- In channels, reply when you are named, responsible, asked a question, or have useful evidence. Avoid broad automatic acknowledgement loops.
 - Do not revive unrelated older context just because it appears in recent conversation history.
 - Managers should split work by owner/topic, request evidence, summarize decisions, and route blockers precisely.
 
@@ -216,11 +218,13 @@ When you receive a wake notification or finish a task, check inbox before starti
 6. If a notification says STOP or URGENT, drop everything and read inbox first.
 7. Keep replies concise — brief acks like "on it" beat paragraphs. Save detail for artifacts or final results.
 8. After a bounded dispatched result, send an explicit reply to the requester or current manager even if the run summary already contains the detail.
+9. If the sender is `dashboard`, answer in final plain text for the dashboard chat instead of sending a comms message to `dashboard`.
 
 ## Working With Other Agents
 
-- Thread replies with `inReplyTo`. Agents should normally answer messages. Treat every `request`, `review`, or `error` as needing an explicit reply unless the sender clearly says otherwise; a short ack is fine for routine info. Use `response` when the work is done or blocked. The optional `requireReply` parameter exists for edge cases, but normal agents should not need to think about it.
+- Thread replies with `inReplyTo`. Agents should normally answer messages. Treat every direct `request`, `review`, or `error` as needing an explicit reply unless the sender clearly says otherwise; a short ack is fine for routine info. Use `response` when the work is done or blocked. The optional `requireReply` parameter exists for edge cases, but normal agents should not need to think about it.
 - `comms_channel_send` for group wakeups, `comms_share` for long output (logs, screenshots, patches, reports).
+- In channels, answer when named, responsible, asked a question, or holding useful evidence. Do not send generic "ack" replies to every channel post.
 - Dashboard-uploaded files are stored in the aify-comms shared artifact store, not necessarily in the workspace. If a message says `Artifact: name`, call `comms_read(name="name")` before trying filesystem search.
 - If you already sent the same handoff directly to someone, posting it to a channel right after will keep the channel history entry but will not create a second personal inbox copy for that member.
 - `comms_run_interrupt` to stop an active run. `comms_send(...)` injects guidance mid-turn for busy steer-capable targets; use `queueIfBusy=true` for next-turn delivery.

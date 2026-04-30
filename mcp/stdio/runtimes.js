@@ -263,14 +263,19 @@ export function isFatalCodexRuntimeLog(line) {
   );
 }
 
-function buildSystemPrompt(agentId, agentInfo, run) {
+export function buildSystemPrompt(agentId, agentInfo, run) {
   const fromAgent = String(run?.from || "").trim();
   const isDashboardSender = fromAgent === "dashboard";
+  const subject = String(run?.subject || "").trim();
+  const isChannelMessage = /^#[-A-Za-z0-9_.]+:/.test(subject);
   const replyRule = isDashboardSender
-    ? "Answer the dashboard user in your final plain-text response. Do not call comms_send back to dashboard; the bridge will deliver your final response into the chat."
+    ? "The dashboard sender is the human/operator. Answer them directly in your final plain-text response. Do not call comms_send back to dashboard; the bridge will deliver your final response into the chat."
     : run?.requireReply === false
-    ? "If the sender explicitly does not need a reply, you may just handle the message locally."
+    ? "No required handoff is being tracked for this message. Still respond when the sender asked a question, assigned you work, named you, you are responsible, or you have useful evidence; otherwise acknowledge only if it helps coordination."
     : "Before you finish handling this message, reply to the sender. Prefer comms_send with inReplyTo when the comms tools are available. If the comms tool path is blocked, unavailable, or appears stalled, write the reply in your final plain-text response and stop; the bridge will mirror that final text back to the sender.";
+  const channelRule = isChannelMessage
+    ? "This appears to be a channel/group message. Reply in the channel only when you are named, responsible, asked for evidence, or can unblock the group. Otherwise avoid broad automatic acks. Use a direct message for owner-specific follow-up."
+    : "";
   return [
     "[AIFY MESSAGE]",
     `This is a message delivered through aify-comms for agent "${agentId}" (${agentInfo.role || "agent"}).`,
@@ -281,6 +286,7 @@ function buildSystemPrompt(agentId, agentInfo, run) {
     `If asked to check recent messages between you and the sender, use comms_inbox(agentId="${agentId}", ...) or the relevant direct-chat context, not the global dashboard feed.`,
     "Team communication contract: stay on the current message, do not mix unrelated topics, and do not assume facts you have not checked. If the sender asks for status/history/truth, inspect the available messages/files/tools first and say what you checked. If a request bundles multiple independent topics, answer the current blocker first and propose splitting the rest.",
     "Use compact working-team replies: answer, evidence checked, blocker or uncertainty, next action. Ask one clear question when blocked instead of guessing.",
+    channelRule,
     isDashboardSender
       ? "Plain-text output in this session is delivered back into the dashboard chat."
       : "Plain-text output in this session normally stays local, but the bridge may mirror it as the handoff if no explicit reply message was recorded.",
@@ -290,13 +296,15 @@ function buildSystemPrompt(agentId, agentInfo, run) {
   ].filter(Boolean).join("\n");
 }
 
-function buildUserPrompt(run) {
+export function buildUserPrompt(run) {
   const fromAgent = String(run?.from || "").trim();
   const isDashboardSender = fromAgent === "dashboard";
+  const subject = String(run?.subject || "").trim();
+  const isChannelMessage = /^#[-A-Za-z0-9_.]+:/.test(subject);
   const replyRule = isDashboardSender
     ? "Reply to the dashboard user in your final plain-text response. Do not use comms_send to dashboard."
     : run?.requireReply === false
-    ? "Reply only if useful for the sender."
+    ? "Reply if this message asks you a question, assigns you work, names you, or you have useful evidence; otherwise keep it as read context."
     : "Required handoff: reply to the sender before you finish. Prefer comms_send with inReplyTo. If comms tools are unavailable, blocked, or appear stalled, put the reply in your final plain-text response and stop so the bridge can mirror it.";
   const context = formatConversationContext(run?.conversationContext || []);
   return [
@@ -308,6 +316,9 @@ function buildUserPrompt(run) {
     run.body || "",
     "",
     replyRule,
+    isChannelMessage
+      ? "Channel discipline: respond only when your reply is useful to the group or sender. Do not create broad acknowledgement loops."
+      : "",
     "Keep this turn scoped to the message above and its direct context. Do not carry unrelated older topics forward unless the sender explicitly asks for them.",
     isDashboardSender
       ? "Keep the final response concise and useful for dashboard chat."
