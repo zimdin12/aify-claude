@@ -111,6 +111,18 @@ export function listRuntimeMarkers(runtime, cwd = "") {
   return markers;
 }
 
+export function selectClaudeChannelMarkerForParent(markers, parentPid) {
+  const owner = String(parentPid || "").trim();
+  if (!owner) return null;
+  return [...(markers || [])]
+    .filter((marker) => marker?.channelEnabled === true && String(marker?.parentPid || "") === owner)
+    .sort((a, b) => {
+      const aTime = Date.parse(String(a.createdAt || "")) || 0;
+      const bTime = Date.parse(String(b.createdAt || "")) || 0;
+      return bTime - aTime;
+    })[0] || null;
+}
+
 export function writeRuntimeMarker(runtime, cwd, data = {}) {
   const normalizedCwd = normalizeCwdForKey(cwd) || process.cwd();
   const file = markerFilePath(runtime, normalizedCwd, data?.markerId || process.pid);

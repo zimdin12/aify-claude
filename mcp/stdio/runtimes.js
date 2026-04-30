@@ -1728,7 +1728,7 @@ export function defaultCapabilitiesForRuntime(runtime, sessionMode = "resident",
 
   if (normalizedRuntime === "claude-code") {
     if (!hasClaudeLiveChannel(runtimeConfig)) return [];
-    return ["resident-run", "interrupt"];
+    return ["resident-run", "interrupt", "steer"];
   }
 
   if (!resolvedSessionHandle) return [];

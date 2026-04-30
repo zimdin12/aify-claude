@@ -98,9 +98,9 @@ Repeat for every Codex agent on the machine.
 
 **Cause.** For a long time the `claude-aify` bash wrapper wrote the runtime marker itself with `pid=$$`. On Git Bash for Windows, `$$` is the MSYS shell PID, not a Windows process ID. The bridge's `isProcessAlive` check uses `process.kill(pid, 0)`, which on Windows only understands real Windows PIDs, so it returned false and `listRuntimeMarkers` **auto-deleted the marker on the next read**. Every claude-aify session on Windows silently lost its marker within a second and fell through to `claude-needs-channel`. Same root cause made `codex-aify` markers disappear, which is why the Codex auto-discovery path kept falling through to poisoned threads.
 
-**Fix (shipped).** The marker is now written by the long-lived bridge process (`claude-channel.js` for Claude, `server.js` for Codex when `AIFY_CODEX_APP_SERVER_URL` is set) using node's real `process.pid`. The wrappers no longer touch markers. Requires: pull, restart `claude-aify` / `codex-aify`. Check `C:\Users\<you>\.local\state\aify-comms\runtime-markers\` after a fresh launch — the file should persist and its `pid` field should match a live node child of claude/codex.
+**Fix (shipped).** The marker is now written by the long-lived bridge process (`claude-channel.js` for Claude, `server.js` for Codex when `AIFY_CODEX_APP_SERVER_URL` is set) using node's real `process.pid`. Claude markers also include the parent Claude process PID, so a plain Claude tab cannot accidentally bind through another tab's channel. The wrappers no longer touch markers. Requires: pull, restart `claude-aify` / `codex-aify`. Check `C:\Users\<you>\.local\state\aify-comms\runtime-markers\` after a fresh launch — the file should persist and its `pid` field should match a live node child of claude/codex.
 
-**Fix (recovery when you hit this).** Make sure one `claude-aify` session is alive, then re-register:
+**Fix (recovery when you hit this).** Start the same Claude session through `claude-aify`, then re-register from that session:
 
 ```
 comms_register(agentId="my-agent", role="coder", runtime="claude-code", cwd="C:/path/you/are/in")
@@ -173,7 +173,7 @@ After opening the native CLI, re-register from that same session with the same `
 - `comms_run_interrupt(runId=<current active run>)` if the current work should stop.
 - Use the dashboard run controls to cancel stale queued work.
 - `comms_agent_info(agentId=<target>)` to inspect why the agent is not currently startable.
-- If the agent is actively running and steer-capable, use `comms_send(steer=true)` for guidance that belongs in the current run.
+- If the agent is actively running and steer-capable, ordinary `comms_send(...)` should steer. Set `steer=true` only when you need to be explicit.
 
 ## Run stuck `running`, `comms_run_interrupt` has no effect
 
@@ -266,6 +266,7 @@ If the replacement cwd is an agent workspace and appears immediately after a man
 
 **Fix (current build).** Pull latest and restart the target bridge (`codex-aify` / `claude-aify`) so it is running the steer-tracking fix. Current behavior is:
 - if there is a live steer-capable active run, the message becomes a steer control and the inbox copy auto-marks read when the control completes
+- resident `claude-aify` steering is channel-based: the channel bridge emits a `notifications/claude/channel` event into the live Claude session; this is not the same mechanism as Codex `turn/steer`
 - if the target cannot accept live delivery, `comms_send` returns a not-sent notice instead of queueing future work
 - if the runtime does not support steering, the send follows the normal live-start gate
 

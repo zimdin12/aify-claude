@@ -16,6 +16,7 @@ const API_KEY = process.env.CLAUDE_MCP_API_KEY || process.env.AIFY_API_KEY || ""
 const MACHINE_ID = defaultMachineId();
 const POLL_MS = Number(process.env.AIFY_COMMS_CHANNEL_POLL_MS || process.env.AIFY_CLAUDE_CHANNEL_POLL_MS || 3000);
 const TMP_DIR = process.env.TEMP || process.env.TMP || os.tmpdir();
+const HTTP_TIMEOUT_MS = Math.max(1000, Number(process.env.AIFY_HTTP_TIMEOUT_MS || 20000));
 
 // Write our claude-code runtime marker from this long-lived bridge process.
 // This must happen here, not in the wrapper's bash CLI call, because on
@@ -26,6 +27,7 @@ const MARKER_CWD = process.cwd();
 try {
   writeRuntimeMarker("claude-code", MARKER_CWD, {
     channelEnabled: true,
+    parentPid: process.ppid || "",
   });
 } catch (error) {
   console.error("[aify-channel] failed to write runtime marker:", error?.message || String(error));
@@ -81,12 +83,23 @@ async function httpCall(method, endpoint, body = null) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
   }
-  const res = await fetch(url, options);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`HTTP ${res.status}: ${text}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status}: ${text}`);
+    }
+    return res.json();
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`HTTP ${method} ${endpoint} timed out after ${HTTP_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return res.json();
 }
 
 function dispatchContent(agentId, run) {

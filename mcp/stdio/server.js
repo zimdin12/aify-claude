@@ -23,7 +23,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { loadSettingsEnv } from "./load-env.js";
-import { listRuntimeMarkers, readRuntimeMarker, writeRuntimeMarker, removeRuntimeMarker } from "./runtime-markers.js";
+import { listRuntimeMarkers, readRuntimeMarker, writeRuntimeMarker, removeRuntimeMarker, selectClaudeChannelMarkerForParent } from "./runtime-markers.js";
 import {
   canLaunchRuntime,
   defaultCapabilitiesForRuntime,
@@ -343,27 +343,23 @@ function resolvedRuntimeMarker(runtime, cwd) {
     if (liveMarkers.length > 1) return null;
     return readRuntimeMarker(normalizedRuntime, resolvedCwd);
   }
+  if (normalizedRuntime === "claude-code") {
+    const ownParentPid = String(process.ppid || "");
+    const seen = new Set();
+    const candidates = [];
+    for (const marker of [
+      ...listRuntimeMarkers(normalizedRuntime, resolvedCwd),
+      ...listRuntimeMarkers(normalizedRuntime, ""),
+    ]) {
+      const key = `${marker.cwd || ""}:${marker.pid || ""}:${marker.markerId || ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push(marker);
+    }
+    return selectClaudeChannelMarkerForParent(candidates, ownParentPid);
+  }
   const exact = readRuntimeMarker(normalizedRuntime, resolvedCwd);
   if (exact) return exact;
-  // Fallback for claude-code: if there is no marker for the exact cwd but a
-  // live claude-aify wrapper is running on this machine, use that marker.
-  // This handles the common case where the user launches claude-aify from
-  // one project directory and then cds into a different project before
-  // calling comms_register — the wrapper still fires its channel bridge,
-  // but the per-cwd marker was never written for the new directory.
-  // Codex does NOT get this fallback because its wake path depends on the
-  // specific app-server URL bound to the wrapper that launched it.
-  if (normalizedRuntime === "claude-code") {
-    const anyAlive = listRuntimeMarkers(normalizedRuntime, "");
-    if (anyAlive.length) {
-      anyAlive.sort((a, b) => {
-        const aTime = Date.parse(String(a.createdAt || "")) || 0;
-        const bTime = Date.parse(String(b.createdAt || "")) || 0;
-        return bTime - aTime;
-      });
-      return anyAlive[0];
-    }
-  }
   return null;
 }
 
@@ -2224,8 +2220,9 @@ server.tool(
   }
 );
 
-// comms_run_steer removed — replaced by comms_send(steer=true) which
-// doesn't require knowing the runId and also creates an inbox message.
+// comms_run_steer removed from stdio — ordinary comms_send does not require
+// knowing the runId, creates an inbox message, and steers busy steer-capable
+// targets unless queueIfBusy=true.
 
 /**
  * Spawn a local runtime instance to handle a triggered message.

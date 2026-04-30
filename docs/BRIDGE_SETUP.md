@@ -180,6 +180,8 @@ Managed runtimes have a 12-hour hard dispatch timeout by default. Managed Codex 
 
 Managed agent-to-agent prompts prefer explicit `comms_send(..., inReplyTo=...)` replies. If the comms tool path is blocked or appears stalled, the prompt tells the runtime to finish with plain text instead; the bridge can mirror that final text as the handoff only when no explicit reply was recorded. Mirrored fallback handoffs are stored in the original sender's inbox and best-effort queued for live delivery to that sender when the sender is startable.
 
+Resident `claude-aify` sessions receive live messages and steer controls through Claude Code Channels. The bridge emits `notifications/claude/channel` into the already-running interactive Claude session, so it can react to external comms while the terminal stays open. This is different from Codex's app-server `turn/steer` call, and different from dashboard-managed headless Claude runs (`claude -p --resume ...`), which have no active-turn API for mid-run injection.
+
 Managed prompts also include a focused team-communication contract: stay on the current ask, verify state/history before asserting it, answer with result/evidence/blocker/next action, and split unrelated topics instead of dragging all recent context into one turn. The injected direct-message context is intentionally compact and should be treated as background, not as a command to continue every old thread.
 
 ## Verify

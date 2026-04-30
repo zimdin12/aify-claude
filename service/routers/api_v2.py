@@ -424,7 +424,9 @@ def _default_capabilities_for(
             return []
         return ["resident-run", "resume", "interrupt"]
     if normalized_runtime == "claude-code":
-        return ["resident-run", "interrupt"]
+        if isinstance(runtime_config, dict) and runtime_config.get("channelEnabled") is True:
+            return ["resident-run", "interrupt", "steer"]
+        return []
     return []
 
 
@@ -439,7 +441,20 @@ async def _resolve_recipient_ids(db, *, to: Optional[str], to_role: Optional[str
 
 
 def _row_capabilities(row) -> list[str]:
-    return _json_loads_or(row["capabilities"], [])
+    capabilities = _json_loads_or(row["capabilities"], [])
+    if not row:
+        return capabilities
+    runtime = _normalize_runtime((row["runtime"] if "runtime" in row.keys() else "") or "generic")
+    session_mode = _normalize_session_mode((row["session_mode"] if "session_mode" in row.keys() else "") or "resident")
+    runtime_config = _json_loads_or(row["runtime_config"], {}) if "runtime_config" in row.keys() else {}
+    if runtime == "claude-code" and session_mode == "resident":
+        channel_enabled = isinstance(runtime_config, dict) and runtime_config.get("channelEnabled") is True
+        if not channel_enabled:
+            return [cap for cap in capabilities if cap not in {"resident-run", "interrupt", "steer"}]
+        for cap in ("resident-run", "interrupt", "steer"):
+            if cap not in capabilities:
+                capabilities = [*capabilities, cap]
+    return capabilities
 
 
 def _row_status_note(row) -> str:
@@ -491,7 +506,7 @@ def _agent_execution_mode(row, requested_runtime: Optional[str] = None) -> tuple
         if capabilities and "managed-run" not in capabilities:
             return None, 'agent capabilities do not include "managed-run"'
         return "managed", None
-    if capabilities and "resident-run" not in capabilities:
+    if "resident-run" not in capabilities:
         return None, 'agent capabilities do not include "resident-run"'
     if runtime == "codex" and not session_handle:
         return None, (
@@ -850,7 +865,7 @@ def _agent_record_to_dict(row, status: str, unread: int, dispatch_state: Optiona
         "wakeMode": _agent_wake_mode(row),
         "sessionHandle": row["session_handle"] or "",
         "managedBy": row["managed_by"] or "",
-        "capabilities": _json_loads_or(row["capabilities"], []),
+        "capabilities": _row_capabilities(row),
         "runtimeConfig": _json_loads_or(row["runtime_config"], {}),
         "runtimeState": _json_loads_or(row["runtime_state"], {}),
         "dispatchState": dispatch_state or {"hasActiveRun": False, "activeRun": None, "queuedRuns": 0},

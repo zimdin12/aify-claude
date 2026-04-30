@@ -243,9 +243,11 @@ async def comms_send(
     inReplyTo: str = "",
     priority: str = "normal",
     silent: bool = False,
+    steer: bool | None = None,
+    queueIfBusy: bool = False,
     requireReply: bool | None = None,
 ) -> str:
-    """Send a message to an agent by ID or to all agents with a given role. By default this also requests active work on the target; use silent=true for inbox-only delivery. Request-type sends expect a reply by default unless you override requireReply."""
+    """Send a live-gated message to an agent by ID or role. Busy steer-capable targets receive ordinary sends as current-run guidance; set queueIfBusy=true only for explicit next-turn delivery. Use silent=true only for legacy inbox-only delivery."""
     if not to and not toRole:
         return "Error: need 'to' or 'toRole'"
     should_trigger = not silent
@@ -256,6 +258,8 @@ async def comms_send(
         "body": body,
         "priority": priority,
         "trigger": should_trigger,
+        "steer": steer if steer is not None else not queueIfBusy,
+        "queueIfBusy": queueIfBusy,
         "requireReply": requireReply,
     }
     if to:
@@ -268,9 +272,13 @@ async def comms_send(
     if not r.get("ok"):
         return r.get("error", "No recipients found.")
     if should_trigger and r.get("recipients"):
-        queued = [run.get("targetAgentId", "?") for run in r.get("dispatchRuns", [])]
+        queued = [
+            f"{run.get('targetAgentId', '?')} [{run.get('status', 'queued')}]"
+            + (f" -> {run.get('runId')}" if run.get("runId") else "")
+            for run in r.get("dispatchRuns", [])
+        ]
         skipped = [f"{item.get('targetAgentId', '?')}: {item.get('reason', 'not started')}" for item in r.get("notStarted", [])]
-        note = f"Sent + queued dispatch for {', '.join(queued) if queued else 'no launchable recipients'}."
+        note = f"Sent + live delivery for {', '.join(queued) if queued else 'no launchable recipients'}."
         if skipped:
             note += f" Not started: {'; '.join(skipped)}."
         note += " Use comms_run_status(...) to inspect progress. Request-type sends expect an explicit reply by default, and the bridge mirrors the result if none is sent."
@@ -290,7 +298,7 @@ async def comms_dispatch(
     requireStart: bool = False,
     requireReply: bool | None = None,
 ) -> str:
-    """Queue tracked active work for another agent. SSE clients can request dispatch, but cannot execute dispatch runs themselves. Use requireStart=true when inbox-only fallback is unacceptable. For inbox-only delivery, use comms_send(..., silent=true). Direct dispatch expects a reply by default unless requireReply=false."""
+    """Lower-level tracked run-control/debug API. Normal teamwork should use comms_send, which already fails visibly when live delivery is unavailable. Direct dispatch expects a reply by default unless requireReply=false."""
     if not to and not toRole:
         return "Error: need 'to' or 'toRole'"
     data = {
@@ -384,7 +392,7 @@ async def comms_run_interrupt(runId: str, from_agent: str = "") -> str:
 
 @mcp_server.tool()
 async def comms_run_steer(runId: str, body: str, from_agent: str = "") -> str:
-    """Request additional guidance for an active dispatched run."""
+    """Legacy explicit run-control path. Prefer ordinary comms_send to the target; it steers automatically when the target is busy and steer-capable."""
     r = await _api("POST", f"/dispatch/runs/{runId}/control", {
         "from_agent": from_agent,
         "action": "steer",
@@ -501,11 +509,15 @@ async def comms_channel_send(
     type: str = "info",
     priority: str = "normal",
     silent: bool = False,
+    steer: bool | None = None,
+    queueIfBusy: bool = False,
 ) -> str:
-    """Send a message to a channel. By default this also requests active work for channel members other than the sender; use silent=true for a background-only channel update."""
+    """Send a live-gated message to a channel. Busy steer-capable members receive ordinary sends as current-run guidance; set queueIfBusy=true only for explicit next-turn delivery."""
     should_trigger = not silent
     r = await _api("POST", f"/channels/{channel}/send", {
-        "from_agent": from_agent, "channel": channel, "body": body, "type": type, "priority": priority, "trigger": should_trigger, "silent": silent,
+        "from_agent": from_agent, "channel": channel, "body": body, "type": type, "priority": priority,
+        "trigger": should_trigger, "silent": silent, "steer": steer if steer is not None else not queueIfBusy,
+        "queueIfBusy": queueIfBusy,
     })
     if "detail" in r:
         return f"Error: {r['detail']}"
@@ -513,6 +525,7 @@ async def comms_channel_send(
         queued = [
             (
                 f"{run.get('targetAgentId', '?')} ({run.get('runId', '?')})"
+                + f" [{run.get('status', 'queued')}]"
                 + (
                     f" queued behind active run {run['queuedBehindActiveRun']['runId']}"
                     if run.get("queuedBehindActiveRun", {}).get("runId")
@@ -522,7 +535,7 @@ async def comms_channel_send(
             for run in r.get("dispatchRuns", [])
         ]
         skipped = [f"{item.get('targetAgentId', '?')}: {item.get('reason', 'not started')}" for item in r.get("notStarted", [])]
-        note = f"Sent to #{channel} and queued dispatch for {', '.join(queued) if queued else 'no launchable recipients'}."
+        note = f"Sent to #{channel} with live delivery for {', '.join(queued) if queued else 'no launchable recipients'}."
         if skipped:
             note += f" Not started: {'; '.join(skipped)}."
         note += " Use comms_run_status(...) to inspect progress."

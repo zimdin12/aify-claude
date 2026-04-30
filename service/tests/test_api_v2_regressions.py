@@ -2150,6 +2150,69 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(reply["dispatchRuns"][0]["requireReply"], False)
         self.assertEqual(reply["dispatchRuns"][0]["runId"], active_run_id)
 
+    def test_claude_aify_resident_channel_agents_are_steer_capable(self):
+        self._register("lead", runtime="codex", sessionMode="managed")
+        self._register(
+            "claude",
+            runtime="claude-code",
+            sessionMode="resident",
+            runtimeConfig={"channelEnabled": True},
+        )
+        info = self.client.get("/api/v1/agents/claude")
+        self.assertEqual(info.status_code, 200, info.text)
+        self.assertIn("steer", info.json()["agent"]["capabilities"])
+        self.assertEqual(info.json()["agent"]["wakeMode"], "claude-live")
+
+        active = self._dispatch(
+            from_agent="lead",
+            to="claude",
+            type="request",
+            subject="active resident work",
+            body="handle this",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        active_run_id = active["runs"][0]["runId"]
+        self._execute("UPDATE dispatch_runs SET status = 'running', started_at = ? WHERE id = ?", ("2026-01-01T00:00:00Z", active_run_id))
+
+        steered = self._send_message(
+            from_agent="lead",
+            to="claude",
+            type="info",
+            subject="new context",
+            body="apply this to current work",
+            trigger=True,
+        )
+        self.assertTrue(steered["ok"])
+        self.assertEqual(steered["dispatchRuns"][0]["status"], "steered")
+        self.assertEqual(steered["dispatchRuns"][0]["runId"], active_run_id)
+
+    def test_plain_claude_resident_without_channel_is_not_live_wake_capable(self):
+        self._register("lead", runtime="codex", sessionMode="managed")
+        self._register(
+            "plain-claude",
+            runtime="claude-code",
+            sessionMode="resident",
+            capabilities=["resident-run", "interrupt", "steer"],
+        )
+
+        info = self.client.get("/api/v1/agents/plain-claude")
+        self.assertEqual(info.status_code, 200, info.text)
+        self.assertNotIn("resident-run", info.json()["agent"]["capabilities"])
+        self.assertNotIn("steer", info.json()["agent"]["capabilities"])
+        self.assertEqual(info.json()["agent"]["wakeMode"], "claude-needs-channel")
+
+        sent = self._send_message(
+            from_agent="lead",
+            to="plain-claude",
+            type="request",
+            subject="hello",
+            body="this should not be queued behind a non-channel resident",
+            trigger=True,
+        )
+        self.assertFalse(sent["ok"])
+        self.assertIn("cannot start live work", sent["error"])
+
     def test_blocked_and_completed_agent_statuses_do_not_block_live_send(self):
         self._register("lead", runtime="codex", sessionMode="managed")
         self._register("blocked-agent", runtime="codex", sessionMode="managed", status="blocked")
@@ -2366,7 +2429,13 @@ class ApiV2RegressionTests(unittest.TestCase):
 
     def test_claude_channel_claim_is_not_rejected_by_stdio_bridge_id(self):
         self._register("lead", role="manager")
-        self._register("worker", runtime="claude-code", sessionMode="resident", bridgeId="stdio-current")
+        self._register(
+            "worker",
+            runtime="claude-code",
+            sessionMode="resident",
+            bridgeId="stdio-current",
+            runtimeConfig={"channelEnabled": True},
+        )
         state = self.client.patch(
             "/api/v1/agents/worker/runtime-state",
             json={"runtimeState": {"bridgeInstanceId": "stdio-current"}},
@@ -2572,7 +2641,7 @@ class ApiV2RegressionTests(unittest.TestCase):
 
     def test_claude_delivery_only_runs_do_not_count_as_pending_handoffs(self):
         self._register("lead", runtime="codex", sessionMode="managed")
-        self._register("tester", runtime="claude-code", sessionMode="resident")
+        self._register("tester", runtime="claude-code", sessionMode="resident", runtimeConfig={"channelEnabled": True})
 
         created = self._dispatch(
             from_agent="lead",
