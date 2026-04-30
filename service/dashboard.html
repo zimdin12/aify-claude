@@ -259,13 +259,21 @@ tr:hover{background:#19212a}
 
 .pagination{display:flex;gap:8px;align-items:center;margin:8px 0;font-size:.85em;color:#8b949e}
 
-.instructions{max-width:700px}
+.instructions{max-width:1040px}
 .instructions code{background:var(--panel);padding:2px 6px;border-radius:4px;font-size:.85em;color:#9fcdff}
 .instructions pre{background:var(--panel);border:1px solid var(--line-soft);border-radius:8px;padding:14px;margin:10px 0;overflow-x:auto;font-size:.82em;color:var(--text)}
 .instructions p{margin:8px 0;line-height:1.5;color:var(--muted)}
 .instructions li{margin:4px 0;line-height:1.5;color:var(--muted)}
 .instructions ul{padding-left:20px;margin:8px 0}
 .instructions h3{color:var(--blue);margin-top:20px}
+.guide-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:12px 0 16px}
+.guide-card{background:var(--panel);border:1px solid var(--line-soft);border-radius:8px;padding:13px 14px}
+.guide-card h4{font-size:.86em;color:var(--text);margin:0 0 8px;text-transform:uppercase;letter-spacing:.4px}
+.guide-card p{margin:0;color:var(--muted);font-size:.9em}
+.guide-flow{background:#0b1015;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:10px 0;color:#d6dde3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.82em;line-height:1.45;white-space:pre-wrap;overflow:auto}
+.guide-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:12px 0}
+.guide-steps .guide-card ol{padding-left:18px;margin:6px 0 0;color:var(--muted)}
+.guide-steps .guide-card li{margin:6px 0}
 .run-summary{color:var(--muted);max-width:360px;white-space:pre-wrap;word-break:break-word;font-size:.8em}
 .run-controls{display:flex;gap:6px;flex-wrap:wrap}
 .actions-menu{position:relative;display:inline-block}
@@ -822,25 +830,107 @@ tr:hover{background:#1b1f21}
       <h3>What is this?</h3>
       <p>This is the <b>aify-comms</b> control plane: a dashboard for connected Windows, WSL, Linux, Docker, and remote bridges. Use it to spawn managed agents into chosen workspaces, chat with them, inspect runs, stop/restart sessions, and keep old manual CLI bindings visible only when they matter.</p>
 
+      <div class="guide-flow">Dashboard / MCP service (:8800)
+        |
+        | chat, runs, sessions, artifacts, team identity
+        v
+Environment bridge: aify-comms
+        |
+        | claims managed work for one host/WSL/Windows environment
+        v
+Runtime adapter: Claude Code / Codex / OpenCode
+        |
+        v
+Agent session in a specific workspace</div>
+
+      <div class="guide-grid">
+        <div class="guide-card">
+          <h4>Normal Path</h4>
+          <p>Use Environments or Team to spawn managed teammates, then talk from Chat. The dashboard owns lifecycle and recovery.</p>
+        </div>
+        <div class="guide-card">
+          <h4>Resident Path</h4>
+          <p>Use <code>claude-aify</code>, <code>codex-aify</code>, or OpenCode registration only when a human-open terminal should receive live messages.</p>
+        </div>
+        <div class="guide-card">
+          <h4>Debug Path</h4>
+          <p>Runs, Sessions, and API details are for operational triage. Daily communication should stay in Chat.</p>
+        </div>
+      </div>
+
       <h3>Quick Setup</h3>
-      <p>Fast path for Claude Code:</p>
-      <pre>cd /path/to/aify-comms
+      <div class="guide-grid">
+        <div class="guide-card">
+          <h4>Claude Code</h4>
+          <pre>cd /path/to/aify-comms
 bash install.sh --client claude http://localhost:8800 --with-hook</pre>
-      <p>Fast path for Codex:</p>
-      <pre>cd /path/to/aify-comms
+        </div>
+        <div class="guide-card">
+          <h4>Codex</h4>
+          <pre>cd /path/to/aify-comms
 bash install.sh --client codex http://localhost:8800 --with-hook</pre>
-      <p>Fast path for OpenCode:</p>
-      <pre>cd /path/to/aify-comms
+        </div>
+        <div class="guide-card">
+          <h4>OpenCode</h4>
+          <pre>cd /path/to/aify-comms
 bash install.sh --client opencode http://localhost:8800</pre>
+        </div>
+      </div>
       <p>Restart the client after install. Then run an environment bridge in every execution environment you want the dashboard to use:</p>
       <pre>cd /path/to/workspace-or-workspace-parent
 aify-comms</pre>
       <p>On native Windows PowerShell/cmd, run <code>aify-comms.cmd</code>. The service URL defaults to <code>http://localhost:8800</code>. The current directory is always an allowed workspace root; extra root arguments are optional safety boundaries. The actual project folder is selected per spawned agent in Environments → Spawn Agent.</p>
-      <p>Manual <code>comms_register</code> remains useful for human-open resident CLI sessions, but it is not the normal dashboard spawn path. Active triggering works through the local <code>stdio</code> MCP bridge on the target machine. SSE clients can use the shared service but cannot launch local Claude/Codex/OpenCode work themselves.</p>
-      <p>Codex CLI note: if you want visible live wakeups instead of background thread resume, start Codex through <code>codex-aify</code> before registering. From that live session, prefer the strongest exact registration first: <code>comms_register(..., runtime="codex", sessionHandle="$CODEX_THREAD_ID", appServerUrl="$AIFY_CODEX_APP_SERVER_URL")</code>. Plain <code>codex</code> still works, but it advertises the older <code>codex-thread-resume</code> fallback.</p>
-      <p>Claude CLI note: resident wakeups require starting Claude through the installed <code>claude-aify</code> wrapper so the local aify channel bridge is allowed to load during the current research-preview channels phase. It is only installed when the Claude client was set up with a real shared aify server URL.</p>
-      <p>Managed runtime note: dashboard-spawned agents are unattended automation. Managed Codex runs use non-interactive approval policy with a writable workspace sandbox. Managed Claude Code runs add <code>--dangerously-skip-permissions</code> by default so they can call installed MCP tools such as <code>comms_inbox</code> without a human approval prompt. Managed Claude Code currently runs through headless <code>claude -p</code>, so it may not appear in the <code>claude-aify</code> picker, but Sessions/Chat show a native resume command once the runtime has recorded a resume ID. Click that command block to copy it. Use <b>Pause for CLI</b> before opening the command if you want dashboard sends to pause instead of colliding with the open CLI, then re-register from the opened CLI so the dashboard stores the current native handle. The Claude flag is <code>--dangerously-skip-permissions</code>; <code>--permanently-skip-permissions</code> is not a Claude Code CLI option. Human-open resident sessions keep the permission mode of the CLI you started.</p>
-      <p><b>Manual vs managed:</b> <code>comms_register</code> binds a live resident CLI session you opened yourself. Those rows are shown as manual CLI bindings, and offline entries are historical identities, not killable processes. Dashboard-spawned managed agents are the normal control-plane path: they have environment, workspace, runtime, spawn spec, session state, and recovery metadata. Normal chat should use <code>comms_send(...)</code> or the Chat page.</p>
+
+      <h3>Managed, Resident, Session</h3>
+      <div class="guide-grid">
+        <div class="guide-card">
+          <h4>Managed Agent</h4>
+          <p>Dashboard-spawned teammate. It has an environment, workspace, runtime, spawn spec, saved handle, and recovery metadata. This is the default team mode.</p>
+        </div>
+        <div class="guide-card">
+          <h4>Resident CLI</h4>
+          <p>A terminal session you opened yourself and registered with <code>comms_register</code>. It can receive live wakeups, but the dashboard does not own the terminal process.</p>
+        </div>
+        <div class="guide-card">
+          <h4>Session</h4>
+          <p>The concrete runtime backing for an agent: Claude session ID, Codex thread ID, OpenCode handle, process state, workspace, and environment.</p>
+        </div>
+      </div>
+
+      <h3>Move Between Dashboard And CLI</h3>
+      <div class="guide-flow">Managed dashboard control
+  -> Pause for CLI
+  -> copy resume command from Sessions/Chat
+  -> open claude-aify/codex-aify with that handle
+  -> re-register same agentId from the CLI
+  -> do direct terminal work
+  -> close CLI
+  -> Recover or Restart in Sessions
+  -> dashboard control resumes with the saved handle</div>
+      <div class="guide-steps">
+        <div class="guide-card">
+          <h4>Managed → Resident CLI</h4>
+          <ol>
+            <li>Open <b>Sessions</b> for the agent.</li>
+            <li>Use <b>Pause for CLI</b> before opening the native CLI.</li>
+            <li>Run the shown resume command. The code block copies on click.</li>
+            <li>Re-register from that CLI with the same <code>agentId</code>.</li>
+          </ol>
+        </div>
+        <div class="guide-card">
+          <h4>Resident CLI → Managed</h4>
+          <ol>
+            <li>Open <b>Team → Manual / Resident CLI Identities</b>.</li>
+            <li>Use <b>Edit</b> or <b>Adopt env</b>.</li>
+            <li>Assign an online environment, runtime, and workspace.</li>
+            <li>Close or stop the old CLI tab for that same <code>agentId</code>, then use <b>Recover</b> or <b>Restart</b> in Sessions.</li>
+          </ol>
+        </div>
+      </div>
+      <p>Adoption creates managed backing for future dashboard work. It does not magically attach the currently open CLI process. <b>Clear resume state</b> is the explicit reset that forgets saved Claude session IDs or Codex thread IDs; use it only when you accept starting fresh.</p>
+      <p>Codex CLI note: for resident live wakeups, start Codex through <code>codex-aify</code> and register with <code>sessionHandle="$CODEX_THREAD_ID"</code> and <code>appServerUrl="$AIFY_CODEX_APP_SERVER_URL"</code> when available.</p>
+      <p>Claude CLI note: resident wakeups require <code>claude-aify</code>. The resume command may include <code>--dangerously-skip-permissions</code>; <code>--permanently-skip-permissions</code> is not a Claude Code option.</p>
+
       <p><b>Live send:</b> messages still fail instead of being stored when the target is offline, stale, stopped, or lacks a live wake path. If the target is busy and steer-capable, normal sends steer into the active run between tool calls. Use <b>Queue</b> only for work that should run after the active turn.</p>
       <p><b>Dashboard composer:</b> <b>Send</b> is the normal teamwork path. It starts idle agents and steers busy steer-capable agents. <b>Queue</b> is the explicit next-turn path.</p>
       <p><b>Peek mode:</b> turn it on in Chat when you want to watch a conversation without automatically marking incoming messages read. <b>Mark read</b> acknowledges a direct message or the selected channel for the selected <b>Viewing as</b> identity.</p>

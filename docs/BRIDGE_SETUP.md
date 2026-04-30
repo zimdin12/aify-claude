@@ -168,9 +168,43 @@ The headless environment bridge is enough for dashboard-managed spawns. Resident
 
 Stopping a resident from the dashboard disables wake/dispatch in the control plane and interrupts active work when a runtime control path exists. It does not forcibly close a human's terminal window. Managed sessions spawned through the bridge can be stopped/restarted/recovered through their stored spawn spec.
 
-To move an existing resident identity under dashboard-managed control, open **Team -> Manual / Resident CLI Identities**, choose **Edit** or **Actions -> Adopt env**, and assign an online environment, runtime, and workspace. This does not attach the already-open CLI process to an environment. It converts the identity into a managed teammate by creating a spawn spec and a recoverable session record for the selected environment/workspace/runtime. After adoption, close or stop the old resident CLI tab for that same `agentId`, then use **Sessions -> Recover/Restart** to run future work through the environment bridge.
+System shape:
 
-If you are moving a dashboard-managed session into the native CLI temporarily, use **Pause for CLI** first, then run the shown resume command. The dashboard shows the command as a code block; click it to copy. Then call `comms_register(...)` from that same CLI with the same `agentId` and runtime handle. `claude-aify --resume <id>` exports `CLAUDE_SESSION_ID=<id>` for the MCP process, so a normal Claude registration can capture it. Codex should register with `$CODEX_THREAD_ID` and `$AIFY_CODEX_APP_SERVER_URL` when available. That registration updates the saved Claude session ID, Codex thread ID, or OpenCode session ID. When you close the CLI and return to the dashboard, **Recover** or **Restart** should reuse that handle. Fresh native handles should come from a new spawn or explicit **Clear resume state**, not from ordinary adopt/recover/restart.
+```text
+Dashboard/service (:8800)
+  |  chats, agents, sessions, runs, artifacts
+  v
+aify-comms environment bridge
+  |  claims managed spawn/run work for one host/WSL/Windows environment
+  v
+Runtime adapter
+  |  Claude Code / Codex / OpenCode in a selected workspace
+  v
+Agent session
+```
+
+### Moving Between Managed And Resident
+
+Resident -> managed:
+
+1. Open **Team -> Manual / Resident CLI Identities**.
+2. Choose **Edit** or **Actions -> Adopt env**.
+3. Assign an online environment, runtime, and workspace.
+4. Close or stop the old resident CLI tab for that same `agentId`.
+5. Use **Sessions -> Recover/Restart** to run future work through the environment bridge.
+
+This does not attach the already-open CLI process to an environment. It converts the identity into a managed teammate by creating a spawn spec and a recoverable session record for the selected environment/workspace/runtime.
+
+Managed -> resident CLI:
+
+1. Open **Sessions** for the agent.
+2. Use **Pause for CLI** before opening the native CLI.
+3. Run the shown resume command. The dashboard shows it as a code block; click it to copy.
+4. Call `comms_register(...)` from that same CLI with the same `agentId` and runtime handle.
+5. Do the direct terminal work.
+6. Close the CLI and use **Recover** or **Restart** when returning dashboard control.
+
+`claude-aify --resume <id>` exports `CLAUDE_SESSION_ID=<id>` for the MCP process, so a normal Claude registration can capture it. Codex should register with `$CODEX_THREAD_ID` and `$AIFY_CODEX_APP_SERVER_URL` when available. That registration updates the saved Claude session ID, Codex thread ID, or OpenCode session ID. Fresh native handles should come from a new spawn or explicit **Clear resume state**, not from ordinary adopt/recover/restart.
 
 Claude Code has two different native continuation flags: `--session-id` creates a specific new session, while `--resume <id>` continues an existing transcript. The bridge now checks for the transcript under `.claude/projects/...` and uses `--resume` after the first managed turn, so dashboard messages keep native Claude memory instead of colliding with the already-created session file.
 
