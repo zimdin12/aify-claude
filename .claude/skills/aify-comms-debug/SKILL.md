@@ -166,14 +166,14 @@ After opening the native CLI, re-register from that same session with the same `
 
 **Symptom.** `comms_send` returns `ok: false` with `reason: "agent already has queued work"` or `reason: "agent is working"`.
 
-**Cause.** Normal send is live-delivery gated. It no longer appends chat messages to future runs. This prevents fragile "message sent but nobody actually woke up" behavior.
+**Cause.** Normal send is live-delivery gated for unreachable agents. Current builds still allow busy live agents: steer-capable targets receive a steer control, and busy non-steer targets queue/merge as next-turn work. Seeing this error usually means the target is not actually live-startable, the bridge is stale, the target is paused/stopped/offline, or the queue is blocked by stale state.
 
 **Fix.** Pick one of:
 - Wait for the in-flight/queued run to finish.
 - `comms_run_interrupt(runId=<current active run>)` if the current work should stop.
 - Use the dashboard run controls to cancel stale queued work.
 - `comms_agent_info(agentId=<target>)` to inspect why the agent is not currently startable.
-- If the agent is actively running and steer-capable, ordinary `comms_send(...)` should steer. Set `steer=true` only when you need to be explicit.
+- If the agent is actively running, ordinary `comms_send(...)` should steer when supported or queue/merge as the next-turn fallback. Set `steer=true` only when you need to be explicit; use `queueIfBusy=true` only to force next-turn delivery.
 
 ## Run stuck `running`, `comms_run_interrupt` has no effect
 
@@ -268,6 +268,7 @@ If the replacement cwd is an agent workspace and appears immediately after a man
 
 **Fix (current build).** Pull latest and restart the target bridge (`codex-aify` / `claude-aify`) so it is running the steer-tracking fix. Current behavior is:
 - if there is a live steer-capable active run, the message becomes a steer control and the inbox copy auto-marks read when the control completes
+- if the target is busy but not steer-capable, the message queues or merges as next-turn work
 - resident `claude-aify` steering is channel-based: the channel bridge emits a `notifications/claude/channel` event into the live Claude session; this is not the same mechanism as Codex `turn/steer`
 - if the target cannot accept live delivery, `comms_send` returns a not-sent notice instead of queueing future work
 - if the runtime does not support steering, the send follows the normal live-start gate

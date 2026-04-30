@@ -17,8 +17,9 @@ const dashboardUser = buildUserPrompt({
   requireReply: true,
 });
 assert.match(dashboardSystem, /human\/operator/);
-assert.match(dashboardSystem, /Do not call comms_send back to dashboard/);
-assert.match(dashboardUser, /Reply to the dashboard user in your final plain-text response/);
+assert.match(dashboardSystem, /comms_send\(from="sc-coder", to="dashboard"/);
+assert.match(dashboardSystem, /Dashboard is store-only/);
+assert.match(dashboardUser, /Reply to the dashboard user with comms_send\(to="dashboard"/);
 
 const channelSystem = buildSystemPrompt("sc-coder", agentInfo, {
   from: "sc-manager",
@@ -35,10 +36,10 @@ const channelUser = buildUserPrompt({
 assert.match(channelSystem, /channel\/group message/);
 assert.match(channelSystem, /Reply in the channel only when you are named/);
 assert.match(channelSystem, /managed background run/);
-assert.match(channelSystem, /dashboard human will not normally see your final plain-text output/);
+assert.match(channelSystem, /Use comms_send for the current reply/);
 assert.match(channelSystem, /proactive status message with comms_send\(to="dashboard"/);
-assert.match(channelUser, /Reply if this message asks you a question/);
-assert.match(channelUser, /Human visibility: your final plain-text response is local/);
+assert.match(channelUser, /Reply with comms_send\(type="response"\) if this message asks/);
+assert.match(channelUser, /Reply delivery: send the current reply with comms_send/);
 assert.match(channelUser, /Do not create broad acknowledgement loops/);
 assert.match(channelUser, /send the dashboard\/human a concise status message/);
 
@@ -47,7 +48,6 @@ const directSystem = buildSystemPrompt("sc-coder", agentInfo, {
   subject: "Review this",
   requireReply: true,
 });
-assert.match(directSystem, /reply to the sender/i);
-assert.match(directSystem, /comms_send with inReplyTo/);
+assert.match(directSystem, /reply with comms_send/);
 
 console.log("managed-message-prompts.test.js: all assertions passed");

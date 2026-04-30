@@ -1221,6 +1221,7 @@ async def _preflight_live_send_recipients(
     launchable: list[tuple[str, str]] = []
     not_started: list[dict[str, Any]] = []
     unavailable_statuses = {"offline", "stale", "stopped"}
+    allow_busy_enqueue = allow_queue_busy or allow_steer
 
     for recipient_id in recipients:
         agent_cursor = await db.execute("SELECT * FROM agents WHERE id = ?", (recipient_id,))
@@ -1256,7 +1257,7 @@ async def _preflight_live_send_recipients(
             if allow_steer and "steer" in capabilities:
                 launchable.append((recipient_id, execution_mode))
                 continue
-            if allow_queue_busy:
+            if allow_busy_enqueue:
                 launchable.append((recipient_id, execution_mode))
                 continue
             hint = _dispatch_fix_hint(recipient_id, row, "agent is working")
@@ -1265,14 +1266,14 @@ async def _preflight_live_send_recipients(
             active_suffix = f" on {active.get('runId')}" if active.get("runId") else ""
             hint["fix"] = (
                 f'Agent "{recipient_id}" is already working{active_suffix}. '
-                "Wait, interrupt the active run, use comms_send(steer=true) for current-run guidance, or explicitly enable queueIfBusy."
+                "Wait, interrupt the active run, or send with steer=true so aify can inject now when supported and queue/merge as the next-turn fallback otherwise."
             )
             not_started.append(hint)
             continue
 
         queued_runs = int(dispatch_state.get("queuedRuns") or 0)
         if queued_runs > 0:
-            if allow_queue_busy:
+            if allow_busy_enqueue:
                 launchable.append((recipient_id, execution_mode))
                 continue
             hint = _dispatch_fix_hint(recipient_id, row, "agent already has queued work")
@@ -1280,7 +1281,7 @@ async def _preflight_live_send_recipients(
             hint["queuedRuns"] = queued_runs
             hint["fix"] = (
                 f'Agent "{recipient_id}" already has {queued_runs} queued run(s). '
-                "Wait for the queue to drain, cancel stale runs, or explicitly enable queueIfBusy."
+                "Wait for the queue to drain, cancel stale runs, or send with steer=true/queueIfBusy=true so aify can merge this into queued work when possible."
             )
             not_started.append(hint)
             continue
@@ -2115,6 +2116,117 @@ async def _mirror_missing_dispatch_handoff(db, row) -> Optional[str]:
             "handoff",
             f"Mirrored handoff stored for {to_agent}; live delivery not queued: {reasons}",
         )
+    return message_id
+
+
+async def _maybe_report_async_manager_result_to_dashboard(db, row) -> Optional[str]:
+    """Store manager/operator async run summaries in dashboard chat.
+
+    The bridge already captures managed runtime final text as the run summary.
+    Older running agents may not have the latest prompt/skill telling them to
+    call comms_send(to="dashboard") after teammate replies arrive, so make the
+    operator-visible report a backend invariant for manager-style coordinators.
+    """
+    if not row:
+        return None
+    if _row_require_reply(row):
+        return None
+    if str((row["from_agent"] if "from_agent" in row.keys() else "") or "").strip() == "dashboard":
+        return None
+    if str((row["status"] if "status" in row.keys() else "") or "").strip().lower() != "completed":
+        return None
+
+    summary = str((row["summary"] if "summary" in row.keys() else "") or "").strip()
+    if not summary:
+        return None
+
+    target_agent = str((row["target_agent"] if "target_agent" in row.keys() else "") or "").strip()
+    if not target_agent:
+        return None
+
+    event_cursor = await db.execute(
+        "SELECT 1 FROM dispatch_events WHERE run_id = ? AND event_type = 'dashboard_report' LIMIT 1",
+        (row["id"],),
+    )
+    if await event_cursor.fetchone():
+        return None
+
+    agent_cursor = await db.execute("SELECT role FROM agents WHERE id = ?", (target_agent,))
+    agent_row = await agent_cursor.fetchone()
+    role = str((agent_row["role"] if agent_row else "") or "").strip().lower()
+    if role not in {"manager", "operator", "lead", "coordinator"}:
+        return None
+
+    start_ms = int(
+        _iso_to_epoch(
+            (row["started_at"] if "started_at" in row.keys() else "")
+            or (row["claimed_at"] if "claimed_at" in row.keys() else "")
+            or (row["requested_at"] if "requested_at" in row.keys() else "")
+        )
+        * 1000
+    )
+    source_message_id = str((row["message_id"] if "message_id" in row.keys() else "") or "").strip()
+    if source_message_id:
+        source_cursor = await db.execute("SELECT timestamp FROM messages WHERE id = ? LIMIT 1", (source_message_id,))
+        source_row = await source_cursor.fetchone()
+        if source_row:
+            start_ms = max(start_ms, int(source_row["timestamp"] or 0))
+    explicit_cursor = await db.execute(
+        """
+        SELECT 1
+        FROM messages
+        WHERE from_agent = ?
+          AND to_agent = 'dashboard'
+          AND source = 'direct'
+          AND timestamp >= ?
+        LIMIT 1
+        """,
+        (target_agent, max(0, start_ms)),
+    )
+    if await explicit_cursor.fetchone():
+        await _append_dispatch_event(
+            db,
+            row["id"],
+            "dashboard_report_skipped",
+            "Skipped async dashboard summary mirror because an explicit dashboard message already exists for this run window.",
+        )
+        return None
+
+    ts = int(time.time() * 1000)
+    message_id = f"{ts}-{uuid.uuid4().hex[:8]}"
+    subject = str((row["subject"] if "subject" in row.keys() else "") or "").strip()
+    if subject and not subject.lower().startswith(("re:", "update:")):
+        subject = f"Update: {subject}"
+    elif not subject:
+        subject = "Update from managed run"
+
+    await db.execute(
+        """
+        INSERT INTO messages (
+            id, from_agent, to_agent, source, type, subject, body, priority,
+            dispatch_requested, in_reply_to, timestamp
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            message_id,
+            target_agent,
+            "dashboard",
+            "direct",
+            "info",
+            subject,
+            summary,
+            row["priority"] or "normal",
+            0,
+            row["message_id"],
+            ts,
+        ),
+    )
+    await _append_dispatch_event(
+        db,
+        row["id"],
+        "dashboard_report",
+        f"Stored async manager/operator report for dashboard as {message_id}",
+    )
     return message_id
 
 
@@ -3955,7 +4067,7 @@ async def send_message(req: MessageSend, request: Request):
         dispatch_recipients = [r for r in recipients if r != "dashboard"]
         if req.trigger:
             prefer_steer = (req.steer is not False) and not bool(req.queueIfBusy)
-            allow_queue_busy = bool(req.queueIfBusy) or str(req.type or "").strip().lower() == "response"
+            allow_queue_busy = bool(req.queueIfBusy) or prefer_steer or str(req.type or "").strip().lower() == "response"
             launchable_recipients, not_started = await _preflight_live_send_recipients(
                 db,
                 dispatch_recipients,
@@ -4900,6 +5012,7 @@ async def repair_dispatch_handoffs(request: Request, limit: int = Query(100, ge=
         )
         rows = await cursor.fetchall()
         mirrored = []
+        dashboard_reports = []
         skipped_delivery_only = 0
         skipped = 0
         for row in rows:
@@ -4912,16 +5025,39 @@ async def repair_dispatch_handoffs(request: Request, limit: int = Query(100, ge=
             else:
                 skipped += 1
 
+        report_cursor = await db.execute(
+            """
+            SELECT *
+            FROM dispatch_runs
+            WHERE require_reply = 0
+              AND status = 'completed'
+              AND COALESCE(summary, '') != ''
+            ORDER BY requested_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        report_rows = await report_cursor.fetchall()
+        for row in report_rows:
+            message_id = await _maybe_report_async_manager_result_to_dashboard(db, row)
+            if message_id:
+                dashboard_reports.append({"runId": row["id"], "messageId": message_id})
+
         await db.commit()
         ws = await _get_ws(request)
-        if ws and mirrored:
-            await ws.broadcast("dispatch_handoffs_repaired", {"mirrored": len(mirrored)})
+        if ws and (mirrored or dashboard_reports):
+            await ws.broadcast(
+                "dispatch_handoffs_repaired",
+                {"mirrored": len(mirrored), "dashboardReports": len(dashboard_reports)},
+            )
         return {
             "ok": True,
             "mirrored": len(mirrored),
+            "dashboardReports": len(dashboard_reports),
             "skippedDeliveryOnly": skipped_delivery_only,
             "skipped": skipped,
             "runs": mirrored,
+            "reports": dashboard_reports,
         }
     finally:
         await db.close()
@@ -4983,6 +5119,7 @@ async def update_dispatch_run(run_id: str, req: DispatchRunUpdate, request: Requ
                 refreshed_cursor = await db.execute("SELECT * FROM dispatch_runs WHERE id = ?", (run_id,))
                 refreshed_row = await refreshed_cursor.fetchone()
                 await _mirror_missing_dispatch_handoff(db, refreshed_row)
+                await _maybe_report_async_manager_result_to_dashboard(db, refreshed_row)
 
         if req.agentStatus:
             await db.execute(
@@ -5634,7 +5771,7 @@ async def send_channel_message(name: str, req: ChannelMessage, request: Request)
         not_started = []
         if should_trigger and recipients:
             prefer_steer = (req.steer is not False) and not bool(req.queueIfBusy)
-            allow_queue_busy = bool(req.queueIfBusy)
+            allow_queue_busy = bool(req.queueIfBusy) or prefer_steer
             launchable_recipients, not_started = await _preflight_live_send_recipients(
                 db,
                 recipients,

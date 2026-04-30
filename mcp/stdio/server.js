@@ -1961,10 +1961,10 @@ server.tool(
 server.tool(
   "comms_send",
   "Send a message to an agent by ID, or to all agents with a given role. " +
-    "This is live-delivery gated: if the target is offline, stale, stopped, or lacks a live wake path, the message is not written. If the target is busy and steer-capable, ordinary sends steer into the active run between tool calls. Use queueIfBusy=true only when the message should run after the active turn. Agent-reported blocked/completed states are status notes, not delivery blockers. " +
+    "This is live-delivery gated: if the target is offline, stale, stopped, or lacks a live wake path, the message is not written. If the target is busy and steer-capable, ordinary sends steer into the active run between tool calls. If the target is busy but cannot steer, ordinary sends queue or merge as next-turn work. Use queueIfBusy=true only when the message should run after the active turn even when steer is available. Agent-reported blocked/completed states are status notes, not delivery blockers. " +
     "The special target dashboard stores a message for the human/operator without trying to start a runtime. " +
     "Resident sessions trigger only when that exact runtime/session handle supports resident execution; environment-managed sessions remain the persistent fallback. " +
-    "Agents should normally answer messages, and should always reply to requests, reviews, and errors with comms_send(type=\"response\", inReplyTo=...) unless told otherwise. Keep messages scoped to one topic, state what you checked when truth matters, ask one clear question when blocked, and avoid reviving unrelated older context. The requireReply override is only for edge cases.",
+    "Agents should normally answer messages, and should reply to requests, reviews, errors, dashboard chat, and useful teammate updates with comms_send(type=\"response\", inReplyTo=...) unless told otherwise. Final plain-text output is captured for run summaries/diagnostics and fallback repair; it is not the primary chat delivery path. Keep messages scoped to one topic, state what you checked when truth matters, ask one clear question when blocked, and avoid reviving unrelated older context. The requireReply override is only for edge cases.",
   {
     from: z.string().describe("Your agent ID"),
     to: z.string().optional().describe("Target agent ID"),
@@ -1976,8 +1976,8 @@ server.tool(
     body: z.string().describe("Message content"),
     priority: z.enum(["normal", "high", "urgent"]).optional().describe("Message priority (default: normal)"),
     inReplyTo: z.string().optional().describe("Message ID this replies to"),
-    steer: z.boolean().optional().describe("When true and target is busy, deliver between tool calls instead of creating future queued work. Defaults to true unless queueIfBusy=true."),
-    queueIfBusy: z.boolean().optional().describe("When true, queue this message behind the target's active/queued work instead of steering the active turn."),
+    steer: z.boolean().optional().describe("When true and target is busy, deliver between tool calls when supported; otherwise queue/merge as next-turn work. Defaults to true unless queueIfBusy=true."),
+    queueIfBusy: z.boolean().optional().describe("When true, force next-turn queue/merge behind the target's active/queued work instead of steering the active turn."),
     requireReply: z.boolean().optional().describe("Advanced override for reply tracking; requests/reviews/errors should normally be answered without setting this"),
   },
   async ({ from, to, toRole, type, subject, body, priority, inReplyTo, steer, queueIfBusy, requireReply }) => {
@@ -1985,11 +1985,12 @@ server.tool(
       return { content: [{ type: "text", text: "Error: need 'to' or 'toRole'" }], isError: true };
     }
     const shouldTrigger = true;
+    const forceQueue = queueIfBusy === true;
 
     // -- Remote mode --
     if (IS_REMOTE) {
       const r = await httpCall("POST", "/messages/send", {
-        from_agent: from, to, toRole, type, subject, body, priority: priority || "normal", inReplyTo, trigger: shouldTrigger, steer: steer ?? !queueIfBusy, queueIfBusy: queueIfBusy || false, requireReply,
+        from_agent: from, to, toRole, type, subject, body, priority: priority || "normal", inReplyTo, trigger: shouldTrigger, steer: forceQueue ? false : (steer ?? true), queueIfBusy: forceQueue, requireReply,
       });
       if (!r.ok) {
         const skipped = (r.notStarted || []).map((x) => `${x.targetAgentId}: ${x.reason}${x.recipientStatus ? ` (${x.recipientStatus})` : ""}`);
@@ -2094,7 +2095,7 @@ server.tool(
 
 server.tool(
   "comms_dispatch",
-  "Lower-level run-control/debug API for a triggerable resident or environment-managed session. Normal agent teamwork should use comms_send, which already fails fast when the target cannot start live work. Use comms_dispatch only when you need explicit run-control fields while diagnosing delivery/runtime behavior.",
+  "Lower-level run-control/debug API for a triggerable resident or environment-managed session. Normal agent teamwork should use comms_send, which already fails fast for unreachable targets and handles busy targets with steer or queue/merge. Use comms_dispatch only when you need explicit run-control fields while diagnosing delivery/runtime behavior.",
   {
     from: z.string().describe("Your agent ID"),
     to: z.string().optional().describe("Target agent ID"),
@@ -2144,7 +2145,7 @@ server.tool(
     });
     const skipped = (r.notStarted || []).map((item) => `- ${item.targetAgentId}: ${item.reason}`);
     const footer = requireStart
-      ? "\n\nUse comms_run_status(...) to inspect progress. For normal teamwork messages, prefer comms_send(...); it already fails visibly when live delivery is not possible."
+      ? "\n\nUse comms_run_status(...) to inspect progress. For normal teamwork messages outside a delivered managed run, prefer comms_send(...); it already fails visibly when live delivery is not possible."
       : "\n\nUse comms_run_status(...) to inspect progress. Explicit replies are expected by default for direct dispatch; if none is sent, the bridge mirrors the run result back.";
     return {
       content: [{
@@ -2226,7 +2227,7 @@ server.tool(
 
 // comms_run_steer removed from stdio — ordinary comms_send does not require
 // knowing the runId, creates an inbox message, and steers busy steer-capable
-// targets unless queueIfBusy=true.
+// targets unless queueIfBusy=true. Busy non-steer targets queue/merge instead.
 
 /**
  * Spawn a local runtime instance to handle a triggered message.
@@ -2924,7 +2925,7 @@ server.tool(
 
 server.tool(
   "comms_channel_send",
-  "Send a message to a channel. This is live-delivery gated for channel members: if any recipient is offline, stale, stopped, or lacks a live wake path, the channel message is not written. Busy steer-capable members receive the channel update as steer into their active run; use queueIfBusy=true only for next-turn delivery. Agent-reported blocked/completed states are status notes, not delivery blockers.",
+  "Send a message to a channel. This is live-delivery gated for channel members: if any recipient is offline, stale, stopped, or lacks a live wake path, the channel message is not written. Busy steer-capable members receive the channel update as steer into their active run; busy non-steer members queue or merge as next-turn work. Use queueIfBusy=true only to force next-turn delivery. Agent-reported blocked/completed states are status notes, not delivery blockers.",
   {
     channel: z.string().describe("Channel name"),
     from: z.string().describe("Your agent ID"),
@@ -2934,17 +2935,18 @@ server.tool(
       .optional()
       .describe("Message type (default: info)"),
     priority: z.enum(["normal", "high", "urgent"]).optional().describe("Message priority (default: normal)"),
-    steer: z.boolean().optional().describe("When true and members are busy, deliver between tool calls instead of creating future queued work. Defaults to true unless queueIfBusy=true."),
-    queueIfBusy: z.boolean().optional().describe("When true, queue this channel update behind active/queued work instead of steering active turns."),
+    steer: z.boolean().optional().describe("When true and members are busy, deliver between tool calls when supported; otherwise queue/merge as next-turn work. Defaults to true unless queueIfBusy=true."),
+    queueIfBusy: z.boolean().optional().describe("When true, force this channel update behind active/queued work instead of steering active turns."),
   },
   async ({ channel, from, body, type, priority, steer, queueIfBusy }) => {
     try { validateName(channel, "channel name"); } catch (e) { return { content: [{ type: "text", text: e.message }], isError: true }; }
     const shouldTrigger = true;
+    const forceQueue = queueIfBusy === true;
     const subject = `#${channel}: ${body.slice(0, 80)}`;
 
     if (IS_REMOTE) {
       const r = await httpCall("POST", `/channels/${encodeURIComponent(channel)}/send`, {
-        from_agent: from, channel, body, type: type || "info", priority: priority || "normal", trigger: shouldTrigger, steer: steer ?? !queueIfBusy, queueIfBusy: queueIfBusy || false,
+        from_agent: from, channel, body, type: type || "info", priority: priority || "normal", trigger: shouldTrigger, steer: forceQueue ? false : (steer ?? true), queueIfBusy: forceQueue,
       });
       if (!r.ok) {
         const skipped = (r.notStarted || []).map((x) => `${x.targetAgentId}: ${x.reason}${x.recipientStatus ? ` (${x.recipientStatus})` : ""}`);

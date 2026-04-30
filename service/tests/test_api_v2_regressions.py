@@ -2104,6 +2104,85 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(stored["body"], "teammate acked")
         self.assertIsNone(self._fetchone("SELECT id FROM dispatch_runs WHERE message_id = ?", (sent["messageId"],)))
 
+    def test_async_manager_summary_is_reported_to_dashboard_chat(self):
+        self._register("manager", role="manager", runtime="claude-code", sessionMode="managed")
+        self._register("coder", runtime="codex", sessionMode="managed")
+
+        sent = self._send_message(
+            from_agent="coder",
+            to="manager",
+            type="response",
+            subject="Re: ping results",
+            body="Coder result arrived",
+            trigger=True,
+        )
+        self.assertTrue(sent["ok"])
+        run_id = sent["dispatchRuns"][0]["runId"]
+
+        completed = self.client.patch(
+            f"/api/v1/dispatch/runs/{run_id}",
+            json={"status": "completed", "summary": "Both teammates answered. Coder is online."},
+        )
+        self.assertEqual(completed.status_code, 200, completed.text)
+
+        report = self._fetchone(
+            """
+            SELECT from_agent, to_agent, type, subject, body, dispatch_requested
+            FROM messages
+            WHERE from_agent = 'manager' AND to_agent = 'dashboard'
+            ORDER BY timestamp DESC
+            LIMIT 1
+            """
+        )
+        self.assertIsNotNone(report)
+        self.assertEqual(report["type"], "info")
+        self.assertEqual(report["body"], "Both teammates answered. Coder is online.")
+        self.assertEqual(report["dispatch_requested"], 0)
+
+        duplicate = self.client.patch(
+            f"/api/v1/dispatch/runs/{run_id}",
+            json={"status": "completed", "summary": "Both teammates answered. Coder is online."},
+        )
+        self.assertEqual(duplicate.status_code, 200, duplicate.text)
+        count = self._fetchone(
+            "SELECT COUNT(*) AS c FROM messages WHERE from_agent = 'manager' AND to_agent = 'dashboard'"
+        )
+        self.assertEqual(count["c"], 1)
+
+    def test_async_manager_summary_does_not_duplicate_explicit_dashboard_reply(self):
+        self._register("manager", role="manager", runtime="claude-code", sessionMode="managed")
+        self._register("coder", runtime="codex", sessionMode="managed")
+
+        sent = self._send_message(
+            from_agent="coder",
+            to="manager",
+            type="response",
+            subject="Re: ping results",
+            body="Coder result arrived",
+            trigger=True,
+        )
+        self.assertTrue(sent["ok"])
+        run_id = sent["dispatchRuns"][0]["runId"]
+        self._execute("UPDATE dispatch_runs SET status = 'running', started_at = ? WHERE id = ?", ("2026-01-01T00:00:00Z", run_id))
+        self._send_message(
+            from_agent="manager",
+            to="dashboard",
+            type="info",
+            subject="Ping update",
+            body="Explicit report.",
+            trigger=True,
+        )
+
+        completed = self.client.patch(
+            f"/api/v1/dispatch/runs/{run_id}",
+            json={"status": "completed", "summary": "This should remain run summary only."},
+        )
+        self.assertEqual(completed.status_code, 200, completed.text)
+        count = self._fetchone(
+            "SELECT COUNT(*) AS c FROM messages WHERE from_agent = 'manager' AND to_agent = 'dashboard'"
+        )
+        self.assertEqual(count["c"], 1)
+
     def test_triggered_send_steers_busy_target_by_default_and_can_explicitly_queue(self):
         self._register("lead", runtime="codex", sessionMode="managed")
         self._register("coder", runtime="codex", sessionMode="managed")
@@ -2152,6 +2231,35 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertTrue(queued["messageId"])
         self.assertEqual(queued["dispatchRuns"][0]["status"], "queued")
         self.assertEqual(queued["dispatchRuns"][0]["queuedBehindActiveRun"]["runId"], active_run_id)
+
+    def test_normal_send_to_busy_non_steerable_target_queues_as_fallback(self):
+        self._register("lead", runtime="codex", sessionMode="managed")
+        self._register("manager", role="manager", runtime="claude-code", sessionMode="managed")
+
+        active = self._dispatch(
+            from_agent="dashboard",
+            to="manager",
+            type="request",
+            subject="coordinate",
+            body="coordinate team",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        active_run_id = active["runs"][0]["runId"]
+        self._execute("UPDATE dispatch_runs SET status = 'running', started_at = ? WHERE id = ?", ("2026-01-01T00:00:00Z", active_run_id))
+
+        sent = self._send_message(
+            from_agent="lead",
+            to="manager",
+            type="request",
+            subject="new input",
+            body="include this when you can",
+            trigger=True,
+        )
+        self.assertTrue(sent["ok"])
+        self.assertEqual(sent["notStarted"], [])
+        self.assertEqual(sent["dispatchRuns"][0]["status"], "queued")
+        self.assertEqual(sent["dispatchRuns"][0]["queuedBehindActiveRun"]["runId"], active_run_id)
 
     def test_response_messages_steer_when_sender_is_busy_and_steer_capable(self):
         self._register("manager", runtime="codex", sessionMode="managed")
@@ -2376,7 +2484,7 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(runs_by_target["bob"]["messageId"], bob_message)
         self.assertEqual(runs_by_target["bob"]["replyState"], "awaiting")
 
-    def test_triggered_send_rejects_existing_future_queue_without_writing_message(self):
+    def test_triggered_send_merges_existing_future_queue(self):
         self._register("lead", role="manager", runtime="codex", sessionMode="managed")
         self._register("worker", runtime="codex", sessionMode="managed", restoreDeleted=True)
 
@@ -2399,12 +2507,13 @@ class ApiV2RegressionTests(unittest.TestCase):
             body="two",
             trigger=True,
         )
-        self.assertFalse(second["ok"])
-        self.assertEqual(second["dispatchRuns"], [])
-        self.assertEqual(second["notStarted"][0]["reason"], "agent already has queued work")
-        self.assertNotIn("messageId", second)
+        self.assertTrue(second["ok"])
+        self.assertEqual(second["notStarted"], [])
+        self.assertEqual(second["dispatchRuns"][0]["runId"], first["runs"][0]["runId"])
+        self.assertTrue(second["dispatchRuns"][0]["merged"])
+        self.assertEqual(second["dispatchRuns"][0]["mergedCount"], 2)
         second_message = self._fetchone("SELECT id FROM messages WHERE subject = ?", ("second",))
-        self.assertIsNone(second_message)
+        self.assertIsNotNone(second_message)
 
         claim = self.client.post(
             "/api/v1/dispatch/claim",
@@ -2412,12 +2521,14 @@ class ApiV2RegressionTests(unittest.TestCase):
         )
         self.assertEqual(claim.status_code, 200, claim.text)
         self.assertEqual(claim.json()["run"]["id"], first["runs"][0]["runId"])
+        self.assertIn("second", claim.json()["run"]["subject"])
+        self.assertIn("two", claim.json()["run"]["body"])
 
         receipts = self._fetchall(
             "SELECT message_id FROM read_receipts WHERE agent_id = ? ORDER BY message_id",
             ("worker",),
         )
-        self.assertEqual({row["message_id"] for row in receipts}, {first_message_id})
+        self.assertEqual({row["message_id"] for row in receipts}, {first_message_id, second["messageId"]})
 
     def test_codex_claim_rejects_stale_bridge_not_matching_current_runtime_state(self):
         self._register("lead", role="manager", runtime="codex", sessionMode="managed")

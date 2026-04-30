@@ -39,13 +39,13 @@ Rules:
 
 ## Reply Discipline
 
-For `request`, `review`, and `error` messages, reply explicitly with `comms_send(type="response", inReplyTo=...)` unless the sender clearly says no reply is needed.
+For delivered managed runs, answer the current sender with `comms_send(type="response", inReplyTo=...)`. The bridge captures final plain-text output for run summaries, diagnostics, and fallback repair, but chat delivery should depend on tool calls.
 
-For dashboard-origin direct messages, do not try to send `comms_send(to="dashboard")`. The managed runtime should answer the human/operator in its final plain-text response; the bridge records that response in dashboard chat.
+For dashboard-origin direct messages, send `comms_send(to="dashboard", type="response", ...)`. Dashboard is a store-only human recipient, so this writes chat without trying to wake a runtime.
 
-For later asynchronous updates that were triggered by another agent, `dashboard` is a valid store-only recipient. If a manager promised the human "I will report back when the teammate replies", the manager should send `comms_send(to="dashboard", type="info" or "response", ...)` when that teammate reply arrives.
+For later asynchronous updates that were triggered by another agent, the manager should send `comms_send(to="dashboard", type="info" or "response", ...)` when the update completes a dashboard promise. The backend may still store manager/operator summaries as fallback repair, but the intended path is explicit tool delivery.
 
-In other managed background runs, final plain text is not a human-visible dashboard chat message unless the bridge mirrors it as a required handoff. Do not assume the user sees local final text from agent-to-agent follow-up runs.
+In managed background runs, final plain text is run-level output. Do not assume the user or teammate sees it in chat unless `comms_send` succeeds or fallback repair mirrors it.
 
 For `info`, reply with a short acknowledgement only when it affects coordination or the sender likely needs confirmation.
 
