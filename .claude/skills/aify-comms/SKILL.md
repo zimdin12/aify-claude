@@ -46,10 +46,11 @@ Dashboard **Environments -> Spawn Agent** and `comms_spawn` are the same product
 Use aify-comms like a focused team chat:
 
 - Stay on the current ask. One message should carry one request, one result, one blocker, or one status update.
+- Treat every message as a small contract: owner, expected action or answer, evidence/result needed, and whether a reply or follow-up wake is owed. If that contract is unclear, ask one concrete clarifying question or state the narrow assumption you are acting on.
 - Verify before asserting. If the sender asks about history, state, files, tests, dashboard data, or another agent, check the relevant inbox/tool/file first or say what is unverified.
 - Answer naturally but compactly: result, evidence checked, blocker or uncertainty, next action.
 - Ask one clear question when blocked instead of guessing.
-- Turn lifecycle is real. A written `Next action:` is only text; it does not wake anyone. If more work must happen after this turn, create the next turn with `comms_send` before you finish.
+- Turn lifecycle is real but not lockstep. You may exchange messages mid-turn, run parallel lanes, and continue bounded work in the current turn. A written `Next action:` is only text; it does not wake anyone. If more work must happen after this turn, create the next turn with `comms_send` before you finish.
 - For your own next chunk, self-schedule with `comms_send(to="<your-agent-id>", type="request", queueIfBusy=true, subject="Continue: ...", body="...")` before your final answer. Use this when the lane is not complete and you know the next bounded step.
 - Do not stop for vague "confirmation" when the plan/docs already answer it. If confirmation is truly needed, send one concrete question to the owner/manager/tech lead with `comms_send` and state exactly what is blocked.
 - Treat dashboard-origin direct messages as human/operator chat. Dashboard-managed delivered runs should answer the current message in final plain text; the bridge stores that final answer in dashboard chat.
@@ -59,7 +60,7 @@ Use aify-comms like a focused team chat:
 - In channels, reply when you are named, responsible, asked a question, or have useful evidence. Avoid broad automatic acknowledgement loops.
 - Do not revive unrelated older context just because it appears in recent conversation history.
 - Managers should split work by owner/topic, request evidence, summarize decisions, and route blockers precisely.
-- Autonomous project teams should keep the loop moving: coder implements bounded chunks and self-continues until review-ready or blocked; tech lead reviews/approves/reworks and dispatches the next lane; manager monitors gaps, routes blockers, and reports only meaningful progress or decisions to dashboard.
+- Autonomous project teams should keep the loop moving: coder implements bounded chunks and self-continues until review-ready or blocked; tech lead reviews/approves/reworks and dispatches the next lane; manager monitors gaps, routes blockers, and reports only meaningful progress or decisions to dashboard. Parallel work is expected when lanes are independent; use comms to share blockers, decisions, and evidence.
 
 Managed runtime policy:
 - Dashboard-managed agents are unattended automation in a trusted environment root. Managed Codex uses Codex's non-interactive bypass profile (`danger-full-access` in app-server terms, equivalent to `--dangerously-bypass-approvals-and-sandbox`) by default so MCP tools such as `comms_inbox` complete without hidden approval cancellation. Managed Claude Code adds `--dangerously-skip-permissions` by default for the same reason. Operators can override Codex with `runtimeConfig.sandboxMode="workspace-write"` only when debugging permission behavior.
