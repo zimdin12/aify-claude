@@ -534,6 +534,185 @@ tr:hover{background:#1b1f21}
 .env-pill,.home-tag,.rb,.tb,.mb{border-radius:999px}
 @media (max-width:1200px){.ops-layout{grid-template-columns:1fr}.ops-strip{grid-template-columns:repeat(3,minmax(0,1fr))}.chat-shell{grid-template-columns:280px minmax(0,1fr)}.chat-inspector{display:none}}
 @media (max-width:760px){.sidebar{display:none}.main{padding:12px}.app-topbar{margin:-12px -12px 12px;padding:12px}.ops-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.chat-shell{grid-template-columns:1fr;height:auto}.chat-rail{height:300px}}
+
+/* Mobile application shell */
+@media (max-width:860px){
+  html,body{height:100%;overflow:hidden}
+  body{display:block;min-height:100dvh}
+  .main{height:100dvh;padding:12px 12px calc(82px + env(safe-area-inset-bottom));overflow:hidden}
+  .page.active{height:100%;overflow-y:auto;overflow-x:hidden;padding-bottom:10px}
+  #page-chat.active{overflow-y:auto}
+  .app-topbar{margin:-12px -12px 12px;padding:10px 12px;gap:10px;position:sticky;top:-12px}
+  .app-kicker{font-size:.64em;letter-spacing:.55px}
+  .app-title{font-size:.98em;max-width:48vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .topbar-meta{min-width:0;gap:7px}
+  .topbar-live{font-size:.75em}
+  .topbar-meta .btn{padding:7px 10px}
+
+  .sidebar{
+    display:block;
+    position:fixed;
+    left:0;right:0;bottom:0;
+    width:auto;height:auto;
+    padding:8px 8px calc(8px + env(safe-area-inset-bottom));
+    z-index:320;
+    border-right:0;
+    border-top:1px solid #252a2d;
+    background:#0b0d0ee8;
+    backdrop-filter:blur(18px);
+    box-shadow:0 -14px 40px #0009;
+  }
+  .sidebar.collapsed{width:auto;padding:8px 8px calc(8px + env(safe-area-inset-bottom))}
+  .sidebar h1,.sidebar .ver,.sidebar-footer,.nav-section,.toggle-btn{display:none!important}
+  .sidebar .nav,.sidebar.collapsed .nav{
+    display:flex;
+    flex-direction:row;
+    gap:6px;
+    align-items:stretch;
+    overflow-x:auto;
+    overscroll-behavior-x:contain;
+    scrollbar-width:none;
+    -webkit-overflow-scrolling:touch;
+    padding:0 2px;
+  }
+  .sidebar .nav::-webkit-scrollbar{display:none}
+  .nav a,.sidebar.collapsed .nav a{
+    flex:0 0 78px;
+    width:78px;
+    height:54px;
+    padding:7px 6px;
+    margin:0;
+    justify-content:center;
+    text-align:center;
+    border-radius:14px;
+    font-size:.76em;
+    line-height:1.1;
+    position:relative;
+  }
+  .sidebar.collapsed .nav a span,.nav a span{display:flex}
+  .nav a small{display:none}
+  .nav a b{font-size:.78rem}
+  .nav a::before,.sidebar.collapsed .nav a::before{
+    width:6px;height:6px;border-radius:999px;
+    position:absolute;top:7px;left:50%;transform:translateX(-50%);
+    box-shadow:0 0 0 3px #4a51571c;
+  }
+  .sidebar.collapsed .nav a::after{display:none}
+
+  h2,.page>h2,.page-head-row h2{font-size:1.25em}
+  h3{font-size:.96em}
+  .page-head-row{align-items:flex-start;flex-direction:column}
+  .page-head-row .btn-row{margin:0;width:100%}
+  .page-head-row .btn{width:100%}
+
+  .ops-hero{grid-template-columns:1fr;padding:16px;margin-bottom:12px;border-radius:14px}
+  .ops-hero h2{font-size:1.45em}
+  .ops-hero p{font-size:.86em}
+  .ops-status{justify-content:flex-start}
+  .ops-strip,.stats,.chart-summary,.health-grid{grid-template-columns:repeat(2,minmax(0,1fr));display:grid;gap:8px}
+  .stats{margin-bottom:12px}
+  .sc,.ops-metric,.health-card{min-width:0;padding:11px;border-radius:12px}
+  .sc .n,.ops-metric b,.health-card b{font-size:1.35em}
+  .home-actions,.fb,.send-row,.chat-compose-row,.btn-row{display:grid;grid-template-columns:1fr;gap:8px}
+  .home-actions .btn,.fb .btn,.send-row .btn,.chat-compose-row .btn,.btn-row .btn{width:100%}
+  .home-panel-grid,.insight-grid,.attention-list,.guide-grid,.guide-steps,.analytics-layout,.ops-layout{grid-template-columns:1fr}
+  .ops-panel,.home-panel,.send-form,.env-card,.advanced-panel{border-radius:14px;padding:12px}
+  .ops-panel-head,.home-panel-head{align-items:flex-start;flex-direction:column}
+  .ops-panel-sub{white-space:normal}
+  .activity-row{grid-template-columns:1fr;gap:5px}
+  .activity-time{text-align:left}
+  .team-grid,.env-grid{grid-template-columns:1fr}
+  .env-head{flex-direction:column}
+  .env-meta,.detail-grid,.chat-kv{grid-template-columns:96px minmax(0,1fr)}
+  .env-command,.copy-code,.modal-pre,.instructions pre,.guide-flow{font-size:.76em;overflow-wrap:anywhere}
+  .form-group input,.form-group select,.form-group textarea,.send-row input,.send-row select,.fb input,.fb select{width:100%;min-width:0}
+  .form-group textarea{min-height:180px}
+
+  .table-wrap{overflow:visible}
+  table.mobile-card-table{
+    display:block;
+    width:100%;
+    background:transparent;
+    border:0;
+    box-shadow:none;
+    border-radius:0;
+    margin-bottom:12px;
+  }
+  table.mobile-card-table thead{display:none}
+  table.mobile-card-table tbody{display:grid;gap:10px}
+  table.mobile-card-table tr{
+    display:block;
+    background:#151718;
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:8px 10px;
+    box-shadow:0 10px 30px #00000028;
+  }
+  table.mobile-card-table tr:hover{background:#171b1d}
+  table.mobile-card-table td{
+    display:grid;
+    grid-template-columns:minmax(82px,32%) minmax(0,1fr);
+    gap:8px;
+    align-items:start;
+    width:100%!important;
+    padding:8px 0;
+    border-top:1px solid var(--line-soft);
+    overflow:visible;
+    font-size:.84em;
+  }
+  table.mobile-card-table td:first-child{border-top:0}
+  table.mobile-card-table td::before{
+    content:attr(data-label);
+    color:var(--muted);
+    font-size:.72em;
+    font-weight:800;
+    letter-spacing:.35px;
+    text-transform:uppercase;
+    line-height:1.35;
+  }
+  table.mobile-card-table td[data-label=""]::before{display:none}
+  table.mobile-card-table td[data-label=""]{grid-template-columns:1fr}
+  table.mobile-card-table .actions-menu,
+  table.mobile-card-table .actions-menu summary,
+  table.mobile-card-table .run-controls,
+  table.mobile-card-table .btn{width:100%}
+  table.mobile-card-table .actions-menu-panel{
+    position:fixed;
+    left:12px;right:12px;top:auto;bottom:calc(84px + env(safe-area-inset-bottom));
+    width:auto;max-width:none;max-height:55dvh;overflow:auto;
+  }
+  .actions-table tbody tr:nth-last-child(-n+3) .actions-menu-panel{top:auto;bottom:calc(84px + env(safe-area-inset-bottom))}
+
+  .chat-shell{display:flex;flex-direction:column;height:auto;min-height:0;gap:10px}
+  .chat-rail{height:230px;flex:0 0 auto;border-radius:14px}
+  .chat-main{min-height:calc(100dvh - 380px);border-radius:14px}
+  .chat-topbar{flex-direction:column;align-items:stretch;gap:10px;border-radius:14px 14px 0 0}
+  .chat-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;justify-content:stretch}
+  .chat-as-label{grid-column:1/-1;display:grid;grid-template-columns:auto minmax(0,1fr)}
+  .chat-as-label select{max-width:none;width:100%;min-width:0}
+  .chat-timeline{padding:12px;gap:8px}
+  .chat-bubble,.chat-bubble.mine,.chat-bubble.system{max-width:100%;width:100%;border-radius:13px}
+  .chat-composer{position:sticky;bottom:0;z-index:20;border-radius:0 0 14px 14px;padding:10px}
+  .chat-composer textarea{height:112px;max-height:32dvh}
+  .chat-reply-context{align-items:flex-start;flex-direction:column}
+  .chat-inspector{display:none}
+  .modal-backdrop{align-items:flex-end;padding:10px}
+  .modal{max-height:88dvh;border-radius:16px 16px 10px 10px}
+  .modal-head{position:sticky;top:0;background:var(--panel);z-index:2}
+}
+
+@media (max-width:430px){
+  .main{padding-left:9px;padding-right:9px}
+  .app-topbar{margin-left:-9px;margin-right:-9px;padding-left:9px;padding-right:9px}
+  .nav a,.sidebar.collapsed .nav a{flex-basis:70px;width:70px}
+  .nav a b{font-size:.72rem}
+  .ops-strip,.stats,.chart-summary,.health-grid{grid-template-columns:1fr}
+  table.mobile-card-table td{grid-template-columns:1fr;gap:4px}
+  table.mobile-card-table td::before{font-size:.68em}
+  .chat-actions{grid-template-columns:1fr}
+  .chat-main{min-height:620px}
+  .env-meta,.detail-grid,.chat-kv{grid-template-columns:1fr;gap:3px}
+}
 </style>
 </head>
 <body>
@@ -1140,6 +1319,7 @@ function showPage(name, updateHistory = true) {
   if (name === 'sessions') renderSessions(window._sessions || []);
   if (name === 'channels') loadChannels();
   if (name === 'files') loadFiles();
+  requestAnimationFrame(() => enhanceResponsiveTables(page));
 }
 
 function toast(msg, color) {
@@ -1279,6 +1459,24 @@ function actionsMenu(items, label = 'Actions', stableKey = '') {
   const keyAttr = stableKey ? ` data-stable-key="${esc(stableKey)}"` : '';
   return `<details class="actions-menu"${keyAttr}><summary class="btn btn-sm"${titleAttr(label)}>${esc(label)}</summary><div class="actions-menu-panel">${content}</div></details>`;
 }
+function enhanceResponsiveTables(root = document) {
+  const tables = root.querySelectorAll ? root.querySelectorAll('table') : [];
+  tables.forEach(table => {
+    table.classList.add('mobile-card-table');
+    const labels = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim());
+    table.querySelectorAll('tbody tr').forEach(row => {
+      [...row.children].forEach((cell, index) => {
+        if (cell.tagName !== 'TD') return;
+        cell.dataset.label = labels[index] || '';
+      });
+    });
+  });
+}
+const responsiveTableObserver = new MutationObserver(mutations => {
+  if (!mutations.some(m => [...m.addedNodes].some(node => node.nodeType === 1 && (node.matches?.('table') || node.querySelector?.('table'))))) return;
+  requestAnimationFrame(() => enhanceResponsiveTables());
+});
+responsiveTableObserver.observe(document.body, {childList: true, subtree: true});
 async function runDashboardAction(id) {
   const handler = window._dashboardActions?.get(id);
   if (!handler) {
@@ -3673,6 +3871,7 @@ async function refreshDashboard() {
     window._allMsgs = allMsgs;
     window._msgPage = window._msgPage || 0;
     await renderCurrentPageFromState();
+    enhanceResponsiveTables();
     restoreDashboardViewState(viewState);
 
     document.getElementById('last-update').textContent = 'Updated: ' + new Date().toLocaleTimeString();
