@@ -24,6 +24,8 @@ html,body{height:100%;overflow:hidden}
   --red:#f2706b;
   --teal:#51c5b0;
   --rose:#d883a0;
+  --app-height:100vh;
+  --mobile-nav-height:calc(72px + env(safe-area-inset-bottom));
 }
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(180deg,#0d0f10 0%,#08090b 36%,#0b0b0c 100%);color:var(--text);display:flex;min-height:100vh}
 
@@ -552,8 +554,8 @@ tr:hover{background:#1b1f21}
 /* Mobile application shell */
 @media (max-width:860px){
   html,body{height:100%;overflow:hidden}
-  body{display:block;min-height:100dvh}
-  .main{height:100dvh;padding:12px 12px calc(82px + env(safe-area-inset-bottom));overflow:hidden}
+  body{display:block;min-height:var(--app-height)}
+  .main{height:var(--app-height);padding:12px 12px var(--mobile-nav-height);overflow:hidden}
   .page.active{height:100%;overflow-y:auto;overflow-x:hidden;padding-bottom:10px}
   #page-chat.active{overflow:hidden}
   .app-topbar{margin:-12px -12px 12px;padding:10px 12px;gap:10px;position:sticky;top:-12px}
@@ -568,6 +570,7 @@ tr:hover{background:#1b1f21}
     position:fixed;
     left:0;right:0;bottom:0;
     width:auto;height:auto;
+    min-height:var(--mobile-nav-height);
     padding:8px 8px calc(8px + env(safe-area-inset-bottom));
     z-index:320;
     border-right:0;
@@ -698,35 +701,50 @@ tr:hover{background:#1b1f21}
   .actions-table tbody tr:nth-last-child(-n+3) .actions-menu-panel{top:auto;bottom:calc(84px + env(safe-area-inset-bottom))}
 
   #page-chat .app-topbar{position:relative}
+  body[data-page="chat"] .main{padding:0 0 var(--mobile-nav-height);background:#0d0f10}
+  body[data-page="chat"] .app-topbar{display:none}
+  body[data-page="chat"] #page-chat.active{height:calc(var(--app-height) - var(--mobile-nav-height));padding:0;overflow:hidden}
   .mobile-chat-list-btn{display:inline-flex!important}
-  .chat-shell{display:block;height:calc(100dvh - 145px - env(safe-area-inset-bottom));min-height:520px;position:relative;overflow:hidden}
+  .chat-shell{display:block;height:100%;min-height:0;position:relative;overflow:hidden}
   .chat-shell::before{content:"";display:none;position:fixed;inset:0;background:#0009;z-index:230}
   .chat-shell.mobile-rail-open::before,.chat-shell.mobile-inspector-open::before{display:block}
   .chat-rail{
     display:none;
     position:fixed;
-    left:10px;right:10px;top:64px;bottom:calc(84px + env(safe-area-inset-bottom));
+    left:10px;right:10px;top:10px;bottom:calc(var(--mobile-nav-height) + 10px);
     height:auto;max-height:none;
     z-index:250;
     border-radius:16px;
   }
   .chat-shell.mobile-rail-open .chat-rail{display:flex}
-  .chat-main{height:100%;min-height:0;border-radius:14px;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
-  .chat-topbar{flex-direction:column;align-items:stretch;gap:10px;border-radius:14px 14px 0 0}
-  .chat-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;justify-content:stretch}
-  .chat-as-label{grid-column:1/-1;display:grid;grid-template-columns:auto minmax(0,1fr)}
+  .chat-main{height:100%;min-height:0;border:0;border-radius:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;box-shadow:none}
+  .chat-topbar{flex-direction:column;align-items:stretch;gap:8px;border-radius:0;padding:10px 12px}
+  .chat-title b{font-size:1rem}
+  .chat-title span{font-size:.78em}
+  .chat-actions{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,auto);gap:7px;justify-content:stretch;align-items:center}
+  .chat-actions .btn{min-height:34px;padding:6px 9px}
+  .chat-actions .btn[title^="Refresh"]{display:none}
+  .chat-as-label{grid-column:auto;display:block;min-width:0}
+  .chat-as-label span{display:none}
   .chat-as-label select{max-width:none;width:100%;min-width:0}
-  .chat-timeline{padding:12px;gap:8px;min-height:0;overflow:auto}
-  .chat-bubble,.chat-bubble.mine,.chat-bubble.system{max-width:100%;width:100%;border-radius:13px}
-  .chat-composer{position:relative;bottom:auto;z-index:20;border-radius:0 0 14px 14px;padding:10px}
-  .chat-compose-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .chat-compose-row #chat-subject-input{grid-column:1/-1}
-  .chat-composer textarea{height:104px;max-height:28dvh}
+  .chat-timeline{padding:12px 10px;gap:8px;min-height:0;overflow:auto;overscroll-behavior:contain}
+  .chat-bubble,.chat-bubble.mine,.chat-bubble.system{max-width:100%;width:100%;border-radius:14px;padding:11px 12px}
+  .chat-bubble .btn-row{display:flex;gap:6px}
+  .chat-bubble .btn-row .btn{width:auto}
+  .chat-composer{position:relative;bottom:auto;z-index:20;border-radius:0;padding:9px 10px calc(10px + env(safe-area-inset-bottom));display:grid;gap:8px}
+  .chat-composer textarea{order:1;height:76px;max-height:22dvh;min-height:58px;resize:none;font-size:16px}
+  .chat-compose-row{order:2;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto auto auto;gap:7px;align-items:center}
+  .chat-compose-row #chat-subject-input{grid-column:1/-1;grid-row:1;height:34px}
+  .chat-compose-row select{min-width:0;height:34px;padding:6px 8px}
+  .chat-compose-row .btn{width:auto;min-width:0;height:34px;padding:6px 9px}
+  #chat-artifact-btn,#chat-queue-btn{font-size:0}
+  #chat-artifact-btn::after{content:"File";font-size:.78rem}
+  #chat-queue-btn::after{content:"Queue";font-size:.78rem}
   .chat-reply-context{align-items:flex-start;flex-direction:column}
   .chat-inspector{
     display:none;
     position:fixed;
-    left:10px;right:10px;bottom:calc(84px + env(safe-area-inset-bottom));
+    left:10px;right:10px;bottom:calc(var(--mobile-nav-height) + 10px);
     max-height:70dvh;
     z-index:255;
     border-radius:16px;
@@ -741,15 +759,17 @@ tr:hover{background:#1b1f21}
 
 @media (max-width:430px){
   .main{padding-left:9px;padding-right:9px}
+  body[data-page="chat"] .main{padding-left:0;padding-right:0}
   .app-topbar{margin-left:-9px;margin-right:-9px;padding-left:9px;padding-right:9px}
   .nav a,.sidebar.collapsed .nav a{flex-basis:70px;width:70px}
   .nav a b{font-size:.72rem}
   .ops-strip,.stats,.chart-summary,.health-grid{grid-template-columns:1fr}
   table.mobile-card-table td{grid-template-columns:1fr;gap:4px}
   table.mobile-card-table td::before{font-size:.68em}
-  .chat-actions{grid-template-columns:1fr 1fr}
-  .chat-compose-row{grid-template-columns:1fr}
-  .chat-shell{height:calc(100dvh - 132px - env(safe-area-inset-bottom));min-height:500px}
+  .chat-actions{grid-template-columns:minmax(0,1fr) repeat(3,auto)}
+  .chat-actions .btn{padding-left:8px;padding-right:8px}
+  .chat-compose-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto auto auto}
+  .chat-shell{height:100%;min-height:0}
   .env-meta,.detail-grid,.chat-kv{grid-template-columns:1fr;gap:3px}
 }
 </style>
@@ -888,7 +908,7 @@ tr:hover{background:#1b1f21}
             </select>
             <input id="chat-subject-input" placeholder="Subject for tasks / handoffs">
             <input id="chat-artifact-file" type="file" style="display:none" onchange="uploadChatArtifactFile(event)">
-            <button class="btn" title="Upload a file artifact and insert its reference into this message" onclick="chooseChatArtifactFile()">Artifact</button>
+            <button class="btn" id="chat-artifact-btn" title="Upload a file artifact and insert its reference into this message" onclick="chooseChatArtifactFile()">Artifact</button>
             <button class="btn" id="chat-queue-btn" title="Queue this message for the next turn instead of steering an active run. Direct messages and channels only." onclick="sendChatMessage({queueIfBusy:true})">Queue</button>
             <button class="btn btn-primary" id="chat-send-btn" title="Send now. Busy steer-capable targets receive it between tool calls; busy non-steer targets queue or merge it for the next turn." onclick="sendChatMessage()">Send</button>
           </div>
@@ -1336,6 +1356,7 @@ function pageTitle(name) {
 
 function showPage(name, updateHistory = true) {
   currentPage = name;
+  document.body.dataset.page = name;
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
   const page = document.getElementById('page-' + name);
@@ -1364,6 +1385,11 @@ function showPage(name, updateHistory = true) {
   if (name === 'channels') loadChannels();
   if (name === 'files') loadFiles();
   requestAnimationFrame(() => enhanceResponsiveTables(page));
+}
+
+function updateAppViewportVars() {
+  const height = Math.max(320, Math.round(window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0));
+  document.documentElement.style.setProperty('--app-height', `${height}px`);
 }
 
 function toast(msg, color) {
@@ -4609,6 +4635,10 @@ async function saveSettings(e) {
 
 // ─── Init ──────────────────────────────
 
+updateAppViewportVars();
+window.addEventListener('resize', updateAppViewportVars);
+window.addEventListener('orientationchange', updateAppViewportVars);
+window.visualViewport?.addEventListener('resize', updateAppViewportVars);
 showPage(initialPageFromLocation(), false);
 setupChatKeyboard();
 connectDashboardSocket();
