@@ -1417,7 +1417,41 @@ function updateConnectionStatus(text, color) {
 
 function scheduleRealtimeRefresh() {
   if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer);
-  refreshDebounceTimer = setTimeout(() => refreshDashboard(), 250);
+  const chatActive = currentPage === 'chat';
+  const composerFocused = !!document.activeElement?.closest?.('.chat-composer');
+  const delay = chatActive && (isMobileDashboard() || composerFocused) ? 1200 : 250;
+  refreshDebounceTimer = setTimeout(() => refreshDashboard(), delay);
+}
+
+const CHAT_BOTTOM_EPSILON = 18;
+
+function chatIsAtBottom(el) {
+  if (!el) return true;
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= CHAT_BOTTOM_EPSILON;
+}
+
+function markChatTimelineInteraction() {
+  window._chatTimelineInteractingUntil = Date.now() + 2500;
+}
+
+function chatTimelineInteractionActive() {
+  return Date.now() < (window._chatTimelineInteractingUntil || 0);
+}
+
+function chatScrollAnchor(el) {
+  if (!el) return null;
+  const containerTop = el.getBoundingClientRect().top;
+  const items = [...el.querySelectorAll('[data-message-id]')];
+  for (const item of items) {
+    const rect = item.getBoundingClientRect();
+    if (rect.bottom >= containerTop + 10) {
+      return {
+        id: item.getAttribute('data-message-id'),
+        offset: rect.top - containerTop,
+      };
+    }
+  }
+  return null;
 }
 
 function captureDashboardViewState() {
@@ -1438,7 +1472,8 @@ function captureDashboardViewState() {
     scrollState[id] = {
       top: el.scrollTop,
       left: el.scrollLeft,
-      nearBottom: el.scrollHeight - el.scrollTop - el.clientHeight < 120,
+      nearBottom: chatIsAtBottom(el),
+      anchor: id === 'chat-timeline' ? chatScrollAnchor(el) : null,
     };
   }
   return {
@@ -1464,9 +1499,18 @@ function restoreDashboardViewState(state) {
       activePage.scrollLeft = state.pageScrollLeft || 0;
     }
     for (const [id, item] of Object.entries(state.scrollState || {})) {
-      if (item.nearBottom) continue;
+      if (item.nearBottom && id !== 'chat-timeline') continue;
       const el = document.getElementById(id);
       if (!el) continue;
+      if (id === 'chat-timeline' && item.nearBottom && !chatTimelineInteractionActive()) continue;
+      if (item.anchor?.id) {
+        const anchor = el.querySelector(`[data-message-id="${cssSel(item.anchor.id)}"]`);
+        if (anchor) {
+          el.scrollTop += anchor.getBoundingClientRect().top - el.getBoundingClientRect().top - (item.anchor.offset || 0);
+          el.scrollLeft = item.left || 0;
+          continue;
+        }
+      }
       el.scrollTop = item.top || 0;
       el.scrollLeft = item.left || 0;
     }
@@ -1606,6 +1650,22 @@ document.addEventListener('change', event => {
   const agentEnvSelect = event.target.closest('[data-agent-edit-env]');
   if (agentEnvSelect) syncAgentEditorEnvironment(agentEnvSelect.value);
 });
+
+document.addEventListener('scroll', event => {
+  if (event.target?.id === 'chat-timeline') markChatTimelineInteraction();
+}, true);
+
+document.addEventListener('wheel', event => {
+  if (event.target?.closest?.('#chat-timeline')) markChatTimelineInteraction();
+}, {passive: true});
+
+document.addEventListener('touchstart', event => {
+  if (event.target?.closest?.('#chat-timeline')) markChatTimelineInteraction();
+}, {passive: true});
+
+document.addEventListener('touchmove', event => {
+  if (event.target?.closest?.('#chat-timeline')) markChatTimelineInteraction();
+}, {passive: true});
 function disabledActionButton(label, title, classes = '') {
   return `<button class="btn btn-sm ${esc(classes)}"${titleAttr(title || label)} disabled>${esc(label)}</button>`;
 }
@@ -2881,7 +2941,10 @@ function renderChatRail() {
   html += dmItems.length ? dmItems.map(renderChatRailItem).join('') : `<p class="em">${chatEmptyDmText()}</p>`;
   html += '<div class="chat-section-label">Channels</div>';
   html += channelItems.length ? channelItems.map(renderChatRailItem).join('') : '<p class="em">No channels yet.</p>';
-  el.innerHTML = html;
+  if (el._chatRailSignature !== html) {
+    el.innerHTML = html;
+    el._chatRailSignature = html;
+  }
 }
 
 function chatEmptyDmText() {
@@ -2979,7 +3042,6 @@ async function markSelectedChatRead() {
       const channel = (window._channels || []).find(ch => ch.name === meta.id);
       if (channel) channel.unreadCount = 0;
       renderChatRail();
-      renderChat();
     } catch (e) {
       toast('Failed to mark channel read', '#f85149');
     } finally {
@@ -3001,7 +3063,6 @@ async function markSelectedChatRead() {
     })));
     for (const msg of unread) msg.read = true;
     renderChatRail();
-    renderChat();
   } catch (e) {
     toast('Failed to mark chat read', '#f85149');
   } finally {
@@ -3022,20 +3083,39 @@ function renderChat() {
   const timeline = document.getElementById('chat-timeline');
   if (!timeline) return;
   const previousKey = timeline.dataset.chatKey || '';
-  const previousLast = timeline.dataset.lastMessage || '';
   const latestMessage = messages[messages.length - 1] || {};
   const latestKey = latestMessage.id || String(latestMessage.timestamp || '');
-  const nearBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight < 120;
+  const shouldStickToBottom = chatIsAtBottom(timeline) && !chatTimelineInteractionActive();
   const prelude = chatPeekBanner() + chatLiveWarning(meta);
-  if (!messages.length) {
-    timeline.innerHTML = prelude + '<p class="em">No messages in this conversation yet.</p>';
-  } else {
-    const from = chatIdentity();
-    timeline.innerHTML = prelude + messages.map(m => renderChatMessage(m, from)).join('');
+  const from = chatIdentity();
+  const messageSignature = messages.map(m => {
+    const delivery = messageDeliveryRun(m.id);
+    return [
+      m.id || '',
+      m.timestamp || '',
+      m.from || '',
+      m._to || '',
+      m.source || '',
+      m.type || '',
+      m.subject || '',
+      m.body || m.preview || '',
+      m.read === false ? 'unread' : 'read',
+      delivery?.run?.id || '',
+      delivery?.run?.status || '',
+      delivery?.run?.resultMessageId || '',
+      delivery?.control?.status || '',
+    ].join('\u001f');
+  }).join('\u001e');
+  const signature = [window._chatSelected || '', from, prelude, messageSignature].join('\u001d');
+  if (timeline._chatSignature !== signature) {
+    timeline.innerHTML = !messages.length
+      ? prelude + '<p class="em">No messages in this conversation yet.</p>'
+      : prelude + messages.map(m => renderChatMessage(m, from)).join('');
+    timeline._chatSignature = signature;
   }
   timeline.dataset.chatKey = window._chatSelected || '';
   timeline.dataset.lastMessage = latestKey;
-  if (previousKey !== (window._chatSelected || '') || nearBottom) {
+  if (previousKey !== (window._chatSelected || '') || shouldStickToBottom) {
     timeline.scrollTop = timeline.scrollHeight;
   }
   renderChatInspector(meta, messages);
@@ -3226,7 +3306,7 @@ function renderChatMessage(m, currentFrom) {
       : actionButtonFn('Mark read', 'Mark this direct message read for the selected identity only', () => markMessageRead(m.id, currentFrom)));
   }
   if (mine && m.id) actions.push(actionButtonFn('Unsend', 'Delete this sent message and matching channel fan-out copies where applicable', () => unsendChatMessage(m.id), 'btn-danger'));
-  return `<article class="chat-bubble${klass}">` +
+  return `<article class="chat-bubble${klass}" data-message-id="${esc(m.id || '')}">` +
     `<div class="chat-bubble-head"><span class="chat-from">${esc(m.from || '')}</span><span class="chat-time">${fmtTime(m.timestamp)}</span>${type}${priority}</div>` +
     parent +
     subjectLine +
