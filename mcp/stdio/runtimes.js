@@ -405,6 +405,41 @@ export function managedClaudePermissionArgs(config = {}, executionMode = "manage
   return [];
 }
 
+function normalizeCodexSandboxMode(value) {
+  const text = String(value || "").trim().toLowerCase().replace(/_/g, "-");
+  if (["danger", "danger-full", "danger-full-access", "full", "full-access", "bypass", "unsafe"].includes(text)) {
+    return "danger-full-access";
+  }
+  if (["workspace", "workspace-write", "workspacewrite"].includes(text)) {
+    return "workspace-write";
+  }
+  if (["read", "read-only", "readonly"].includes(text)) {
+    return "read-only";
+  }
+  return "";
+}
+
+export function managedCodexSandboxMode(config = {}, executionMode = "managed") {
+  const configured = normalizeCodexSandboxMode(config.sandboxMode || config.sandbox || config.codexSandboxMode);
+  if (configured) return configured;
+  return executionMode === "managed" ? "danger-full-access" : "workspace-write";
+}
+
+export function codexTurnSandboxPolicy(mode, cwd, networkAccess = true) {
+  const sandboxMode = normalizeCodexSandboxMode(mode) || "workspace-write";
+  if (sandboxMode === "danger-full-access") {
+    return { type: "dangerFullAccess" };
+  }
+  if (sandboxMode === "read-only") {
+    return { type: "readOnly" };
+  }
+  return {
+    type: "workspaceWrite",
+    writableRoots: [cwd],
+    networkAccess,
+  };
+}
+
 function summarizeOpenCodeParts(parts = []) {
   const textChunks = [];
   for (const part of parts) {
@@ -1171,6 +1206,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
   const approvalPolicy = config.approvalPolicy || "never";
   const networkAccess = config.networkAccess !== false;
   const executionMode = String(run.executionMode || agentInfo.sessionMode || "managed").trim().toLowerCase();
+  const sandboxMode = managedCodexSandboxMode(config, executionMode);
   const residentThreadId = String(agentInfo.sessionHandle || "").trim();
   const appServerUrl =
     executionMode === "resident" && hasCodexLiveAppServer(config)
@@ -1399,11 +1435,11 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
         try {
           started = await rpc.request("thread/start", {
             ...threadStartParams,
-            sandbox: "workspace-write",
+            sandbox: sandboxMode,
           }, 60000);
         } catch (error) {
           const message = error?.message || "";
-          if (!message.includes("unknown variant `workspace-write`")) {
+          if (sandboxMode !== "workspace-write" || !message.includes("unknown variant `workspace-write`")) {
             throw error;
           }
           started = await rpc.request("thread/start", {
@@ -1513,11 +1549,7 @@ function createCodexController({ agentId, agentInfo, run, runtimeState, callback
           input: [{ type: "text", text: `${buildSystemPrompt(agentId, agentInfo, run)}\n\n${buildUserPrompt(run)}` }],
           cwd,
           approvalPolicy,
-          sandboxPolicy: {
-            type: "workspaceWrite",
-            writableRoots: [cwd],
-            networkAccess,
-          },
+          sandboxPolicy: codexTurnSandboxPolicy(sandboxMode, cwd, networkAccess),
           model,
           effort,
           summary: summaryMode,
