@@ -323,6 +323,7 @@ export function buildSystemPrompt(agentId, agentInfo, run) {
     `If asked to check recent messages between you and the sender, use comms_inbox(agentId="${agentId}", ...) or the relevant direct-chat context, not the global dashboard feed.`,
     "Team communication contract: stay on the current message, do not mix unrelated topics, and do not assume facts you have not checked. If the sender asks for status/history/truth, inspect the available messages/files/tools first and say what you checked. If a request bundles multiple independent topics, answer the current blocker first and propose splitting the rest.",
     "Treat every message as a small contract: who owns it, what action or answer is expected, what evidence/result will satisfy it, and whether a reply or follow-up wake is owed. If the contract is unclear, ask one concrete clarifying question or state the narrow assumption you are acting on.",
+    "Managed visibility rule: do not rely on stdout, logs, tool output, or run summaries as the team-visible answer. A managed turn must close visibly: final plain text answers the triggering sender; comms_send creates separate teammate/dashboard updates; self-sends create future wakes. If you ask teammates for parallel work, make the expected reply target clear so their replies wake the right owner.",
     "Use compact working-team replies: answer, evidence checked, blocker or uncertainty, next action. Ask one clear question when blocked instead of guessing.",
     `Turn lifecycle: final plain text is only this turn's reply. It does not schedule future work. This is not a lockstep protocol: you may message teammates mid-turn, run parallel lanes, and continue your own bounded work inside the current turn. If future work must happen after this turn, create that wake before finishing. If your next action requires another agent, send that agent a separate comms_send. If your next action is your own next chunk after this turn, send yourself a separate comms_send(to="${agentId}", type="request", queueIfBusy=true, ...). Do not merely write "Next action: ..." unless no wake is needed.`,
     channelRule,
@@ -370,6 +371,7 @@ export function buildUserPrompt(run) {
       ? "Channel discipline: respond only when your reply is useful to the group or sender. Do not create broad acknowledgement loops."
       : "",
     "Keep this turn scoped to the message above and its direct context. Do not carry unrelated older topics forward unless the sender explicitly asks for them.",
+    "Do not end silently. Close the visible contract for this message: answer the sender in final plain text, send any separate owner/dashboard updates with comms_send, and create a self-wake if your own later turn is required.",
     "You can coordinate mid-turn and work in parallel with other agents. If you need another managed turn after this one, create it with an actual separate comms_send before your final answer. Self-continuation is allowed: send yourself a request with queueIfBusy=true. A written 'next action' in final text is not a wake.",
     isDashboardSender
       ? "Keep the final answer brief and directly useful."

@@ -22,9 +22,13 @@ assert.match(dashboardSystem, /stores that final answer in dashboard chat/);
 assert.match(dashboardSystem, /final plain text is only this turn's reply/);
 assert.match(dashboardSystem, /not a lockstep protocol/);
 assert.match(dashboardSystem, /every message as a small contract/);
+assert.match(dashboardSystem, /Managed visibility rule/);
+assert.match(dashboardSystem, /do not rely on stdout, logs, tool output, or run summaries/);
 assert.match(dashboardSystem, /comms_send\(to="sc-coder", type="request", queueIfBusy=true/);
 assert.doesNotMatch(dashboardSystem, /comms_send\(from="sc-coder", to="dashboard"/);
 assert.match(dashboardUser, /Reply to the dashboard user in final plain text/);
+assert.match(dashboardUser, /Do not end silently/);
+assert.match(dashboardUser, /Close the visible contract/);
 assert.match(dashboardUser, /coordinate mid-turn and work in parallel/);
 assert.match(dashboardUser, /Self-continuation is allowed/);
 

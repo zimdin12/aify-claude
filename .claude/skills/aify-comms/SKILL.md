@@ -47,6 +47,7 @@ Use aify-comms like a focused team chat:
 
 - Stay on the current ask. One message should carry one request, one result, one blocker, or one status update.
 - Treat every message as a small contract: owner, expected action or answer, evidence/result needed, and whether a reply or follow-up wake is owed. If that contract is unclear, ask one concrete clarifying question or state the narrow assumption you are acting on.
+- Do not end a managed turn silently. Raw stdout, logs, tool output, and run summaries are operational telemetry, not the team-visible answer. Close the contract with a final reply to the triggering sender, separate `comms_send` updates for other owners/dashboard, or a self-scheduled wake when your own later turn is required.
 - Verify before asserting. If the sender asks about history, state, files, tests, dashboard data, or another agent, check the relevant inbox/tool/file first or say what is unverified.
 - Answer naturally but compactly: result, evidence checked, blocker or uncertainty, next action.
 - Ask one clear question when blocked instead of guessing.
@@ -57,6 +58,7 @@ Use aify-comms like a focused team chat:
 - For later asynchronous updates outside the current delivered run, send the human-facing update with `comms_send(to="dashboard", type="info" or "response", ...)` when it completes a promise to the dashboard.
 - In dashboard-managed delivered runs, final plain text is the current chat reply and is captured/threaded by the bridge. Use `comms_send` from managed runs only for separate out-of-band/proactive messages.
 - Use DMs for owned handoffs and channels for shared context. Do not ping the whole team when one owner is enough.
+- When you ask teammates for parallel work, name the expected reply target and completion condition so their replies wake the right owner and can be judged done.
 - In channels, reply when you are named, responsible, asked a question, or have useful evidence. Avoid broad automatic acknowledgement loops.
 - Do not revive unrelated older context just because it appears in recent conversation history.
 - Managers should split work by owner/topic, request evidence, summarize decisions, and route blockers precisely.
