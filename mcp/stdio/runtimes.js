@@ -196,6 +196,27 @@ function copyIfExists(source, target) {
   }
 }
 
+function copyDirectoryFreshIfExists(source, target) {
+  try {
+    if (!fs.existsSync(source)) return false;
+    fs.rmSync(target, { recursive: true, force: true });
+    fs.cpSync(source, target, { recursive: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function installManagedCodexSkills(sourceHome, targetHome) {
+  const bundledSkills = path.resolve(RUNTIME_DIR, "..", "..", ".agents", "skills");
+  for (const name of ["aify-comms", "aify-comms-debug"]) {
+    const target = path.join(targetHome, "skills", name);
+    const installedSource = path.join(sourceHome, "skills", name);
+    if (copyDirectoryFreshIfExists(installedSource, target)) continue;
+    copyDirectoryFreshIfExists(path.join(bundledSkills, name), target);
+  }
+}
+
 export function managedCodexConfigText({ workspace = "", serverUrl = "", model = "", effort = "" } = {}) {
   const lines = [
     `model = ${tomlString(model || "gpt-5.4")}`,
@@ -228,13 +249,14 @@ export function managedCodexConfigText({ workspace = "", serverUrl = "", model =
   return `${lines.join("\n")}\n`;
 }
 
-function prepareManagedCodexHome({ workspace = "", model = "", effort = "" } = {}) {
+export function prepareManagedCodexHome({ workspace = "", model = "", effort = "" } = {}) {
   const sourceHome = process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
   const targetHome = path.join(os.homedir(), ".local", "state", "aify-comms", "managed-codex-home");
   fs.mkdirSync(targetHome, { recursive: true });
   for (const name of ["auth.json", "installation_id", "version.json"]) {
     copyIfExists(path.join(sourceHome, name), path.join(targetHome, name));
   }
+  installManagedCodexSkills(sourceHome, targetHome);
   fs.writeFileSync(
     path.join(targetHome, "config.toml"),
     managedCodexConfigText({ workspace, serverUrl: process.env.AIFY_SERVER_URL || process.env.CLAUDE_MCP_SERVER_URL || "", model, effort }),

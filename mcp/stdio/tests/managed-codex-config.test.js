@@ -1,7 +1,16 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-const { managedCodexConfigText } = await import("../runtimes.js");
+const originalHome = process.env.HOME;
+const originalCodexHome = process.env.CODEX_HOME;
+const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "aify-managed-codex-home-"));
+process.env.HOME = tempHome;
+delete process.env.CODEX_HOME;
+
+const { managedCodexConfigText, prepareManagedCodexHome } = await import("../runtimes.js");
 
 const text = managedCodexConfigText({
   workspace: "/mnt/c/Users/Administrator/sand_castle",
@@ -21,5 +30,21 @@ assert.match(text, /\[projects\."\/mnt\/c\/Users\/Administrator\/sand_castle"\]/
 assert.doesNotMatch(text, /openmemory/);
 assert.doesNotMatch(text, /host\.docker\.internal/);
 assert.doesNotMatch(text, /8765/);
+
+const managedHome = prepareManagedCodexHome({
+  workspace: "/mnt/c/Users/Administrator/sand_castle",
+  serverUrl: "http://localhost:8800",
+});
+
+assert.equal(managedHome, path.join(tempHome, ".local", "state", "aify-comms", "managed-codex-home"));
+assert.ok(fs.existsSync(path.join(managedHome, "config.toml")));
+assert.ok(fs.existsSync(path.join(managedHome, "skills", "aify-comms", "SKILL.md")));
+assert.ok(fs.existsSync(path.join(managedHome, "skills", "aify-comms-debug", "SKILL.md")));
+
+if (originalHome === undefined) delete process.env.HOME;
+else process.env.HOME = originalHome;
+if (originalCodexHome === undefined) delete process.env.CODEX_HOME;
+else process.env.CODEX_HOME = originalCodexHome;
+fs.rmSync(tempHome, { recursive: true, force: true });
 
 console.log("managed-codex-config.test.js: all assertions passed");

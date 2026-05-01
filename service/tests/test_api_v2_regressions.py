@@ -2147,6 +2147,38 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(stored["body"], "teammate acked")
         self.assertIsNone(self._fetchone("SELECT id FROM dispatch_runs WHERE message_id = ?", (sent["messageId"],)))
 
+    def test_triggered_channel_send_to_dashboard_member_is_store_only(self):
+        self._register("manager", runtime="codex", sessionMode="managed")
+        created = self.client.post(
+            "/api/v1/channels",
+            json={"name": "status", "description": "", "createdBy": "manager"},
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        joined = self.client.post("/api/v1/channels/status/join", json={"agentId": "dashboard"})
+        self.assertEqual(joined.status_code, 200, joined.text)
+
+        sent = self.client.post(
+            "/api/v1/channels/status/send",
+            json={"from_agent": "manager", "channel": "status", "body": "status update", "type": "info", "trigger": True},
+        )
+        self.assertEqual(sent.status_code, 200, sent.text)
+        payload = sent.json()
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["recipients"], ["dashboard"])
+        self.assertEqual(payload["dispatchRuns"], [])
+        self.assertEqual(payload["recipientStatus"]["dashboard"]["runtime"], "dashboard")
+        stored = self._fetchone(
+            "SELECT from_agent, to_agent, channel, source, dispatch_requested, body FROM messages WHERE to_agent = ? AND channel = ?",
+            ("dashboard", "status"),
+        )
+        self.assertIsNotNone(stored)
+        self.assertEqual(stored["from_agent"], "manager")
+        self.assertEqual(stored["source"], "channel")
+        self.assertEqual(stored["dispatch_requested"], 0)
+        self.assertEqual(stored["body"], "status update")
+        self.assertIsNone(self._fetchone("SELECT id FROM dispatch_runs WHERE target_agent = ?", ("dashboard",)))
+
     def test_async_manager_summary_is_reported_to_dashboard_chat(self):
         self._register("manager", role="manager", runtime="claude-code", sessionMode="managed")
         self._register("coder", runtime="codex", sessionMode="managed")

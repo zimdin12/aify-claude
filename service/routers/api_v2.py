@@ -1190,6 +1190,13 @@ async def _load_settings(db):
 
 
 async def _get_recipient_info(db, recipient_id: str):
+    if recipient_id == "dashboard":
+        return {
+            "status": "active",
+            "unread": 0,
+            "runtime": "dashboard",
+            "machineId": "dashboard",
+        }
     c = await db.execute("SELECT * FROM agents WHERE id = ?", (recipient_id,))
     row = await c.fetchone()
     if not row:
@@ -4114,13 +4121,6 @@ async def send_message(req: MessageSend, request: Request):
                             "runtime": info["runtime"],
                             "machineId": info["machineId"],
                         }
-                    elif r == "dashboard":
-                        recipient_info[r] = {
-                            "status": "active",
-                            "unread": 0,
-                            "runtime": "dashboard",
-                            "machineId": "dashboard",
-                        }
                 await db.commit()
                 return {
                     "ok": False,
@@ -4200,13 +4200,6 @@ async def send_message(req: MessageSend, request: Request):
                     "unread": info["unread"],
                     "runtime": info["runtime"],
                     "machineId": info["machineId"],
-                }
-            elif r == "dashboard":
-                recipient_info[r] = {
-                    "status": "active",
-                    "unread": 0,
-                    "runtime": "dashboard",
-                    "machineId": "dashboard",
                 }
 
         await db.commit()
@@ -5798,12 +5791,13 @@ async def send_channel_message(name: str, req: ChannelMessage, request: Request)
 
         launchable_recipients = []
         not_started = []
+        dispatch_recipients = [recipient_id for recipient_id in recipients if recipient_id != "dashboard"]
         if should_trigger and recipients:
             prefer_steer = (req.steer is not False) and not bool(req.queueIfBusy)
             allow_queue_busy = bool(req.queueIfBusy) or prefer_steer
             launchable_recipients, not_started = await _preflight_live_send_recipients(
                 db,
-                recipients,
+                dispatch_recipients,
                 allow_steer=prefer_steer,
                 allow_queue_busy=allow_queue_busy,
             )
@@ -5846,12 +5840,12 @@ async def send_channel_message(name: str, req: ChannelMessage, request: Request)
                     "INSERT INTO messages (id, from_agent, to_agent, channel, source, type, subject, body, priority, dispatch_requested, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         recipient_msg_id, req.from_agent, member, name, "channel", req.type, subject,
-                        req.body, req.priority or "normal", 1 if should_trigger else 0, ts
+                        req.body, req.priority or "normal", 1 if should_trigger and member != "dashboard" else 0, ts
                     )
                 )
 
         dispatch_runs = []
-        if should_trigger and recipients:
+        if should_trigger and dispatch_recipients:
             dispatch_runs = await _create_dispatch_runs(
                 db,
                 [recipient_id for recipient_id, _ in launchable_recipients],

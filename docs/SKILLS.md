@@ -50,6 +50,14 @@ ${CODEX_HOME:-~/.codex}/skills/aify-comms
 ${CODEX_HOME:-~/.codex}/skills/aify-comms-debug
 ```
 
+Dashboard-managed Codex sessions use a separate managed Codex home:
+
+```text
+~/.local/state/aify-comms/managed-codex-home
+```
+
+The WSL/Linux bridge now copies the bundled Codex skills into that managed home whenever it prepares a managed Codex run. If a managed Codex teammate says `aify-comms` or `aify-comms-debug` is not exposed as a skill, update/restart the relevant `aify-comms` bridge so it regenerates the managed Codex home, or copy `.agents/skills/aify-comms*` into the managed home's `skills/` directory as a temporary live repair.
+
 Claude installs from:
 
 ```text
