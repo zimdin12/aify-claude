@@ -228,7 +228,7 @@ When a warm managed session dies:
 4. Spawn request targets the previous environment unless changed.
 5. Bridge validates workspace and runtime capability.
 6. Bridge tries native resume if `nativeResume=true`.
-7. If native resume fails or is unavailable, bridge reports the failure or uses bridge-resume only when the runtime adapter can do so without silently discarding native memory. Fresh backing handles require an explicit reset/clear-resume action.
+7. If native resume fails or is unavailable, bridge reports the failure or uses bridge-resume only when the runtime adapter can do so without silently discarding native memory. Fresh backing handles require the explicit dashboard **Recreate** action.
 8. New session row is created and linked to the same agent identity.
 
 ## Continue From Previous Session

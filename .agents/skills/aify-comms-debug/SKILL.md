@@ -115,7 +115,7 @@ On Windows, the installer creates both a Bash `claude-aify` and a `claude-aify.c
 
 **Cause.** There are two possible causes. The common managed-run cause is using Claude Code's `--session-id` flag for a session that already has a transcript file; `--session-id` is for creating a specific new session, while `--resume <id>` continues an existing one. A less common Windows cause is a stale headless Claude process that still owns the backing session after a crash or duplicate restart.
 
-**Fix (current build).** Managed Claude runs detect this exact failure and stop instead of silently creating a fresh session. Silent session replacement discards native Claude chat memory, so it is now an explicit operator choice. Close the duplicate Claude process that owns the session, or use Dashboard **Sessions/Team -> Clear resume state** when you intentionally want the next run to start with a fresh backing session. Restart the Windows `aify-comms` bridge after updating so it loads the fixed runtime adapter.
+**Fix (current build).** Managed Claude runs detect this exact failure and stop instead of silently creating a fresh session. Silent session replacement discards native Claude chat memory, so it is now an explicit operator choice. Close the duplicate Claude process that owns the session, or use Dashboard **Sessions/Team -> Recreate** when you intentionally want the next run to start with a fresh backing session. Restart the Windows `aify-comms` bridge after updating so it loads the fixed runtime adapter.
 
 **Resume behavior.** Current bridge builds check for the native Claude JSONL transcript under `.claude/projects/...`. If it exists, dashboard-managed Claude uses `--resume <session-id>`; if it does not, the first turn uses `--session-id <session-id>` to create the stable backing session. Pull latest, rerun the installer, and restart the Windows `aify-comms` bridge so it loads that fix.
 
@@ -142,7 +142,7 @@ Get-CimInstance Win32_Process |
   Format-List
 ```
 
-Then restart the Windows `aify-comms` bridge and recover/restart the dashboard session. Use **Clear resume state** only when you accept losing that native Claude memory.
+Then restart the Windows `aify-comms` bridge and recover/restart the dashboard session. Use **Recreate** only when you accept losing that native Claude memory.
 
 **Visibility caveat.** Dashboard-managed Claude Code uses headless `claude -p` with `--session-id` for the first turn and `--resume` after the native transcript exists. A healthy managed backing may not appear in the `claude-aify` picker. Use the dashboard's copyable CLI resume command to open it by ID (`claude-aify --resume <session-id>`) after the backing has recorded a resume ID.
 
@@ -150,7 +150,7 @@ If you want the resumed CLI to match managed-agent permissions, use `--dangerous
 
 Use dashboard **Pause for CLI** before opening a managed Claude session directly. It sets the agent to a paused/disabled dashboard state so new dashboard chat sends fail fast instead of trying to write into a Claude session already owned by your terminal. Use **Recover** or **Restart** from Sessions after closing the CLI if you want dashboard control back.
 
-After opening the native CLI, re-register from that same session with the same `agentId`. That is how the dashboard learns the current native handle. If the agent forgets CLI conversation after returning to dashboard, check whether the session's stored handle changed or was cleared during adopt/restart. Current code should preserve handles across same-runtime adopt/recover/restart; a new handle should only appear after a new spawn or explicit **Clear resume state**.
+After opening the native CLI, re-register from that same session with the same `agentId`. That is how the dashboard learns the current native handle. If the agent forgets CLI conversation after returning to dashboard, check whether the session's stored handle changed or was recreated during adopt/restart. Current code should preserve handles across same-runtime adopt/recover/restart; a new handle should only appear after a new spawn or explicit **Recreate**.
 
 **Resident caveat.** Resident Claude sessions are not silently swapped, because their session ID is the visible CLI binding. If a resident session hits this, close the duplicate Claude tab/process, restart with `claude-aify`, and re-register from the live session.
 

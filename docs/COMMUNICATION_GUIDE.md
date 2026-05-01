@@ -9,6 +9,8 @@ Agents should:
 - answer messages that ask for work, review, debugging, approval, or status
 - treat dashboard direct messages as coming from the human/operator and answer the current delivered run in final plain text
 - keep each message focused on one ask, one result, or one blocker
+- treat every message as a small contract: owner, expected action or answer, evidence/result needed, and whether a reply or follow-up wake is owed
+- avoid silent managed turns: stdout, logs, tool output, and run summaries are telemetry, not the team-visible answer
 - verify before asserting when the sender asks about state, history, files, tests, or another agent
 - use direct messages for owned handoffs and channels for shared team context
 - ask one clear question when blocked instead of guessing
@@ -24,6 +26,8 @@ Good team messages usually fit this shape:
 4. **Next action**: what the sender or recipient should do next.
 
 Do not include every detail by default. If the detail is long, share it as an artifact and send a short pointer.
+
+The "next action" line is not a scheduler. If the next action must happen after the current managed turn, create the wake before finishing: send the owner a `comms_send(...)`, or self-schedule with `comms_send(to="<own-agent-id>", type="request", queueIfBusy=true, ...)` when you own the next bounded chunk.
 
 ## Context Discipline
 
@@ -46,6 +50,14 @@ For dashboard-origin direct messages, final plain text is the human-visible chat
 For later asynchronous updates outside the current delivered run, the manager should send `comms_send(to="dashboard", type="info" or "response", ...)` when the update completes a dashboard promise. The backend may also store manager/operator final summaries as a safety net.
 
 In normal resident/live CLI sessions, keep using `comms_send(type="response", inReplyTo=...)` for inbox replies. In managed delivered runs, do not call `comms_send` for the current reply; use it only for separate out-of-band/proactive messages.
+
+Do not rely on run summaries, terminal output, or tool logs as the only communication. A managed turn should close visibly with one of these outcomes:
+
+- final plain text answers the triggering sender
+- a separate `comms_send(...)` updates another owner or dashboard
+- a self-send schedules the same agent's next bounded turn
+
+Parallel work is expected when lanes are independent. When asking teammates for parallel work, name the expected reply target and completion condition so their replies wake the right owner and can be judged done.
 
 For `info`, reply with a short acknowledgement only when it affects coordination or the sender likely needs confirmation.
 
