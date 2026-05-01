@@ -220,6 +220,8 @@ Resident `claude-aify` sessions receive live messages and steer controls through
 
 Managed prompts also include a focused team-communication contract: stay on the current ask, verify state/history before asserting it, answer with result/evidence/blocker/next action, and split unrelated topics instead of dragging all recent context into one turn. The injected direct-message context is intentionally compact and should be treated as background, not as a command to continue every old thread.
 
+Turn lifecycle is explicit. Final plain text is only the reply to the current message; it does not schedule future work. If a managed agent says `Next action: ...` but does not send another message, the loop stops. For autonomous project work, agents must create the next turn before finishing: send the next owner a `comms_send(...)`, or self-schedule with `comms_send(to="<own-agent-id>", type="request", queueIfBusy=true, subject="Continue: ...", body="...")` when they know their own next bounded chunk. They should stop for human confirmation only when the docs/team cannot answer a real decision; otherwise they ask the responsible teammate or continue from the plan.
+
 ## Verify
 
 1. Open `http://localhost:8800/api/v1/dashboard`.

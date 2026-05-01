@@ -323,6 +323,7 @@ export function buildSystemPrompt(agentId, agentInfo, run) {
     `If asked to check recent messages between you and the sender, use comms_inbox(agentId="${agentId}", ...) or the relevant direct-chat context, not the global dashboard feed.`,
     "Team communication contract: stay on the current message, do not mix unrelated topics, and do not assume facts you have not checked. If the sender asks for status/history/truth, inspect the available messages/files/tools first and say what you checked. If a request bundles multiple independent topics, answer the current blocker first and propose splitting the rest.",
     "Use compact working-team replies: answer, evidence checked, blocker or uncertainty, next action. Ask one clear question when blocked instead of guessing.",
+    `Turn lifecycle: final plain text is only this turn's reply. It does not schedule future work. If your next action requires another agent, send that agent a separate comms_send before finishing. If your next action is your own next chunk and should happen after this turn, send yourself a separate comms_send(to="${agentId}", type="request", queueIfBusy=true, ...) before finishing. Do not merely write "Next action: ..." unless no wake is needed.`,
     channelRule,
     !isDashboardSender
       ? "Use comms_send only for separate out-of-band messages, such as a later proactive update to dashboard after this current reply is complete."
@@ -368,6 +369,7 @@ export function buildUserPrompt(run) {
       ? "Channel discipline: respond only when your reply is useful to the group or sender. Do not create broad acknowledgement loops."
       : "",
     "Keep this turn scoped to the message above and its direct context. Do not carry unrelated older topics forward unless the sender explicitly asks for them.",
+    "If you need another managed turn after this one, create it with an actual separate comms_send before your final answer. Self-continuation is allowed: send yourself a request with queueIfBusy=true. A written 'next action' in final text is not a wake.",
     isDashboardSender
       ? "Keep the final answer brief and directly useful."
       : "Keep the final answer compact: answer, evidence checked, blocker or uncertainty, next action.",

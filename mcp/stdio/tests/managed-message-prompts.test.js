@@ -19,8 +19,11 @@ const dashboardUser = buildUserPrompt({
 assert.match(dashboardSystem, /human\/operator/);
 assert.match(dashboardSystem, /final plain text is the chat reply/);
 assert.match(dashboardSystem, /stores that final answer in dashboard chat/);
+assert.match(dashboardSystem, /final plain text is only this turn's reply/);
+assert.match(dashboardSystem, /comms_send\(to="sc-coder", type="request", queueIfBusy=true/);
 assert.doesNotMatch(dashboardSystem, /comms_send\(from="sc-coder", to="dashboard"/);
 assert.match(dashboardUser, /Reply to the dashboard user in final plain text/);
+assert.match(dashboardUser, /Self-continuation is allowed/);
 
 const channelSystem = buildSystemPrompt("sc-coder", agentInfo, {
   from: "sc-manager",

@@ -19,6 +19,7 @@ Current dashboard behavior reflected by the skills:
 
 - normal teamwork uses `comms_send`; `comms_dispatch` is a lower-level debug/run-control tool
 - normal sends are live-delivery gated for offline/stale/stopped/no-wake targets; busy steer-capable targets receive normal sends as current-run steer, busy non-steer targets queue/merge as next-turn work, and `queueIfBusy=true` forces explicit next-turn delivery
+- managed agents are turn-based; final text replies do not schedule work. For autonomous project work, agents must send the next wake before finishing. If they own the next bounded chunk, they self-schedule with `comms_send(to="<own-agent-id>", type="request", queueIfBusy=true, ...)`; if another teammate owns it, they message that teammate. Vague "need confirmation" is not a stop condition when docs/team roles can answer it.
 - delivered dashboard-managed runs should answer the current message in final plain text; the bridge captures and stores/threads that answer into chat
 - if a later teammate reply completes a promise to report back to the human outside the current delivered run, managers/operators should send `comms_send(to="dashboard", type="info" or "response", ...)`; dashboard is a store-only human recipient, and backend summary mirroring is only a safety net
 - channel/group messages should prompt bounded discussion: reply when named, responsible, asked a question, or holding useful evidence; avoid broad automatic acknowledgement loops
