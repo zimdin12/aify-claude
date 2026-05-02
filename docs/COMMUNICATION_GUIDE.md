@@ -45,6 +45,8 @@ Rules:
 
 For delivered dashboard-managed runs, answer the current sender in final plain text. The bridge captures that final answer as run output and stores/threads it into chat. This avoids making the current reply depend on an extra MCP `comms_send` call from inside the managed runtime.
 
+Dashboard-managed agents are already registered by the environment bridge. They should not call `comms_register` during a delivered run; current builds reject that call to prevent a managed teammate from accidentally becoming a resident/manual identity. Use `comms_register` only from real resident CLI sessions.
+
 For dashboard-origin direct messages, final plain text is the human-visible chat reply. Dashboard is a store-only human recipient, so no runtime is woken for the reply.
 
 For later asynchronous updates outside the current delivered run, the manager should send `comms_send(to="dashboard", type="info" or "response", ...)` when the update completes a dashboard promise. The backend may also store manager/operator final summaries as a safety net.

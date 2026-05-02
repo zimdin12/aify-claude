@@ -1400,6 +1400,18 @@ server.tool(
   },
   async ({ agentId, role, name, cwd, model, description, instructions, runtime, machineId, launchMode, sessionMode, sessionHandle, appServerUrl, managedBy }) => {
     try { validateName(agentId, "agent ID"); } catch (e) { return { content: [{ type: "text", text: e.message }], isError: true }; }
+    if (IS_MANAGED_DISPATCH) {
+      return {
+        content: [{
+          type: "text",
+          text:
+            "This is a dashboard-managed run. The agent identity is already registered by the environment bridge, " +
+            "so comms_register is disabled here to avoid converting the managed teammate into a resident CLI identity. " +
+            "Answer the current message in final plain text; use comms_send only for separate teammate/dashboard updates.",
+        }],
+        isError: true,
+      };
+    }
     const resolvedRuntime = detectRuntime(runtime);
     const resolvedMachineId = machineId || MACHINE_ID;
     const resolvedSessionMode = normalizeSessionMode(sessionMode);
