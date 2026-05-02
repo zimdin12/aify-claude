@@ -2256,7 +2256,7 @@ server.tool(
   {
     agentId: z.string().optional().describe("Show contracts targeting this agent"),
     from: z.string().optional().describe("Show contracts created by this sender"),
-    state: z.enum(["overdue", "working", "queued", "seen", "sent", "missing_reply", "failed", "answered", "closed"]).optional().describe("Filter by computed contract state"),
+    state: z.enum(["open", "overdue", "working", "queued", "seen", "sent", "missing_reply", "failed", "answered", "closed"]).optional().describe("Filter by computed contract state. Defaults to open."),
     category: z.enum(["direct", "channel", "self_wake"]).optional().describe("Filter by category. Defaults to direct so old channel fan-out does not hide owned work."),
     includeClosed: z.boolean().optional().describe("Include answered/closed recent contracts. Default false."),
     limit: z.number().int().min(1).max(200).optional().describe("Max contracts to return. Default 25."),
@@ -2268,7 +2268,7 @@ server.tool(
     const params = new URLSearchParams();
     if (agentId) params.set("agentId", agentId);
     if (from) params.set("fromAgent", from);
-    if (state) params.set("state", state);
+    params.set("state", state || "open");
     params.set("category", category || "direct");
     if (includeClosed) params.set("includeClosed", "true");
     params.set("limit", String(limit || 25));

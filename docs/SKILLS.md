@@ -19,7 +19,7 @@ Current dashboard behavior reflected by the skills:
 
 - normal teamwork uses `comms_send`; `comms_dispatch` is a lower-level debug/run-control tool
 - every message is treated as a small contract: owner, expected action or answer, evidence/result needed, and whether a reply or follow-up wake is owed
-- agents and managers can use `comms_contracts(...)` to inspect computed Work Loop contracts before claiming a teammate is silent, overdue, answered, or blocked by stale bookkeeping. It defaults to direct contracts; channel and self-wake audits are explicit categories.
+- agents and managers can use `comms_contracts(...)` to inspect computed Work Loop contracts before claiming a teammate is silent, overdue, answered, or blocked by stale bookkeeping. It defaults to open direct contracts; channel, self-wake, missing-reply, failed, and answered audits are explicit filters.
 - managed turns should not end silently: stdout/logs/tool output/run summaries are telemetry, not the team-visible answer. The turn should close with a final reply to the triggering sender, explicit `comms_send` updates for other owners/dashboard, or a self-scheduled wake when later self-work is required
 - normal sends are live-delivery gated for offline/stale/stopped/no-wake targets; busy steer-capable targets receive normal sends as current-run steer, busy non-steer targets queue/merge as next-turn work, and `queueIfBusy=true` forces explicit next-turn delivery
 - environment bridge roots are safety boundaries, not per-agent workspace defaults; current launchers/service builds reject or ignore flag-like roots such as `--help`

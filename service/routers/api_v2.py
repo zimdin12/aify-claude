@@ -5432,7 +5432,7 @@ async def list_work_contracts(
     request: Request,
     agentId: Optional[str] = None,
     fromAgent: Optional[str] = None,
-    state: Optional[str] = None,
+    state: Optional[str] = Query(None, pattern="^(open|overdue|working|queued|seen|sent|missing_reply|failed|answered|closed)$"),
     category: Optional[str] = Query(None, pattern="^(direct|channel|self_wake)$"),
     includeClosed: bool = Query(False),
     limit: int = Query(120, ge=1, le=500),
@@ -5455,7 +5455,32 @@ async def list_work_contracts(
         elif category == "self_wake":
             where.append("AND r.from_agent = r.target_agent")
         stale_hours = max(1, int(settings.get("contract_stale_hours", 24) or 24))
-        if includeClosed:
+        normalized_state = str(state or "").strip().lower()
+        if normalized_state == "open":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status NOT IN ('completed','failed','cancelled')")
+        elif normalized_state == "answered":
+            where.append("AND COALESCE(r.result_message_id, '') != ''")
+        elif normalized_state == "closed":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status = 'completed' AND r.require_reply = 0")
+        elif normalized_state == "missing_reply":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status = 'completed'")
+        elif normalized_state == "failed":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status IN ('failed','cancelled')")
+        elif normalized_state == "working":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status IN ('claimed','running')")
+        elif normalized_state == "queued":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status = 'queued'")
+        elif normalized_state == "overdue":
+            reminder_minutes = max(1, int(settings.get("reply_reminder_minutes", 6) or 6))
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status NOT IN ('completed','failed','cancelled') AND datetime(r.requested_at) <= datetime('now', ?)")
+            params.append(f"-{reminder_minutes} minutes")
+        elif normalized_state == "seen":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status NOT IN ('queued','claimed','running','completed','failed','cancelled') AND COALESCE(rr.read_at, '') != ''")
+        elif normalized_state == "sent":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status NOT IN ('queued','claimed','running','completed','failed','cancelled') AND COALESCE(rr.read_at, '') = ''")
+
+        closed_state_requested = normalized_state in {"answered", "closed"}
+        if includeClosed or closed_state_requested:
             where.append(
                 """
                 AND (
@@ -5476,8 +5501,10 @@ async def list_work_contracts(
         cursor = await db.execute(_contract_list_query(where_sql="\n".join(where)), params)
         now_s = time.time()
         rows = [_contract_row_to_dict(row, settings=settings, now_s=now_s) for row in await cursor.fetchall()]
-        if state:
-            rows = [row for row in rows if row["state"] == state]
+        if normalized_state == "open":
+            rows = [row for row in rows if row["state"] in {"sent", "seen", "queued", "working", "overdue"}]
+        elif normalized_state:
+            rows = [row for row in rows if row["state"] == normalized_state]
 
         summary = {
             "total": len(rows),

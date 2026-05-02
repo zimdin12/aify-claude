@@ -82,7 +82,7 @@ Contracts are closed by a real answer to the original sender/result, not by sile
 
 If a reminder arrives, read the original message/run it references and close that original contract. Do not just reply "ack reminder" unless the reminder itself is the work.
 
-Use `comms_contracts(...)` when acting as manager or when inbox state looks suspicious. It defaults to direct contracts so old channel fan-out does not hide owned work; request `category="channel"` or `category="self_wake"` when auditing those separately. It shows overdue, working, queued, answered, and missing-reply contracts so agents do not infer truth from unread counts alone.
+Use `comms_contracts(...)` when acting as manager or when inbox state looks suspicious. It defaults to open direct contracts so old channel fan-out and historical failures do not hide owned work; request `state="missing_reply"`/`"failed"`/`"answered"` or `category="channel"`/`"self_wake"` when auditing history/noise. It shows overdue, working, queued, answered, and missing-reply contracts so agents do not infer truth from unread counts alone.
 
 ## Manager Pattern
 

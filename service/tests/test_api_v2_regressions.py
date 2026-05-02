@@ -3261,6 +3261,13 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertTrue(any(item["id"] == direct for item in contracts))
         self.assertTrue(all(item["category"] == "direct" for item in contracts))
 
+        open_response = self.client.get("/api/v1/contracts?limit=20&category=direct&state=open")
+        self.assertEqual(open_response.status_code, 200, open_response.text)
+        open_contracts = open_response.json()["contracts"]
+        self.assertTrue(any(item["id"] == direct for item in open_contracts))
+        self.assertTrue(all(item["category"] == "direct" for item in open_contracts))
+        self.assertTrue(all(item["state"] in {"sent", "seen", "queued", "working", "overdue"} for item in open_contracts))
+
     def test_deleted_agent_tombstone_blocks_auto_reregister_until_explicit_restore(self):
         self._register("worker", runtime="codex", sessionMode="resident", bridgeId="bridge-1")
 

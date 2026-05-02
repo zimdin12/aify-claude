@@ -887,7 +887,7 @@ tr:hover{background:#1b1f21}
     </div>
     <div class="fb">
       <input id="contract-filter" placeholder="Search contracts..." oninput="renderWorkLoop()">
-      <select id="contract-state" onchange="renderWorkLoop()">
+      <select id="contract-state" onchange="refreshDashboard()">
         <option value="">All states</option>
         <option value="open" selected>Open</option>
         <option value="overdue">Overdue</option>
@@ -899,7 +899,7 @@ tr:hover{background:#1b1f21}
         <option value="failed">Failed</option>
         <option value="answered">Answered</option>
       </select>
-      <select id="contract-category" onchange="renderWorkLoop()">
+      <select id="contract-category" onchange="refreshDashboard()">
         <option value="">All categories</option>
         <option value="direct" selected>Direct</option>
         <option value="channel">Channel</option>
@@ -4286,7 +4286,12 @@ async function refreshDashboard() {
   refreshInFlight = true;
   const viewState = captureDashboardViewState();
   try {
-    const includeClosedContracts = document.getElementById('contract-include-closed')?.checked ? '&includeClosed=true' : '';
+    const contractParams = new URLSearchParams({limit: '200'});
+    if (document.getElementById('contract-include-closed')?.checked) contractParams.set('includeClosed', 'true');
+    const contractState = document.getElementById('contract-state')?.value || '';
+    const contractCategory = document.getElementById('contract-category')?.value || '';
+    if (contractState) contractParams.set('state', contractState);
+    if (contractCategory) contractParams.set('category', contractCategory);
     const [statsRes, agentsRes, runsRes, envRes, spawnRes, sessionsRes, channelsRes, recentRes, contractsRes] = await Promise.all([
       apiFetch(API + '/stats').then(r => r.json()),
       apiFetch(API + '/agents').then(r => r.json()),
@@ -4296,7 +4301,7 @@ async function refreshDashboard() {
       apiFetch(API + '/sessions?limit=100').then(r => r.json()),
       apiFetch(API + `/channels?agentId=${encodeURIComponent(chatIdentity())}`).then(r => r.json()),
       apiFetch(API + '/messages/recent?limit=120').then(r => r.json()),
-      apiFetch(API + `/contracts?limit=200${includeClosedContracts}`).then(r => r.json()).catch(() => ({contracts: [], summary: {}, settings: {}})),
+      apiFetch(API + `/contracts?${contractParams.toString()}`).then(r => r.json()).catch(() => ({contracts: [], summary: {}, settings: {}})),
     ]);
     const analyticsRes = await apiFetch(API + '/analytics').then(r => r.json()).catch(() => ({}));
     const runs = runsRes.runs || [];
