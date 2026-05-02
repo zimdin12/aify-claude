@@ -28,6 +28,11 @@ html,body{height:100%;overflow:hidden}
   --mobile-nav-height:calc(72px + env(safe-area-inset-bottom));
 }
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(180deg,#0d0f10 0%,#08090b 36%,#0b0b0c 100%);color:var(--text);display:flex;min-height:100vh}
+*{scrollbar-width:thin;scrollbar-color:#3c4449 #101214}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:#101214}
+*::-webkit-scrollbar-thumb{background:#3c4449;border:2px solid #101214;border-radius:999px}
+*::-webkit-scrollbar-thumb:hover{background:#566168}
 
 .sidebar{width:224px;height:100vh;background:#11171f;border-right:1px solid var(--line-soft);padding:16px 14px;flex-shrink:0;display:flex;flex-direction:column;transition:width .2s,padding .2s;box-shadow:1px 0 0 #0004;position:relative}
 .sidebar.collapsed{width:52px;padding:16px 8px;overflow:visible}
@@ -353,6 +358,12 @@ tr:hover{background:#19212a}
 .chat-rail{display:flex;flex-direction:column;overflow:hidden}
 .chat-rail-head{padding:12px;border-bottom:1px solid var(--line-soft)}
 .chat-rail-head input{width:100%;background:#0a0f15;border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:7px;font-size:.85em}
+.chat-global-results{display:none;margin-top:9px;border-top:1px solid var(--line-soft);padding-top:8px;max-height:220px;overflow:auto}
+.chat-global-results.active{display:block}
+.chat-global-hit{display:block;border:1px solid transparent;border-radius:8px;padding:8px;text-decoration:none;color:var(--text);cursor:pointer}
+.chat-global-hit:hover{background:var(--panel-3);border-color:var(--line)}
+.chat-global-hit b{display:block;font-size:.84em}
+.chat-global-hit span{display:block;color:var(--muted);font-size:.74em;margin-top:2px}
 .chat-list{overflow:auto;padding:8px}
 .chat-section-label{color:var(--subtle);font-size:.72em;text-transform:uppercase;letter-spacing:.4px;margin:10px 8px 5px}
 .chat-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;padding:8px;border-radius:6px;cursor:pointer}
@@ -361,13 +372,17 @@ tr:hover{background:#19212a}
 .chat-item-title{font-weight:600;color:var(--text);min-width:0}
 .chat-item-meta{color:var(--muted);font-size:.75em;margin-top:2px;min-width:0}
 .chat-unread{background:#238636;color:#fff;border-radius:999px;min-width:18px;height:18px;padding:0 5px;font-size:.72em;display:inline-flex;align-items:center;justify-content:center}
-.chat-main{display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden}
+.chat-main{display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden;position:relative}
 .chat-topbar{padding:12px 14px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;gap:12px;background:#151d26}
 .chat-title{min-width:0}.chat-title b{display:block}.chat-title span{display:block;color:var(--muted);font-size:.78em;margin-top:2px}
 .chat-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .chat-as-label{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:.78em}
 .chat-as-label select{min-width:150px}
+.chat-message-search{min-width:180px;max-width:240px;background:#0a0f15;border:1px solid var(--line);color:var(--text);padding:7px 9px;border-radius:7px;font-size:.84em}
 .chat-timeline{overflow:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.chat-scroll-bottom{position:absolute;right:18px;bottom:148px;z-index:18;border-radius:999px;padding:8px 12px;background:#1f6f62;border:1px solid #3ca08f;color:#fff;font-weight:750;box-shadow:0 14px 36px #0009;transition:opacity .15s ease,transform .15s ease,visibility .15s ease}
+.chat-scroll-bottom.hidden{opacity:0;visibility:hidden;pointer-events:none;transform:translateY(6px)}
+.chat-scroll-bottom:hover{transform:translateY(-1px);background:#288777}
 .chat-bubble{max-width:min(780px,85%);border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#0a0f15}
 .chat-bubble.mine{align-self:flex-end;background:#10243a;border-color:#2f81f780}
 .chat-bubble.system{align-self:center;background:transparent;border-color:var(--line);color:var(--muted);max-width:80%;font-style:italic}
@@ -740,10 +755,12 @@ tr:hover{background:#1b1f21}
   .chat-actions{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,auto);gap:7px;justify-content:stretch;align-items:center}
   .chat-actions .btn{min-height:34px;padding:6px 9px}
   .chat-actions .btn[title^="Refresh"]{display:none}
+  .chat-message-search{grid-column:1/-1;max-width:none;width:100%;min-width:0;height:34px}
   .chat-as-label{grid-column:auto;display:block;min-width:0}
   .chat-as-label span{display:none}
   .chat-as-label select{max-width:none;width:100%;min-width:0}
   .chat-timeline{padding:12px 10px;gap:8px;min-height:0;overflow:auto;overscroll-behavior:contain}
+  .chat-scroll-bottom{right:12px;bottom:calc(132px + env(safe-area-inset-bottom));padding:7px 10px}
   .chat-bubble,.chat-bubble.mine,.chat-bubble.system{max-width:100%;width:100%;border-radius:14px;padding:11px 12px}
   .chat-bubble .btn-row{display:flex;gap:6px}
   .chat-bubble .btn-row .btn{width:auto}
@@ -928,6 +945,8 @@ tr:hover{background:#1b1f21}
       <aside class="chat-rail">
         <div class="chat-rail-head">
           <input id="chat-filter" placeholder="Search conversations" oninput="renderChatRail()">
+          <input id="chat-global-search" placeholder="Search all loaded inbox messages" oninput="renderGlobalMessageSearch()" style="margin-top:8px">
+          <div class="chat-global-results" id="chat-global-results"></div>
           <div class="chat-filter-row">
             <label class="chat-toggle" title="Show only direct chats that have messages with the selected Viewing as identity">
               <input type="checkbox" id="chat-open-only" onchange="setChatOpenOnly(this.checked)">
@@ -957,6 +976,7 @@ tr:hover{background:#1b1f21}
           </div>
           <div class="chat-actions">
             <label class="chat-as-label"><span>Viewing as</span><select id="chat-from" onchange="changeChatIdentity()"></select></label>
+            <input class="chat-message-search" id="chat-message-filter" placeholder="Search this chat" oninput="renderChat()">
             <button class="btn btn-sm mobile-chat-list-btn" id="chat-rail-toggle" title="Show or hide the conversation list" onclick="toggleMobileChatRail()">Chats</button>
             <button class="btn btn-sm" title="Refresh agents, messages, channels, sessions, and runs now" onclick="refreshDashboard()">Refresh</button>
             <button class="btn btn-sm" id="chat-inspector-toggle" title="Show or hide conversation details" onclick="toggleChatInspector()">Details</button>
@@ -964,6 +984,7 @@ tr:hover{background:#1b1f21}
           </div>
         </div>
         <div class="chat-timeline" id="chat-timeline"></div>
+        <button class="chat-scroll-bottom hidden" id="chat-scroll-bottom" title="Jump to the newest message" onclick="scrollChatToBottom()">Bottom</button>
         <div class="chat-composer">
           <div id="chat-reply-context" class="chat-reply-context" style="display:none"></div>
           <div class="chat-compose-row">
@@ -1619,7 +1640,7 @@ function restoreDashboardViewState(state) {
       if (el) el.open = true;
     }
     const activePage = document.querySelector('.page.active');
-    if (activePage) {
+    if (activePage && currentPage !== 'chat') {
       activePage.scrollTop = state.pageScrollTop || 0;
       activePage.scrollLeft = state.pageScrollLeft || 0;
     }
@@ -1803,7 +1824,10 @@ document.addEventListener('change', event => {
 });
 
 document.addEventListener('scroll', event => {
-  if (event.target?.id === 'chat-timeline') markChatTimelineInteraction();
+  if (event.target?.id === 'chat-timeline') {
+    markChatTimelineInteraction();
+    updateChatScrollButton();
+  }
 }, true);
 
 document.addEventListener('wheel', event => {
@@ -2615,12 +2639,6 @@ async function renderCurrentPageFromState() {
   if (currentPage === 'chat') {
     const selectedMeta = selectedChatMeta();
     if (selectedMeta.kind === 'channel') await refreshSelectedChannelMessages();
-    if (chatComposerIsEditing()) {
-      renderChatRail();
-      updateChatControls(selectedMeta);
-      updateChatInspectorVisibility();
-      return;
-    }
     renderChat();
   }
 }
@@ -3263,6 +3281,52 @@ function renderChatRail() {
     el.innerHTML = html;
     el._chatRailSignature = html;
   }
+  renderGlobalMessageSearch();
+}
+
+function renderGlobalMessageSearch() {
+  const box = document.getElementById('chat-global-search');
+  const el = document.getElementById('chat-global-results');
+  if (!box || !el) return;
+  const q = (box.value || '').trim().toLowerCase();
+  if (!q) {
+    el.classList.remove('active');
+    el.innerHTML = '';
+    el._searchSignature = '';
+    return;
+  }
+  const hits = (window._allMsgs || []).filter(m => {
+    const haystack = `${m.from || ''} ${m._to || ''} ${m.type || ''} ${m.subject || ''} ${m.body || m.preview || ''}`.toLowerCase();
+    return haystack.includes(q);
+  }).sort((a, b) => timeValue(b.timestamp) - timeValue(a.timestamp)).slice(0, 20);
+  const html = hits.length ? hits.map(m => {
+    const actionId = `global_msg_${++window._dashboardActionSeq}`;
+    rememberDashboardAction(actionId, () => openGlobalMessageHit(m.from, m._to));
+    return `<div class="chat-global-hit" ${dashboardActionAttr(actionId)}>` +
+      `<b class="clip-1">${esc(m.subject || m.preview || m.body || 'Message')}</b>` +
+      `<span class="clip-1">${esc(m.from || '')} -> ${esc(m._to || '')} · ${esc(fmtTime(m.timestamp))}</span>` +
+      `</div>`;
+  }).join('') : '<p class="em">No matching loaded inbox messages.</p>';
+  const signature = `${q}\u001f${html}`;
+  if (el._searchSignature !== signature) {
+    el.innerHTML = html;
+    el._searchSignature = signature;
+  }
+  el.classList.add('active');
+}
+
+function openGlobalMessageHit(fromAgent, toAgent) {
+  const identity = chatIdentity();
+  let viewer = identity;
+  let other = fromAgent === identity ? toAgent : fromAgent;
+  if (fromAgent !== identity && toAgent !== identity) {
+    viewer = toAgent || identity;
+    other = fromAgent;
+    const select = document.getElementById('chat-from');
+    if (select) select.value = viewer;
+    localStorage.setItem('aifyChatIdentity', viewer);
+  }
+  selectChatConversation(`dm:${other}`);
 }
 
 function chatEmptyDmText() {
@@ -3398,14 +3462,18 @@ function renderChat() {
   updateChatReplyContext(meta);
   document.getElementById('chat-title').textContent = meta.title;
   document.getElementById('chat-subtitle').textContent = meta.subtitle;
-  const messages = messagesForSelectedChat(meta);
+  const allMessages = messagesForSelectedChat(meta);
+  const messageFilter = (document.getElementById('chat-message-filter')?.value || '').trim().toLowerCase();
+  const messages = messageFilter
+    ? allMessages.filter(m => `${m.from || ''} ${m._to || ''} ${m.type || ''} ${m.subject || ''} ${m.body || m.preview || ''}`.toLowerCase().includes(messageFilter))
+    : allMessages;
   const timeline = document.getElementById('chat-timeline');
   if (!timeline) return;
   const previousKey = timeline.dataset.chatKey || '';
   const latestMessage = messages[messages.length - 1] || {};
   const latestKey = latestMessage.id || String(latestMessage.timestamp || '');
   const shouldStickToBottom = chatIsAtBottom(timeline) && !chatTimelineInteractionActive();
-  const prelude = chatPeekBanner() + chatLiveWarning(meta);
+  const prelude = chatPeekBanner() + chatLiveWarning(meta) + chatSearchBanner(messageFilter, messages.length, allMessages.length);
   const from = chatIdentity();
   const messageSignature = messages.map(m => {
     const delivery = messageDeliveryRun(m.id);
@@ -3437,8 +3505,37 @@ function renderChat() {
   if (previousKey !== (window._chatSelected || '') || shouldStickToBottom) {
     timeline.scrollTop = timeline.scrollHeight;
   }
-  renderChatInspector(meta, messages);
+  updateChatScrollButton();
+  renderChatInspector(meta, allMessages);
   if (!chatPeekMode()) markSelectedChatRead();
+}
+
+function chatSearchBanner(query, shown, total) {
+  if (!query) return '';
+  return `<div class="banner"><div class="banner-row"><span><b>Search:</b> ${esc(String(shown))} of ${esc(String(total))} message(s) match "${esc(query)}".</span>` +
+    actionButton('Clear', 'Clear this chat message search', 'clearChatMessageSearch()') +
+    `</div></div>`;
+}
+
+function clearChatMessageSearch() {
+  const el = document.getElementById('chat-message-filter');
+  if (el) el.value = '';
+  renderChat();
+}
+
+function scrollChatToBottom() {
+  const timeline = document.getElementById('chat-timeline');
+  if (!timeline) return;
+  timeline.scrollTo({top: timeline.scrollHeight, behavior: 'smooth'});
+  window._chatTimelineInteractingUntil = 0;
+  setTimeout(updateChatScrollButton, 180);
+}
+
+function updateChatScrollButton() {
+  const button = document.getElementById('chat-scroll-bottom');
+  const timeline = document.getElementById('chat-timeline');
+  if (!button || !timeline) return;
+  button.classList.toggle('hidden', chatIsAtBottom(timeline));
 }
 
 function chatPeekBanner() {
