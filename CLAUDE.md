@@ -18,7 +18,7 @@ docker compose up -d --build            # rebuilds the Python service container
 curl http://localhost:8800/health        # should return {"status":"healthy"}
 ```
 
-Changes under `service/`, `mcp/`, and `config/` are COPY'd into the container image — rebuild after editing any of them. Changes to docs, skills, `install.sh`, and `.claude/` do not need a container rebuild.
+Changes under `service/`, `mcp/sse_server.py`, and `config/` are COPY'd into the container image — rebuild after editing any of them. Changes under `mcp/stdio/` affect host-side bridges and MCP client sessions, so reinstall/restart `aify-comms`, `codex-aify`, or `claude-aify` after editing them. Changes to docs, skills, `install.sh`, and `.claude/` do not need a container rebuild, but installer changes require rerunning `install.sh`.
 
 The MCP stdio bridges under `mcp/stdio/` run on the **host**, not in the container. They are loaded by Claude Code / Codex at startup, so changes there require restarting the client wrapper (`claude-aify` / `codex-aify`) — not a container rebuild.
 
@@ -59,4 +59,4 @@ node --check mcp/stdio/runtimes.js
 python -c "import ast; ast.parse(open('service/routers/api_v2.py').read())"
 ```
 
-Full end-to-end test is: a two-session dispatch round-trip. Register two agents, `comms_send` from one to the other with `trigger=true`, verify the target wakes and responds.
+Full end-to-end test is a two-session live round-trip. Register two agents, use `comms_send` from one to the other, verify the target wakes or receives a steer/queued turn according to capability, and verify the response is threaded back in chat.

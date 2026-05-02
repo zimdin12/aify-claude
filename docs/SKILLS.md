@@ -21,6 +21,7 @@ Current dashboard behavior reflected by the skills:
 - every message is treated as a small contract: owner, expected action or answer, evidence/result needed, and whether a reply or follow-up wake is owed
 - managed turns should not end silently: stdout/logs/tool output/run summaries are telemetry, not the team-visible answer. The turn should close with a final reply to the triggering sender, explicit `comms_send` updates for other owners/dashboard, or a self-scheduled wake when later self-work is required
 - normal sends are live-delivery gated for offline/stale/stopped/no-wake targets; busy steer-capable targets receive normal sends as current-run steer, busy non-steer targets queue/merge as next-turn work, and `queueIfBusy=true` forces explicit next-turn delivery
+- environment bridge roots are safety boundaries, not per-agent workspace defaults; current launchers/service builds reject or ignore flag-like roots such as `--help`
 - managed agents have real turn boundaries, but teamwork is not lockstep: agents may exchange messages mid-turn, run independent lanes in parallel, and continue bounded work inside a turn. Final text replies do not schedule later work. For autonomous project work, agents must send the next wake before finishing when more work should happen after the current turn. If they own the next bounded chunk, they self-schedule with `comms_send(to="<own-agent-id>", type="request", queueIfBusy=true, ...)`; if another teammate owns it, they message that teammate. Vague "need confirmation" is not a stop condition when docs/team roles can answer it.
 - delivered dashboard-managed runs should answer the current message in final plain text; the bridge captures and stores/threads that answer into chat
 - if a later teammate reply completes a promise to report back to the human outside the current delivered run, managers/operators should send `comms_send(to="dashboard", type="info" or "response", ...)`; dashboard is a store-only human recipient, and backend summary mirroring is only a safety net
@@ -60,6 +61,8 @@ Dashboard-managed Codex sessions use a separate managed Codex home:
 ```
 
 The WSL/Linux bridge now copies the bundled Codex skills into that managed home whenever it prepares a managed Codex run. If a managed Codex teammate says `aify-comms` or `aify-comms-debug` is not exposed as a skill, update/restart the relevant `aify-comms` bridge so it regenerates the managed Codex home, or copy `.agents/skills/aify-comms*` into the managed home's `skills/` directory as a temporary live repair.
+
+Current bridge builds terminate the whole managed runtime process tree on timeout, interrupt, stop, and bridge shutdown. This is important for Codex/OpenCode app-server children and Windows Claude wrapper children; stale child processes should not keep agents falsely alive after the owning environment bridge is gone.
 
 Claude installs from:
 

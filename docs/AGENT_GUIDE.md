@@ -33,7 +33,7 @@ docker compose up -d --build
 curl http://localhost:8800/health
 ```
 
-Backend changes under `service/`, `mcp/`, and `config/` require a container rebuild or hot-copy/restart during local iteration. Host-side bridge changes under `mcp/stdio/` require restarting the relevant wrapper/bridge process.
+Backend changes under `service/`, `mcp/sse_server.py`, and `config/` require a container rebuild or hot-copy/restart during local iteration. Host-side bridge changes under `mcp/stdio/` require reinstalling/restarting the relevant wrapper/bridge process; the running service container does not reload host-side bridge code.
 
 Useful checks:
 
@@ -67,7 +67,7 @@ cd C:\path\to\workspace-or-workspace-parent
 aify-comms.cmd
 ```
 
-The current directory is always an allowed workspace root. Extra root arguments are optional safety boundaries. The exact project directory is selected per spawned agent in the dashboard.
+The current directory is always an allowed workspace root. Extra root arguments are optional safety boundaries. The exact project directory is selected per spawned agent in the dashboard. The launcher and service ignore flag-like root values such as `--help`; run `aify-comms --help` for usage.
 
 Only the `aify-comms` launcher should pass `--environment-bridge` to the stdio server. Ordinary MCP client sessions should not advertise themselves as dashboard spawn targets or set the legacy `AIFY_ENVIRONMENT_BRIDGE=1` flag.
 

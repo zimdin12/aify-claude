@@ -79,6 +79,7 @@ Managed runtime policy:
 
 Environment bridge model:
 - Starting a newer `aify-comms` bridge for the same environment makes the newer bridge current and queues a stop for the older bridge. If the old process is hung and no longer polling, it may need manual OS cleanup, but it should not own spawn claims.
+- `aify-comms --help` shows launcher usage. The current directory is always an allowed workspace root; extra root arguments are optional safety boundaries. Unknown option-looking arguments should not be used as roots, and current launchers/service builds reject or ignore them.
 - Killing a bridge stops the execution target, not the teammate identity. Managed teammates from that environment become offline/detached and active sessions become lost; chats, identities, spawn specs, and session records remain.
 - Forgetting an environment hides the obsolete execution target. It does not delete teammates, chats, spawn specs, or session records.
 - To keep a teammate after an environment is gone, assign it to another online environment from **Team -> Edit**, then restart it from Sessions.

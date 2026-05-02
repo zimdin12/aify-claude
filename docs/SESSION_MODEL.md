@@ -150,7 +150,7 @@ Codex target model:
 
 The runtime is invoked repeatedly, but the bridge owns continuity.
 
-Claude fallback model:
+Future/fallback model:
 
 - bridge stores the transcript and summaries
 - each turn invokes `claude -p` or another headless command with reconstructed context
@@ -158,6 +158,8 @@ Claude fallback model:
 - context is compacted when needed
 
 Bridge-emulated warmth is still persistent because the bridge can recreate the agent from stored state. It may not be CLI-attachable.
+
+Current implementation note: managed Claude and managed Codex prefer native runtime handles when available. Ordinary Restart/Recover should preserve those handles and surface lock/resume failures instead of silently falling back to a contextless reconstructed prompt. Fresh backing context belongs behind the explicit **Recreate** or **Compact / continue** paths.
 
 ## Resident Visible
 

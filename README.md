@@ -46,7 +46,7 @@ Compaction in `aify-comms` means creating a fresh managed successor with an edit
 
 ## Current State
 
-This branch folds the dashboard and environment lifecycle work back into `aify-comms`. Existing message, channel, dispatch, artifact, and MCP APIs should keep working while the dashboard becomes the normal way to manage agents.
+This repo is the canonical `aify-comms` codebase. The dashboard and environment lifecycle work has been folded back into this product rather than living in a separate bridge fork. Existing message, channel, dispatch, artifact, and MCP APIs should keep working while the dashboard becomes the normal way to manage agents.
 
 Important starting docs:
 
