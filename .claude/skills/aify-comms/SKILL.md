@@ -76,7 +76,7 @@ Managed runtime policy:
 - Fresh native handles should come from a new spawn or explicit **Recreate**. Ordinary adopt/restart should preserve the stored handle when the runtime is unchanged; if it cannot, treat that as a recoverable problem instead of accepting context loss silently.
 - Resident sessions keep the permission mode of the CLI the user started. If a resident Claude session says comms tools need approval, restart it with the desired Claude permission flags or use a dashboard-managed session for unattended work.
 - Every delivered managed message includes the recipient's own `agentId`; use that exact ID for `comms_inbox(agentId="...")` when asked to check recent messages between you and the sender.
-- Dashboard **Compact / continue** is the current aify-comms compaction path. It creates a fresh managed session from an editable handoff packet using recent comms messages/channel context. It is portable across runtimes, but it is not native in-place Claude `/compact` or a Codex internal compaction command.
+- Dashboard **Compact** offers handoff and internal modes. Use handoff mode for real work today: it creates a fresh managed backing from an editable handoff packet using recent comms messages/channel context and defaults to the same agent ID. Internal/native compaction is only available when a runtime adapter explicitly supports it; current managed Claude Code and Codex paths do not expose a verified in-place compact API.
 
 Environment bridge model:
 - Starting a newer `aify-comms` bridge for the same environment makes the newer bridge current and queues a stop for the older bridge. If the old process is hung and no longer polling, it may need manual OS cleanup, but it should not own spawn claims.
@@ -132,7 +132,7 @@ Gotchas regardless of runtime:
 | `comms_register` | Register the exact live session you currently have open. |
 | `comms_envs` | List connected environment bridges, supported runtimes, and workspace roots. |
 | `comms_spawn` | Create a persistent dashboard-managed agent session in a chosen environment/workspace/runtime. |
-| `comms_compact` | Create a fresh managed successor from an existing managed agent using a compact handoff packet. Leaves the original intact. |
+| `comms_compact` | Compact a managed agent. Use `mode="handoff"` for the reliable path; it creates a fresh managed backing from a compact handoff packet and defaults to the same agent ID. `mode="internal"` requests native in-place compact and may be unsupported. |
 | `comms_agents` | List all agents, their status, and unread counts. |
 | `comms_status` | Set a short focus/availability note: `comms_status(status="working", note="NRD pipeline")`. Report completion with a reply message instead. |
 | `comms_describe` | Set your team-facing description: who you are, project, focus areas. Visible in `comms_agents`. Persists across re-register. |

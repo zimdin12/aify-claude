@@ -40,7 +40,7 @@ This dashboard is now treated as the product surface, not as a raw admin page.
 - Keep the visual language restrained: neutral panels, clear status colors, compact tables, and chat-first workflows.
 - Do not expose "dispatch" or "track as run" in normal chat. Users and agents send messages; run state is operational telemetry unless strict live-start behavior is explicitly needed.
 - Chat management must be real backend state: channel delete deletes the channel; DM clear deletes the direct messages for that identity pair.
-- Continue/compact currently means "create a fresh managed-warm successor from an editable handoff packet"; do not imply native session compaction exists until the runtime adapters can generate packets automatically.
+- Compact currently means "handoff into a fresh managed backing from an editable packet" unless a runtime adapter explicitly supports native in-place compaction. Handoff should default to the same agent ID; do not imply native Claude/Codex compaction exists until the adapters prove it.
 
 ## Deep Review 2026-04-28
 

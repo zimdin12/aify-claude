@@ -1638,11 +1638,24 @@ function pickCompactSession(sessions = []) {
   })[0] || null;
 }
 
-function compactSuccessorId(targetAgentId, agents = {}) {
-  const base = `${targetAgentId}-next`.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 96);
-  if (!agents[base]) return base;
-  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 12);
-  return `${base}-${stamp}`.slice(0, 128);
+function internalCompactUnsupportedText(sourceSession = {}) {
+  const runtime = normalizeRuntime(sourceSession.runtime || "generic");
+  const sessionId = sourceSession.id || "unknown";
+  const handle = sourceSession.sessionHandle || sourceSession.session_handle || "";
+  const detailByRuntime = {
+    "claude-code":
+      "Claude Code exposes interactive `/compact`, but aify-comms does not currently have a safe headless managed-run API for triggering that native operation.",
+    codex:
+      "Codex app-server/CLI currently exposes resume, turn, interrupt, and steer controls, but no native compact/context-reset API.",
+    opencode:
+      "OpenCode support has no verified native compact adapter yet.",
+  };
+  const detail = detailByRuntime[runtime] || `Runtime "${runtime}" has no verified native compact adapter.`;
+  return [
+    `Internal/native compaction is not supported for session "${sessionId}" (${runtime}${handle ? `, handle ${handle}` : ""}).`,
+    detail,
+    'Use `comms_compact(mode="handoff", ...)` to create a fresh managed backing from an editable handoff packet. Handoff defaults to the same agent ID unless you pass `newAgentId`.',
+  ].join("\n");
 }
 
 function messageContextForCompact(messages = [], targetAgentId, count = 24) {
@@ -1670,11 +1683,11 @@ function compactPacket({ from, targetAgentId, sourceSession, successorId, messag
         `${index + 1}. [${message.timestamp || "unknown time"}] ${message.route}\nSubject: ${message.subject || "(none)"}\n${message.preview || ""}`
       ).join("\n\n")
     : "No recent message context selected.";
-  return `Compact / continue from previous managed session
+  return `Handoff compact from previous managed session
 Requested by: ${from}
 Source agent: ${targetAgentId}
 Source session: ${sourceSession.id || ""}
-Successor agent: ${successorId}
+Handoff agent: ${successorId}
 Runtime: ${sourceSession.runtime || ""}
 Environment: ${sourceSession.environmentId || ""}
 Workspace: ${sourceSession.workspace || ""}
@@ -1779,20 +1792,21 @@ server.tool(
 
 server.tool(
   "comms_compact",
-  "Create a fresh persistent managed successor from an existing managed agent/session using a portable handoff packet. This is the agent-callable version of dashboard Compact / continue; it does not stop or delete the original agent.",
+  "Compact a managed agent/session. mode=\"handoff\" creates a fresh managed backing from a portable packet and defaults to the same agent ID. mode=\"internal\" requests runtime-native in-place compaction, but currently returns unsupported unless an adapter proves native support.",
   {
     from: z.string().describe("Manager/coordinator agent requesting the compact"),
     targetAgentId: z.string().describe("Existing managed agent to compact/continue from"),
-    newAgentId: z.string().optional().describe("Successor agent ID. Defaults to target-next, with a timestamp if needed."),
-    role: z.string().optional().describe("Successor role. Defaults to the target agent role or coder."),
+    mode: z.enum(["handoff", "internal"]).optional().describe("Compaction mode. handoff is the reliable cross-runtime path; internal requests native in-place compaction and may be unsupported."),
+    newAgentId: z.string().optional().describe("Agent ID for handoff mode. Defaults to the same target agent ID. Pass a different ID only when you intentionally want a separate continuation identity."),
+    role: z.string().optional().describe("Handoff role. Defaults to the target agent role or coder."),
     environmentId: z.string().optional().describe("Target environment. Defaults to the source session environment."),
     runtime: z.string().optional().describe("Target runtime. Defaults to the source session runtime."),
     workspace: z.string().optional().describe("Target workspace. Defaults to the source session workspace."),
-    instructions: z.string().optional().describe("Phase brief or compaction instructions for the successor."),
+    instructions: z.string().optional().describe("Phase brief or compaction instructions for the fresh backing."),
     recentMessages: z.number().int().min(0).max(80).optional().describe("Recent comms messages to include in the handoff packet. Default 24."),
-    priority: z.enum(["normal", "high", "urgent"]).optional().describe("Priority for the successor initial brief"),
+    priority: z.enum(["normal", "high", "urgent"]).optional().describe("Priority for the handoff initial brief"),
   },
-  async ({ from, targetAgentId, newAgentId, role, environmentId, runtime, workspace, instructions, recentMessages, priority }) => {
+  async ({ from, targetAgentId, mode, newAgentId, role, environmentId, runtime, workspace, instructions, recentMessages, priority }) => {
     if (!IS_REMOTE) {
       return { content: [{ type: "text", text: "Managed compaction requires remote server mode. Start aify-comms against the dashboard service first." }], isError: true };
     }
@@ -1805,8 +1819,9 @@ server.tool(
 
     const agents = (await httpCall("GET", "/agents")).agents || {};
     const targetInfo = agents[targetAgentId] || {};
-    const successorId = newAgentId || compactSuccessorId(targetAgentId, agents);
-    try { validateName(successorId, "successor agent ID"); } catch (e) { return { content: [{ type: "text", text: e.message }], isError: true }; }
+    const selectedMode = mode || "handoff";
+    const successorId = newAgentId || targetAgentId;
+    try { validateName(successorId, "handoff agent ID"); } catch (e) { return { content: [{ type: "text", text: e.message }], isError: true }; }
 
     const sessionsRes = await httpCall("GET", `/sessions?agentId=${encodeURIComponent(targetAgentId)}&limit=100`);
     const sourceSession = pickCompactSession(sessionsRes.sessions || []);
@@ -1814,8 +1829,15 @@ server.tool(
       return {
         content: [{
           type: "text",
-          text: `No managed session record found for "${targetAgentId}". Compact / continue needs a dashboard-managed backing session. Use comms_spawn first or adopt the identity into an environment from the dashboard.`,
+          text: `No managed session record found for "${targetAgentId}". Compact needs a dashboard-managed backing session. Use comms_spawn first or adopt the identity into an environment from the dashboard.`,
         }],
+        isError: true,
+      };
+    }
+
+    if (selectedMode === "internal") {
+      return {
+        content: [{ type: "text", text: internalCompactUnsupportedText(sourceSession) }],
         isError: true,
       };
     }
@@ -1843,24 +1865,29 @@ server.tool(
       runtime: resolvedRuntime,
       workspace: workspace || sourceSession.workspace || targetInfo.cwd || "",
       initialMessage: packet,
-      subject: `Compact / continue from ${targetAgentId}`,
+      subject: `Handoff compact from ${targetAgentId}`,
       priority: priority || "normal",
       mode: "managed-warm",
       resumePolicy: "fresh_context",
       metadata: {
+        compactMode: "handoff",
         compactedFromAgentId: targetAgentId,
         compactedFromSessionId: sourceSession.id || "",
         compactedBy: from,
         contextMessageCount: contextMessages.length,
+        sameAgentId: successorId === targetAgentId,
       },
     });
     const req = r.spawnRequest || {};
+    const identityText = successorId === targetAgentId
+      ? `same agent ID "${successorId}"`
+      : `successor "${successorId}"`;
     return {
       content: [{
         type: "text",
         text:
-          `Queued compact successor "${successorId}" from "${targetAgentId}" with ${contextMessages.length} recent message(s). ` +
-          `Spawn request: ${req.id || "unknown"} [${req.status || "queued"}]. The original agent was left intact; stop it separately when the successor is verified.`,
+          `Queued handoff compaction for ${identityText} from "${targetAgentId}" with ${contextMessages.length} recent message(s). ` +
+          `Spawn request: ${req.id || "unknown"} [${req.status || "queued"}]. This creates a fresh managed backing; the old native session is not reused.`,
       }],
     };
   }

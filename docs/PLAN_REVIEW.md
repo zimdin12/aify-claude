@@ -28,7 +28,7 @@ If every feature fits this model, the product stays coherent.
 - Resident visible is for human-open CLI sessions such as `codex-aify` / `claude-aify`.
 - Every managed warm agent is persistent/backed.
 - Persistent/backed does not imply CLI-attachable.
-- Continue-from creates a new backed session from a portable compaction packet; it is not native resume.
+- Handoff compaction creates a new backed session from a portable compaction packet; it is not native resume or native in-place compact.
 - The container coordinates; bridges execute native processes.
 - Workspaces are environment-native and bridge-validated.
 - Messaging is the source of truth; dispatch is execution state attached to a message.

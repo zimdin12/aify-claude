@@ -1185,8 +1185,8 @@ aify-comms</pre>
         <li><b>Artifact:</b> shared file or text blob. Chat can upload a file and insert its reference; the Artifacts page lists and deletes stored artifacts.</li>
       </ul>
 
-      <h3>Continue / Compact</h3>
-      <p>Open <b>Sessions</b> and use <b>Compact / continue</b>. The dashboard opens an editable continuation form with new agent ID, role, environment, runtime, workspace, and a generated packet. The packet includes the last selected number of direct messages involving the source agent plus channel posts authored by it, then queues a fresh managed-warm spawn. This is the current aify-comms compaction path: portable handoff into a new backing session, not native Claude/Codex in-place <code>/compact</code>.</p>
+      <h3>Compact</h3>
+      <p>Open <b>Sessions</b> and use <b>Compact</b>. <b>Handoff</b> is the reliable path today: it opens an editable continuation form with agent ID, role, environment, runtime, workspace, and a generated packet. It defaults to the same agent ID and queues a fresh managed-warm backing. The packet includes the last selected number of direct messages involving the source agent plus channel posts authored by it. <b>Internal</b> is reserved for native runtime compaction when an adapter exposes a verified API; current managed Claude Code and Codex paths do not.</p>
       <p><b>Restart</b> restores dashboard control with the saved spawn spec and saved native handle. If the handle is locked or cannot be resumed, the run fails loudly instead of pretending context was retained. <b>Pause for CLI</b> pauses dashboard delivery and copies the native resume command for direct project work. Re-register from that CLI session before returning to dashboard control. <b>Recreate</b> is the explicit reset: it leaves the old native session behind and starts fresh. The bridge should not silently clear native memory or invent blank replacement sessions on lock errors. If managed Claude reports a session ID is already in use, the Windows bridge tries to release a matching stale headless Claude process and retries once; interactive CLI sessions remain protected.</p>
 
       <h3>Tools</h3>
@@ -3406,7 +3406,7 @@ function renderChatInspector(meta, messages) {
         '<div class="btn-row">' +
         actionButton('Sessions', 'Open the Sessions page filtered mentally to this agent', "showPage('sessions')") +
         (resumeCommand ? actionButtonFn('Pause for CLI', 'Pause dashboard delivery for this session and copy the native CLI resume command', () => takeOverSessionInCli(session.id)) : '') +
-        actionButtonFn('Compact / continue', 'Create a new managed session from an editable compact handoff packet', () => continueSessionAs(session.id)) +
+        actionButtonFn('Compact', 'Compact this session. Handoff starts a fresh managed backing; native internal compact is adapter-dependent.', () => continueSessionAs(session.id)) +
         actionButtonFn('Restart', 'Restore dashboard control using the saved spawn spec and native resume handle', () => controlSession(session.id, 'restart')) +
         `</div>`;
     } else {
@@ -3778,7 +3778,7 @@ function renderSessions(sessions) {
       spawnControl,
       resumeCommand ? actionButtonFn('Pause for CLI', 'Pause dashboard delivery for this session and copy the native CLI resume command', () => takeOverSessionInCli(session.id)) : '',
       actionButtonFn('Recreate', 'Leave the old native session behind and queue a fresh managed backing. Messages and identity remain.', () => controlSession(session.id, 'recreate'), 'btn-danger'),
-      actionButtonFn('Compact / continue', 'Create a new managed agent/session from an editable compact handoff packet', () => continueSessionAs(session.id)),
+      actionButtonFn('Compact', 'Compact this session. Handoff starts a fresh managed backing; native internal compact is adapter-dependent.', () => continueSessionAs(session.id)),
       canStopSession ? actionButtonFn('Stop', 'Stop this managed session and interrupt/cancel work where supported', () => controlSession(session.id, 'stop'), 'btn-danger') : '',
     ];
     html += `<tr>` +
@@ -3807,32 +3807,48 @@ async function continueSessionAs(sessionId) {
   }
   const agentInfo = (window._allAgents || []).find(([id]) => id === session.agentId)?.[1] || {};
   const packet = continuePacketForSession(session, 24);
-  openModal('Continue Session', `
+  openModal('Compact Session', `
     <div class="modal-section">
-      <p class="worker-note">Create a fresh managed-warm session from this session spec plus an editable compact handoff packet. This is portable aify-comms compaction, not native in-place Claude/Codex compaction.</p>
+      <p class="worker-note">Choose how to reduce context pressure. Handoff compaction is reliable across runtimes and starts a fresh managed backing from an editable packet. Internal compaction would keep the native runtime session in place, but current Claude/Codex managed adapters do not expose a verified native compact API yet.</p>
       <div class="send-row">
-        <div class="form-group"><label>New agent ID</label><input id="cont-agent-id" value="${esc(`${session.agentId}-next`)}"></div>
+        <div class="form-group"><label>Mode</label><select id="cont-mode" onchange="updateCompactModeUi()">
+          <option value="handoff" selected>Handoff (fresh backing)</option>
+          <option value="internal">Internal native (when supported)</option>
+        </select></div>
+        <div class="form-group cont-handoff-field"><label>Agent ID</label><input id="cont-agent-id" value="${esc(session.agentId || '')}"></div>
         <div class="form-group"><label>Role</label><select id="cont-role">
           ${['coder','reviewer','tester','researcher','architect','manager','operator'].map(role => `<option value="${role}"${role === (agentInfo.role || 'coder') ? ' selected' : ''}>${role}</option>`).join('')}
         </select></div>
-        <div class="form-group"><label>Recent messages</label><input id="cont-count" type="number" min="0" max="80" value="24" onchange="regenerateContinuePacket(${jsArg(sessionId)})"></div>
+        <div class="form-group cont-handoff-field"><label>Recent messages</label><input id="cont-count" type="number" min="0" max="80" value="24" onchange="regenerateContinuePacket(${jsArg(sessionId)})"></div>
       </div>
-      <div class="send-row">
+      <div class="send-row cont-handoff-field">
         <div class="form-group"><label>Environment</label><input id="cont-env" value="${esc(session.environmentId || '')}"></div>
         <div class="form-group"><label>Runtime</label><input id="cont-runtime" value="${esc(session.runtime || '')}"></div>
         <div class="form-group"><label>Workspace</label><input id="cont-workspace" value="${esc(session.workspace || '')}" style="width:420px"></div>
       </div>
-      <div class="form-group">
+      <div class="form-group cont-handoff-field">
         <label>Editable starting packet</label>
         <textarea id="cont-packet">${esc(packet)}</textarea>
-        <div class="hint">This includes session identity plus the latest direct messages involving the source agent and channel posts authored by it.</div>
+        <div class="hint">Handoff defaults to the same agent ID. Use a different ID only when you intentionally want a second teammate identity. The packet includes session identity plus recent direct messages involving the source agent and channel posts authored by it.</div>
       </div>
+      <div id="cont-internal-note" class="worker-note" style="display:none">Internal native compaction is not currently supported by the managed Claude Code, Codex, or OpenCode adapters. Use handoff compaction unless a future adapter advertises native support.</div>
       <div class="btn-row">
-        ${actionButtonFn('Regenerate', 'Regenerate the packet from the selected message count', () => regenerateContinuePacket(sessionId))}
-        ${actionButtonFn('Queue continuation', 'Queue a managed-warm continuation spawn', () => submitContinueSessionAs(sessionId), 'btn-primary')}
+        <span class="cont-handoff-field">${actionButtonFn('Regenerate', 'Regenerate the packet from the selected message count', () => regenerateContinuePacket(sessionId))}</span>
+        ${actionButtonFn('Compact', 'Run the selected compaction mode', () => submitContinueSessionAs(sessionId), 'btn-primary')}
       </div>
     </div>
   `);
+  updateCompactModeUi();
+}
+
+function updateCompactModeUi() {
+  const mode = document.getElementById('cont-mode')?.value || 'handoff';
+  const isInternal = mode === 'internal';
+  document.querySelectorAll('.cont-handoff-field').forEach(node => {
+    node.style.display = isInternal ? 'none' : '';
+  });
+  const note = document.getElementById('cont-internal-note');
+  if (note) note.style.display = isInternal ? '' : 'none';
 }
 
 function recentContextForAgent(agentId, count) {
@@ -3883,7 +3899,7 @@ Current state:
 Open tasks:
 
 Next contract / wake:
-Who owns the next step, what result proves it is done, and whether this successor should message a teammate or self-schedule follow-up work.`;
+Who owns the next step, what result proves it is done, and whether this fresh backing should message a teammate or self-schedule follow-up work.`;
 }
 
 function regenerateContinuePacket(sessionId) {
@@ -3900,6 +3916,11 @@ async function submitContinueSessionAs(sessionId) {
     toast('Session not found', '#f85149');
     return;
   }
+  const mode = document.getElementById('cont-mode')?.value || 'handoff';
+  if (mode === 'internal') {
+    toast('Internal/native compact is not supported by the current managed runtime adapters yet. Use handoff compact.', '#f0b429');
+    return;
+  }
   const newAgentId = document.getElementById('cont-agent-id')?.value.trim();
   const role = document.getElementById('cont-role')?.value || 'coder';
   const environmentId = document.getElementById('cont-env')?.value.trim() || session.environmentId;
@@ -3907,7 +3928,7 @@ async function submitContinueSessionAs(sessionId) {
   const workspace = document.getElementById('cont-workspace')?.value.trim() || session.workspace;
   const packet = document.getElementById('cont-packet')?.value || '';
   if (!newAgentId) {
-    toast('New agent ID is required', '#f85149');
+    toast('Agent ID is required', '#f85149');
     return;
   }
   try {
@@ -3922,15 +3943,15 @@ async function submitContinueSessionAs(sessionId) {
         runtime,
         workspace,
         initialMessage: packet,
-        subject: `Continue from ${session.agentId}`,
+        subject: `Handoff compact from ${session.agentId}`,
         mode: 'managed-warm',
         resumePolicy: 'fresh_context',
-        metadata: {continuedFromSessionId: session.id, continuedFromAgentId: session.agentId},
+        metadata: {continuedFromSessionId: session.id, continuedFromAgentId: session.agentId, compactMode: 'handoff', sameAgentId: newAgentId === session.agentId},
       }),
     });
     const res = await response.json();
     if (!response.ok || res.ok === false) throw new Error(res.detail || res.error || 'Continue failed');
-    toast(`Continuation queued for ${newAgentId}`);
+    toast(`Handoff compact queued for ${newAgentId}`);
     closeModal();
     await refreshDashboard();
     showPage('environments');

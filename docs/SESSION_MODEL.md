@@ -159,7 +159,7 @@ Future/fallback model:
 
 Bridge-emulated warmth is still persistent because the bridge can recreate the agent from stored state. It may not be CLI-attachable.
 
-Current implementation note: managed Claude and managed Codex prefer native runtime handles when available. Ordinary Restart/Recover should preserve those handles and surface lock/resume failures instead of silently falling back to a contextless reconstructed prompt. Fresh backing context belongs behind the explicit **Recreate** or **Compact / continue** paths.
+Current implementation note: managed Claude and managed Codex prefer native runtime handles when available. Ordinary Restart/Recover should preserve those handles and surface lock/resume failures instead of silently falling back to a contextless reconstructed prompt. Fresh backing context belongs behind the explicit **Recreate** or handoff **Compact** paths.
 
 ## Resident Visible
 
@@ -282,14 +282,15 @@ The packet should be human-readable and editable before launch. It is not just a
 
 ## Compaction Flow
 
-1. User clicks **Compact / continue**.
-2. Dashboard asks the source session/agent to produce a compaction packet, or generates one from transcript/logs if the source is offline.
-3. User chooses target runtime, bridge/environment, workspace, model/profile, and whether to keep the same agent identity.
-4. Dashboard shows the generated compaction packet for review/edit.
-5. Server creates a new spawn request with `continuation_of_session_id` and `compaction_packet_id`.
-6. Target bridge launches a new managed-warm session.
-7. New session receives the compaction packet as initial context.
-8. New session links back to the old session for audit.
+1. User clicks **Compact**.
+2. User chooses **Handoff** or **Internal**. Handoff is the current reliable path; internal/native compaction is available only when a runtime adapter explicitly supports it.
+3. Dashboard asks the source session/agent to produce a compaction packet, or generates one from transcript/logs if the source is offline.
+4. User chooses target runtime, bridge/environment, workspace, model/profile, and whether to keep the same agent identity.
+5. Dashboard shows the generated compaction packet for review/edit.
+6. Server creates a new spawn request with `continuation_of_session_id` and `compaction_packet_id`.
+7. Target bridge launches a new managed-warm session.
+8. New session receives the compaction packet as initial context.
+9. New session links back to the old session for audit.
 
 ## Cross-Runtime Continuation
 
@@ -311,7 +312,7 @@ new session:
 
 The bridge must validate the target workspace in the target environment. The dashboard may help map equivalent roots, but the target bridge is the authority.
 
-Cross-runtime continuation is bridge-resume, not native resume. It relies on the compaction packet, transcript summaries, and artifacts, not on the old runtime's native thread handle.
+Cross-runtime handoff continuation is bridge-resume, not native resume. It relies on the compaction packet, transcript summaries, and artifacts, not on the old runtime's native thread handle.
 
 ## Compaction Quality Bar
 
@@ -354,4 +355,4 @@ In all cases, the old session remains visible in history.
 - A managed session must have exactly one owning bridge at a time.
 - A workspace must be validated by the owning bridge, not guessed by the container.
 - CLI attach is capability-driven, not assumed.
-- Continue-from creates a new session from a compaction packet; it is not the same as native resume.
+- Handoff compaction creates a new session from a compaction packet; it is not the same as native resume or native in-place compact.

@@ -24,7 +24,7 @@ It now adds a first-class agent lifecycle layer:
 - runtime adapters for Claude Code, Codex, and OpenCode managed/resident execution
 - automatic identity/registration for spawned agents
 - managed-warm sessions for long-lived agents
-- portable compact/continue into fresh managed successors when a phase changes or context gets noisy
+- portable compact/continue into fresh managed backings when a phase changes or context gets noisy
 - runtime/session visibility, with token/cost telemetry shown only when runtimes expose it
 - real chat UI with DMs, channels, mentions, artifacts, and run/handoff state near the conversation
 
@@ -36,13 +36,13 @@ It now adds a first-class agent lifecycle layer:
 4. Click **Spawn Agent**.
 5. Pick runtime, environment, workspace, role, optional model/profile, and initial instructions.
 6. The agent identity, spawn spec, and session backing appear automatically.
-7. Talk to it in direct chat or channels, assign work through messages, inspect output, stop/restart/recover it, or compact it into a fresh successor.
+7. Talk to it in direct chat or channels, assign work through messages, inspect output, stop/restart/recover it, or compact it into a fresh backing.
 
 Manual `comms_register(...)` should become an advanced/debug path, not the normal user workflow.
 
 Normal dashboard chat is live-delivery gated for unreachable targets: offline, stale, stopped, or no-wake agents fail visibly and the message is not stored for a future run. Busy live targets receive ordinary sends as steer when supported, or as queued/merged next-turn work when steering is not available; the explicit **Queue** action forces next-turn delivery. Required handoffs are repaired automatically when a terminal run finishes without an explicit reply, and the Home page exposes repair/dismiss actions for old issue states.
 
-Compaction in `aify-comms` means creating a fresh managed successor with an editable handoff packet and recent comms context. It is portable across Claude Code, Codex, and OpenCode, and the original agent is left intact until a manager stops it after the successor is verified.
+Reliable compaction in `aify-comms` means creating a fresh managed backing from an editable handoff packet and recent comms context. It is portable across Claude Code, Codex, and OpenCode, and it defaults to the same agent ID so chats and team identity remain stable. Native in-place compaction is runtime-adapter dependent; current managed Claude Code and Codex adapters do not expose a verified internal compact API.
 
 ## Current State
 

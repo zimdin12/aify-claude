@@ -84,7 +84,7 @@ Daily workflow target:
 - Managed warm sessions are always backed by durable state: agent identity, spawn spec, workspace, transcript/memory, runtime handles when available, and recovery policy.
 - Native CLI attach is optional. A session can be recoverable through the dashboard even when it cannot be opened in Claude Code/Codex CLI later.
 - Bridges are execution owners. The container coordinates; the bridge running in Windows/WSL/Linux validates paths and starts native processes.
-- Continue-from is not native resume. It creates a new session from a portable compaction packet so users can compact context or switch runtime/model/environment safely.
+- Handoff compaction is not native resume. It creates a new session from a portable compaction packet so users can compact context or switch runtime/model/environment safely. It should keep the same agent ID by default unless the operator intentionally creates a separate successor identity.
 
 ## Product Quality Bar
 
