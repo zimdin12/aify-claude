@@ -2,8 +2,8 @@
 //
 // aify-comms-mcp -- MCP server for inter-agent communication between coding-agent runtimes.
 //
-// 27 tools (all prefixed "comms_"):
-//   comms_register, comms_envs, comms_spawn, comms_compact, comms_agents, comms_status, comms_describe, comms_send, comms_dispatch, comms_inbox, comms_search,
+// 28 tools (all prefixed "comms_"):
+//   comms_register, comms_envs, comms_spawn, comms_compact, comms_agents, comms_status, comms_describe, comms_send, comms_dispatch, comms_contracts, comms_inbox, comms_search,
 //   comms_share, comms_read, comms_files,
 //   comms_channel_create, comms_channel_join, comms_channel_send, comms_channel_read, comms_channel_list,
 //   comms_agent_info, comms_listen, comms_unsend, comms_run_status, comms_run_interrupt,
@@ -2236,6 +2236,48 @@ server.tool(
           (controls.length ? `\nRecent controls:\n${controls.join("\n")}` : ""),
       }],
     };
+  }
+);
+
+function summarizeContract(contract = {}) {
+  const route = `${contract.from || "?"} -> ${contract.targetAgentId || "?"}`;
+  const state = String(contract.state || "sent").replace(/_/g, " ");
+  const subject = contract.subject || contract.id || "(no subject)";
+  const age = Number(contract.ageMinutes || 0);
+  const ageText = Number.isFinite(age) ? (age >= 60 ? `${Math.round(age / 6) / 10}h` : `${Math.round(age)}m`) : "?";
+  const reminders = contract.reminderCount ? `, reminders=${contract.reminderCount}` : "";
+  const reply = contract.resultPreview ? `\n  answer: ${String(contract.resultPreview).slice(0, 180)}` : "";
+  return `- ${state.toUpperCase()} ${route} (${ageText}${reminders}) ${subject}${reply}`;
+}
+
+server.tool(
+  "comms_contracts",
+  "List reply/work contracts derived from messages and dispatch runs. Use this to see who owes whom a reply, what is overdue, and whether unread counts are real work or old noise.",
+  {
+    agentId: z.string().optional().describe("Show contracts targeting this agent"),
+    from: z.string().optional().describe("Show contracts created by this sender"),
+    state: z.enum(["overdue", "working", "queued", "seen", "sent", "missing_reply", "failed", "answered", "closed"]).optional().describe("Filter by computed contract state"),
+    includeClosed: z.boolean().optional().describe("Include answered/closed recent contracts. Default false."),
+    limit: z.number().int().min(1).max(200).optional().describe("Max contracts to return. Default 25."),
+  },
+  async ({ agentId, from, state, includeClosed, limit }) => {
+    if (!IS_REMOTE) {
+      return { content: [{ type: "text", text: "Work contracts require remote server mode." }], isError: true };
+    }
+    const params = new URLSearchParams();
+    if (agentId) params.set("agentId", agentId);
+    if (from) params.set("fromAgent", from);
+    if (state) params.set("state", state);
+    if (includeClosed) params.set("includeClosed", "true");
+    params.set("limit", String(limit || 25));
+    const r = await httpCall("GET", `/contracts?${params.toString()}`);
+    const contracts = r.contracts || [];
+    const summary = r.summary || {};
+    const header =
+      `Contracts: ${summary.total || contracts.length}; open=${summary.open || 0}; overdue=${summary.overdue || 0}; ` +
+      `working=${summary.working || 0}; queued=${summary.queued || 0}; missingReply=${summary.missingReply || 0}; answered=${summary.answered || 0}`;
+    const body = contracts.length ? contracts.map(summarizeContract).join("\n") : "No matching contracts.";
+    return { content: [{ type: "text", text: `${header}\n${body}` }] };
   }
 );
 

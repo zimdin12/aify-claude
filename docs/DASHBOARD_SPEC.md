@@ -5,6 +5,7 @@
 Initial dashboard sections:
 
 - **Home**: operational overview and "what needs attention".
+- **Work Loop**: computed reply/work contracts, overdue reminders, self-wakes, and inbox hygiene.
 - **Chat**: direct messages and channel conversations.
 - **Team**: identities and current status.
 - **Analytics**: communication volume, agent availability, run health, and recent failure rates.
@@ -40,6 +41,22 @@ Primary cards:
 - **Live capacity**: bridges/environments and supported runtimes.
 - **Active work**: current running sessions/runs.
 - **Recent conversation**: latest DMs and channels.
+
+## Work Loop
+
+Work Loop is the operations view over chat obligations. It should not introduce a second message concept. It computes contracts from direct requests, reviews, errors, high/urgent messages, required handoff runs, and self-wakes.
+
+It should show:
+
+- open/overdue/working/queued/missing-reply counts
+- route, subject, age, read state, reminder count, and latest answer preview
+- filters for state, category (`direct`, `channel`, `self-wake`), and free text
+- one-click run detail, chat jump, single-contract reminder, and batch due-reminder actions
+- hygiene indicators for old unread fan-out, answered-but-unread source messages, self-wakes, and pending fallback handoffs
+
+Reminder policy belongs in Settings: enabled/disabled, first overdue threshold, repeat interval, maximum reminders, and history window. Reminders should be explicit automated messages, not hidden state changes. A reminder should tell the target which original message/run to open and should instruct the agent to close the original contract rather than merely acknowledging the reminder.
+
+Agents can inspect the same view through `comms_contracts(...)` when they need to audit outstanding work. The dashboard remains the primary place for batch repair actions.
 
 ## Chat
 

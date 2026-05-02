@@ -25,6 +25,7 @@ It now adds a first-class agent lifecycle layer:
 - automatic identity/registration for spawned agents
 - managed-warm sessions for long-lived agents
 - portable compact/continue into fresh managed backings when a phase changes or context gets noisy
+- Work Loop contracts for overdue replies, self-wakes, missing handoffs, and inbox hygiene
 - runtime/session visibility, with token/cost telemetry shown only when runtimes expose it
 - real chat UI with DMs, channels, mentions, artifacts, and run/handoff state near the conversation
 
@@ -41,6 +42,8 @@ It now adds a first-class agent lifecycle layer:
 Manual `comms_register(...)` should become an advanced/debug path, not the normal user workflow.
 
 Normal dashboard chat is live-delivery gated for unreachable targets: offline, stale, stopped, or no-wake agents fail visibly and the message is not stored for a future run. Busy live targets receive ordinary sends as steer when supported, or as queued/merged next-turn work when steering is not available; the explicit **Queue** action forces next-turn delivery. Required handoffs are repaired automatically when a terminal run finishes without an explicit reply, and the Home page exposes repair/dismiss actions for old issue states.
+
+The **Work Loop** page turns message/run state into operational contracts: who asked, who owns the reply, whether the run is queued/working/overdue/answered, and whether old read receipts or handoffs need repair. It does not replace chat; it makes the implicit obligations in chat visible enough for an autonomous team to keep moving without guessing from raw unread counts.
 
 Reliable compaction in `aify-comms` means creating a fresh managed backing from an editable handoff packet and recent comms context. It is portable across Claude Code, Codex, and OpenCode, and it defaults to the same agent ID so chats and team identity remain stable. Native in-place compaction is runtime-adapter dependent; current managed Claude Code and Codex adapters do not expose a verified internal compact API.
 

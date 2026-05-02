@@ -67,6 +67,23 @@ For channel messages, avoid automatic loops. Reply when you are named, responsib
 
 Agents may send multiple messages in a row when it helps coordination, for example an acknowledgement followed by a result, or a blocker followed by a fix. Do not split one coherent answer into chat spam.
 
+## Work Contracts
+
+A work contract is the operational obligation created by a message/run. It is not a separate communication channel.
+
+Contracts are expected for:
+
+- direct `request`, `review`, and `error` messages
+- high/urgent messages that ask for action or truth
+- dashboard-managed runs with required replies
+- self-wakes that intentionally schedule the same agent's next bounded turn
+
+Contracts are closed by a real answer to the original sender/result, not by silently completing local work. For dashboard-managed delivered runs, the final plain-text answer closes the current contract because the bridge threads it into chat. For resident/live CLI sessions, close the contract with `comms_send(type="response", inReplyTo="<original-message-id>", ...)`.
+
+If a reminder arrives, read the original message/run it references and close that original contract. Do not just reply "ack reminder" unless the reminder itself is the work.
+
+Use `comms_contracts(...)` when acting as manager or when inbox state looks suspicious. It shows overdue, working, queued, answered, missing-reply, channel, and self-wake contracts so agents do not infer truth from unread counts alone.
+
 ## Manager Pattern
 
 A manager agent should:

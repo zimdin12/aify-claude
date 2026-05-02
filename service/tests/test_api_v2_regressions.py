@@ -3107,6 +3107,93 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(stats.status_code, 200, stats.text)
         self.assertEqual(stats.json()["dispatch_reply_pending"], 0)
 
+    def test_contracts_classify_overdue_request(self):
+        self._register("lead", runtime="codex", sessionMode="resident", sessionHandle="lead-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:1"})
+        self._register("coder", runtime="codex", sessionMode="resident", sessionHandle="coder-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:2"})
+        self.client.put("/api/v1/settings", json={"reply_reminder_minutes": 1})
+
+        created = self._dispatch(
+            from_agent="lead",
+            to="coder",
+            type="request",
+            subject="needs answer",
+            body="please answer",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        run_id = created["runs"][0]["runId"]
+        self._execute("UPDATE dispatch_runs SET requested_at = '2000-01-01T00:00:00Z' WHERE id = ?", (run_id,))
+
+        response = self.client.get("/api/v1/contracts?limit=10")
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        contract = next(item for item in payload["contracts"] if item["id"] == run_id)
+        self.assertEqual(contract["state"], "overdue")
+        self.assertTrue(contract["replyExpected"])
+        self.assertTrue(contract["overdue"])
+        self.assertEqual(contract["category"], "direct")
+        self.assertEqual(payload["summary"]["overdue"], 1)
+
+    def test_contract_reminder_sends_notice_and_records_event(self):
+        self._register("lead", runtime="codex", sessionMode="resident", sessionHandle="lead-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:1"})
+        self._register("coder", runtime="codex", sessionMode="resident", sessionHandle="coder-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:2"})
+        self.client.put("/api/v1/settings", json={"reply_reminder_minutes": 1, "reply_reminder_repeat_minutes": 1})
+
+        created = self._dispatch(
+            from_agent="lead",
+            to="coder",
+            type="review",
+            subject="review please",
+            body="review this",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        run_id = created["runs"][0]["runId"]
+        self._execute("UPDATE dispatch_runs SET requested_at = '2000-01-01T00:00:00Z' WHERE id = ?", (run_id,))
+
+        response = self.client.post(f"/api/v1/contracts/reminders/run?runId={run_id}")
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(len(payload["reminded"]), 1)
+        reminder_message_id = payload["reminded"][0]["messageId"]
+
+        reminder = self._fetchone("SELECT from_agent, to_agent, subject, body, dispatch_requested FROM messages WHERE id = ?", (reminder_message_id,))
+        self.assertIsNotNone(reminder)
+        self.assertEqual(reminder["from_agent"], "dashboard")
+        self.assertEqual(reminder["to_agent"], "coder")
+        self.assertIn("Reminder: reply overdue", reminder["subject"])
+        self.assertIn('comms_inbox(agentId="coder"', reminder["body"])
+        self.assertEqual(reminder["dispatch_requested"], 1)
+
+        event = self._fetchone("SELECT event_type, body FROM dispatch_events WHERE run_id = ? AND event_type = 'reply_reminder'", (run_id,))
+        self.assertIsNotNone(event)
+        self.assertIn(reminder_message_id, event["body"])
+
+    def test_contracts_do_not_treat_high_priority_responses_as_missing_replies(self):
+        self._register("lead", runtime="codex", sessionMode="resident", sessionHandle="lead-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:1"})
+        self._register("coder", runtime="codex", sessionMode="resident", sessionHandle="coder-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:2"})
+
+        created = self._dispatch(
+            from_agent="coder",
+            to="lead",
+            type="response",
+            subject="Re: review",
+            body="done",
+            priority="high",
+            mode="start_if_possible",
+            createMessage=True,
+            requireReply=False,
+        )
+        run_id = created["runs"][0]["runId"]
+        self.client.patch(
+            f"/api/v1/dispatch/runs/{run_id}",
+            json={"status": "completed", "summary": "response delivered"},
+        )
+
+        response = self.client.get("/api/v1/contracts?limit=20&includeClosed=true")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(any(item["id"] == run_id for item in response.json()["contracts"]))
+
     def test_deleted_agent_tombstone_blocks_auto_reregister_until_explicit_restore(self):
         self._register("worker", runtime="codex", sessionMode="resident", bridgeId="bridge-1")
 

@@ -57,6 +57,8 @@ Use aify-comms like a focused team chat:
 - Treat dashboard-origin direct messages as human/operator chat. Dashboard-managed delivered runs should answer the current message in final plain text; the bridge stores that final answer in dashboard chat.
 - For later asynchronous updates outside the current delivered run, send the human-facing update with `comms_send(to="dashboard", type="info" or "response", ...)` when it completes a promise to the dashboard.
 - In dashboard-managed delivered runs, final plain text is the current chat reply and is captured/threaded by the bridge. Use `comms_send` from managed runs only for separate out-of-band/proactive messages.
+- Work Loop contracts are computed from messages/runs. Close the original contract with a real reply/result; do not treat old unread counts, reminders, or run summaries as proof that communication happened.
+- If an automated reminder arrives, read the original message/run it references and answer that original sender/result. Do not merely acknowledge the reminder unless the reminder itself asks for that.
 - Use DMs for owned handoffs and channels for shared context. Do not ping the whole team when one owner is enough.
 - When you ask teammates for parallel work, name the expected reply target and completion condition so their replies wake the right owner and can be judged done.
 - In channels, reply when you are named, responsible, asked a question, or have useful evidence. Avoid broad automatic acknowledgement loops.
@@ -124,7 +126,7 @@ Gotchas regardless of runtime:
 - `agentId` must be unique per session. Re-registering the same ID supersedes the previous bridge for that agent on that machine.
 - One session per tab; don't register the same agent from two tabs — the old one is replaced.
 
-## Tools (27)
+## Tools (28)
 
 ### Identity And Lifecycle (7)
 | Tool | Use |
@@ -154,6 +156,11 @@ Gotchas regardless of runtime:
 | `comms_dispatch` | Lower-level run-control/debug API. Use only when debugging run-state handling. For normal teamwork communication, prefer `comms_send`. |
 | `comms_run_status` | Check the status, summary, and recent events of a dispatched run. |
 | `comms_run_interrupt` | Request interruption of an active run. Works when the target runtime supports interrupt. |
+
+### Work Loop (1)
+| Tool | Use |
+|------|-----|
+| `comms_contracts` | List computed reply/work contracts. Use this to audit overdue replies, working/queued contracts, answered-but-stale rows, self-wakes, and old inbox noise before claiming a teammate did or did not respond. |
 
 ### Channels (5)
 | Tool | Use |
@@ -233,10 +240,11 @@ When you receive a wake notification or finish a task, check inbox before starti
 - Dashboard-uploaded files are stored in the aify-comms shared artifact store, not necessarily in the workspace. If a message says `Artifact: name`, call `comms_read(name="name")` before trying filesystem search.
 - If you already sent the same handoff directly to someone, posting it to a channel right after will keep the channel history entry but will not create a second personal inbox copy for that member.
 - `comms_run_interrupt` to stop an active run. `comms_send(...)` injects guidance mid-turn for busy steer-capable targets and queues/merges for busy non-steer targets; use `queueIfBusy=true` to force next-turn delivery.
+- `comms_contracts(...)` when acting as manager or when messages seem lost. It shows obligations derived from runs/messages; use it to decide whether to remind, retry, inspect a run, or clean up old bookkeeping.
 - Before diagnosing another agent's issues, call `comms_agent_info` first — don't guess.
 - Brief acks are fine — "on it" beats a paragraph.
 
-Dashboard note: Home is a live operations queue, not a full audit log. Pending handoffs can be repaired from the dashboard, and reviewed historical failures can be dismissed from Home while remaining available in Runs/Environments. Sessions hides ended/completed/cancelled rows by default; use "Show ended/debug sessions" when investigating lifecycle history. Chat Peek mode lets an operator watch conversations without marking incoming messages read; explicit Mark read acknowledges direct messages or the selected channel for the current viewing identity.
+Dashboard note: Home is a live operations queue, not a full audit log. Work Loop is the contract view: overdue replies, working/queued requests, self-wakes, old unread noise, and repair actions. Pending handoffs can be repaired from the dashboard, and reviewed historical failures can be dismissed from Home while remaining available in Runs/Environments. Sessions hides ended/completed/cancelled rows by default; use "Show ended/debug sessions" when investigating lifecycle history. Chat Peek mode lets an operator watch conversations without marking incoming messages read; explicit Mark read acknowledges direct messages or the selected channel for the current viewing identity.
 
 ## Reference Docs
 
