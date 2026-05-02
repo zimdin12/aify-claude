@@ -18,6 +18,7 @@ The user should be able to run a multi-agent team from the browser:
 Primary navigation:
 
 - Home
+- Work Loop
 - Chat
 - Team
 - Analytics
@@ -123,7 +124,7 @@ Chat should support:
 - run state inline
 - handoff state inline
 - unread/read state
-- require-reply send
+- inferred reply expectations for work/request messages; explicit require-reply remains an advanced/debug control, not a routine chat decision
 
 Group chat controls:
 

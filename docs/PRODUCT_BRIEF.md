@@ -37,6 +37,7 @@ The dashboard should feel like a real web application, not a database admin page
 - Who is currently working, idle, blocked, or offline?
 - What conversations need attention?
 - Which runs are pending handoff?
+- Which reply/work contracts are overdue, answered, stale, or only historical noise?
 - What can I safely spawn, stop, restart, or recover?
 - Which old failures are still actionable, and which are only audit history?
 
@@ -62,6 +63,8 @@ Daily workflow target:
 - As a user, I can inspect enough run/session evidence to understand what happened, with richer transcript/log views added per adapter as they mature.
 - As a user, I can start a clean new session from an old session using a reviewed compaction packet, including switching model, runtime, bridge, or workspace.
 - As a user, I can repair old missing-handoff rows and dismiss reviewed historical failures from the Home queue without deleting audit records.
+- As a user, I can open Work Loop to see who owes whom a reply, send due reminders, and repair old delivered-read/handoff bookkeeping without reading raw database tables.
+- As a future user, I can open a managed or resident session in an in-browser terminal when the environment bridge supports PTY/CLI attachment, with the same explicit ownership rules as native **Pause for CLI** so dashboard chat and the terminal do not race the same session.
 
 ## Non-Goals For Initial Build
 
@@ -83,8 +86,10 @@ Daily workflow target:
 - Headless adapters hide CLI details. The rest of the system asks for `runtime=codex`, not for raw shell flags.
 - Managed warm sessions are always backed by durable state: agent identity, spawn spec, workspace, transcript/memory, runtime handles when available, and recovery policy.
 - Native CLI attach is optional. A session can be recoverable through the dashboard even when it cannot be opened in Claude Code/Codex CLI later.
+- Browser CLI attach is a useful future extension, not a replacement for chat. It should be a first-class ownership mode over the same saved runtime handle: opening it pauses dashboard delivery for that session, and returning control resumes normal dashboard chat delivery.
 - Bridges are execution owners. The container coordinates; the bridge running in Windows/WSL/Linux validates paths and starts native processes.
 - Handoff compaction is not native resume. It creates a new session from a portable compaction packet so users can compact context or switch runtime/model/environment safely. It should keep the same agent ID by default unless the operator intentionally creates a separate successor identity.
+- Work contracts are computed from messages and runs. They are not a second messaging system; they expose the obligations already created by direct requests, reviews, errors, urgent/high-priority messages, self-wakes, and required handoffs.
 
 ## Product Quality Bar
 
@@ -96,3 +101,4 @@ Daily workflow target:
 - **Recoverability first.** Killing a process should not destroy the teammate identity or conversation state.
 - **Compaction is user-visible.** If a new session is seeded from an old one, the handoff packet should be reviewable/editable, not hidden magic.
 - **Focused team communication.** Agents should answer each other naturally, but messages must stay scoped to one ask/result/blocker, verify state before asserting, and route broad work into smaller owner-specific handoffs instead of burning context on unrelated topics.
+- **Visible obligations.** The dashboard should distinguish “agent is doing work”, “agent owes a reply”, “agent already answered but read state is stale”, and “old audit history” so operators do not manage the team from misleading unread counts.

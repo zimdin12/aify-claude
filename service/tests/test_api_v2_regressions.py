@@ -13,10 +13,16 @@ from service.routers.api_v2 import router
 
 
 class _DummyWS:
+    def __init__(self):
+        self.broadcasts = []
+        self.notifications = []
+
     async def broadcast(self, *_args, **_kwargs):
+        self.broadcasts.append((_args, _kwargs))
         return None
 
     async def notify_agent(self, *_args, **_kwargs):
+        self.notifications.append((_args, _kwargs))
         return None
 
 
@@ -27,7 +33,8 @@ class ApiV2RegressionTests(unittest.TestCase):
         asyncio.run(init_db(self._db_path))
 
         app = FastAPI()
-        app.state.ws_manager = _DummyWS()
+        self.ws = _DummyWS()
+        app.state.ws_manager = self.ws
         app.state.config = SimpleNamespace(data_dir=self._tmpdir.name)
         app.include_router(router, prefix="/api/v1")
         self.client = TestClient(app)
@@ -142,6 +149,41 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(channels.status_code, 200, channels.text)
         listed = {item["name"]: item for item in channels.json()["channels"]}
         self.assertEqual(listed["room"]["messageCount"], 2)
+
+    def test_channel_join_leave_are_idempotent_and_validate_channel(self):
+        self._register("alice")
+        self._register("bob")
+
+        response = self.client.post(
+            "/api/v1/channels",
+            json={"name": "room", "description": "", "createdBy": "alice"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        first_join = self.client.post("/api/v1/channels/room/join", json={"agentId": "bob"})
+        self.assertEqual(first_join.status_code, 200, first_join.text)
+        self.assertTrue(first_join.json()["changed"])
+        second_join = self.client.post("/api/v1/channels/room/join", json={"agentId": "bob"})
+        self.assertEqual(second_join.status_code, 200, second_join.text)
+        self.assertFalse(second_join.json()["changed"])
+
+        channel = self.client.get("/api/v1/channels/room")
+        self.assertEqual(channel.status_code, 200, channel.text)
+        self.assertEqual([message["body"] for message in channel.json()["messages"]].count("bob joined the channel"), 1)
+
+        first_leave = self.client.post("/api/v1/channels/room/leave", json={"agentId": "bob"})
+        self.assertEqual(first_leave.status_code, 200, first_leave.text)
+        self.assertTrue(first_leave.json()["changed"])
+        second_leave = self.client.post("/api/v1/channels/room/leave", json={"agentId": "bob"})
+        self.assertEqual(second_leave.status_code, 200, second_leave.text)
+        self.assertFalse(second_leave.json()["changed"])
+
+        channel = self.client.get("/api/v1/channels/room")
+        self.assertEqual(channel.status_code, 200, channel.text)
+        self.assertEqual([message["body"] for message in channel.json()["messages"]].count("bob left the channel"), 1)
+
+        missing = self.client.post("/api/v1/channels/missing/leave", json={"agentId": "bob"})
+        self.assertEqual(missing.status_code, 404, missing.text)
 
     def test_environment_heartbeat_upserts_persistent_record(self):
         payload = {
@@ -488,6 +530,52 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertIn("offline", stale_run["error_text"])
         controls = self._fetchall("SELECT * FROM dispatch_controls WHERE run_id = ?", ("run-stale",))
         self.assertEqual(controls, [])
+        messages = self._fetchall("SELECT * FROM messages WHERE to_agent = ?", ("managed-coder",))
+        self.assertEqual(messages, [])
+
+    def test_dispatch_rejects_managed_agent_when_environment_is_offline(self):
+        self._heartbeat_environment(
+            id="wsl:test-host:default",
+            label="WSL on test-host",
+            bridgeId="bridge-stale",
+            machineId="wsl-Ubuntu:test-host",
+        )
+        self._register(
+            "managed-coder",
+            role="coder",
+            runtime="codex",
+            machineId="wsl-Ubuntu:test-host",
+            cwd="/workspace/project",
+            launchMode="managed",
+            sessionMode="managed",
+            capabilities=["managed-run", "resume", "interrupt", "steer", "spawn"],
+            status="active",
+        )
+        self._execute(
+            "UPDATE environments SET last_seen = '2020-01-01T00:00:00Z' WHERE id = ?",
+            ("wsl:test-host:default",),
+        )
+        self._execute(
+            "UPDATE agents SET runtime_state = ? WHERE id = ?",
+            (
+                json.dumps({"environmentId": "wsl:test-host:default", "bridgeInstanceId": "bridge-stale"}),
+                "managed-coder",
+            ),
+        )
+
+        dispatched = self._dispatch(
+            from_agent="manager",
+            to="managed-coder",
+            type="request",
+            subject="strict work",
+            body="do not queue into offline env",
+            mode="require_start",
+            requireReply=True,
+        )
+
+        self.assertFalse(dispatched["ok"])
+        self.assertEqual(dispatched["runs"], [])
+        self.assertIn("managed environment", dispatched["notStarted"][0]["reason"])
         messages = self._fetchall("SELECT * FROM messages WHERE to_agent = ?", ("managed-coder",))
         self.assertEqual(messages, [])
 
@@ -2285,6 +2373,47 @@ class ApiV2RegressionTests(unittest.TestCase):
         )
         self.assertFalse(response_send["dispatchRuns"][0]["requireReply"])
 
+    def test_threaded_non_answer_message_does_not_close_reply_contract(self):
+        self._register("lead", runtime="codex", sessionMode="managed")
+        self._register("coder", runtime="codex", sessionMode="managed")
+
+        request_send = self._send_message(
+            from_agent="lead",
+            to="coder",
+            type="request",
+            subject="work",
+            body="please do it",
+            trigger=True,
+        )
+        run_id = request_send["dispatchRuns"][0]["runId"]
+        self._execute("UPDATE dispatch_runs SET status = 'completed', finished_at = ? WHERE id = ?", ("2026-01-01T00:00:00Z", run_id))
+
+        follow_up = self._send_message(
+            from_agent="coder",
+            to="lead",
+            type="info",
+            subject="I saw this",
+            body="not an answer yet",
+            inReplyTo=request_send["messageId"],
+            trigger=False,
+        )
+        self.assertTrue(follow_up["ok"])
+        unchanged = self._fetchone("SELECT result_message_id FROM dispatch_runs WHERE id = ?", (run_id,))
+        self.assertEqual(unchanged["result_message_id"] or "", "")
+
+        answer = self._send_message(
+            from_agent="coder",
+            to="lead",
+            type="response",
+            subject="done",
+            body="finished",
+            inReplyTo=request_send["messageId"],
+            trigger=False,
+        )
+        self.assertTrue(answer["ok"])
+        closed = self._fetchone("SELECT result_message_id FROM dispatch_runs WHERE id = ?", (run_id,))
+        self.assertEqual(closed["result_message_id"], answer["messageId"])
+
     def test_triggered_info_send_requires_reply_by_default(self):
         self._register("lead", runtime="codex", sessionMode="managed")
         self._register("coder", runtime="codex", sessionMode="managed")
@@ -2503,6 +2632,8 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertTrue(steered["ok"])
         self.assertEqual(steered["dispatchRuns"][0]["status"], "steered")
         self.assertEqual(steered["dispatchRuns"][0]["runId"], active_run_id)
+        contract_run_id = steered["dispatchRuns"][0]["contractRunId"]
+        self.assertTrue(contract_run_id)
         control = self._fetchone(
             "SELECT action, status, source_message_id FROM dispatch_controls WHERE run_id = ?",
             (active_run_id,),
@@ -2510,7 +2641,27 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertIsNotNone(control)
         self.assertEqual(control["action"], "steer")
         self.assertTrue(control["source_message_id"])
+        contract = self._fetchone("SELECT status, message_id, require_reply FROM dispatch_runs WHERE id = ?", (contract_run_id,))
+        self.assertIsNotNone(contract)
+        self.assertEqual(contract["status"], "delivered")
+        self.assertEqual(contract["message_id"], control["source_message_id"])
+        self.assertEqual(contract["require_reply"], 1)
+        contracts = self.client.get("/api/v1/contracts?limit=20&state=open&category=direct")
+        self.assertEqual(contracts.status_code, 200, contracts.text)
+        self.assertTrue(any(item["id"] == contract_run_id and item["state"] == "sent" for item in contracts.json()["contracts"]))
 
+        completed = self.client.patch(
+            f"/api/v1/dispatch/runs/{active_run_id}",
+            json={"status": "completed", "summary": "handled active and steered work", "resultMessageId": "reply-active"},
+        )
+        self.assertEqual(completed.status_code, 200, completed.text)
+        closed_contract = self._fetchone("SELECT result_message_id FROM dispatch_runs WHERE id = ?", (contract_run_id,))
+        self.assertEqual(closed_contract["result_message_id"], "reply-active")
+        answered = self.client.get("/api/v1/contracts?limit=20&state=answered&category=direct")
+        self.assertEqual(answered.status_code, 200, answered.text)
+        self.assertTrue(any(item["id"] == contract_run_id and item["state"] == "answered" for item in answered.json()["contracts"]))
+
+        self._execute("UPDATE dispatch_runs SET status = 'running', result_message_id = '' WHERE id = ?", (active_run_id,))
         queued = self._send_message(
             from_agent="lead",
             to="coder",
@@ -2527,6 +2678,7 @@ class ApiV2RegressionTests(unittest.TestCase):
 
     def test_normal_send_to_busy_non_steerable_target_queues_as_fallback(self):
         self._register("lead", runtime="codex", sessionMode="managed")
+        self._register("qa", runtime="codex", sessionMode="managed")
         self._register("manager", role="manager", runtime="claude-code", sessionMode="managed")
 
         active = self._dispatch(
@@ -2553,6 +2705,20 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(sent["notStarted"], [])
         self.assertEqual(sent["dispatchRuns"][0]["status"], "queued")
         self.assertEqual(sent["dispatchRuns"][0]["queuedBehindActiveRun"]["runId"], active_run_id)
+
+        second_sender = self._send_message(
+            from_agent="qa",
+            to="manager",
+            type="request",
+            subject="qa input",
+            body="include qa separately",
+            trigger=True,
+        )
+        self.assertTrue(second_sender["ok"])
+        self.assertEqual(second_sender["dispatchRuns"][0]["status"], "queued")
+        self.assertNotEqual(second_sender["dispatchRuns"][0]["runId"], sent["dispatchRuns"][0]["runId"])
+        queued_rows = self._fetchall("SELECT from_agent, target_agent FROM dispatch_runs WHERE target_agent = ? AND status = 'queued' ORDER BY requested_at", ("manager",))
+        self.assertEqual([row["from_agent"] for row in queued_rows], ["lead", "qa"])
 
     def test_response_messages_steer_when_sender_is_busy_and_steer_capable(self):
         self._register("manager", runtime="codex", sessionMode="managed")
@@ -3106,6 +3272,204 @@ class ApiV2RegressionTests(unittest.TestCase):
         stats = self.client.get("/api/v1/stats")
         self.assertEqual(stats.status_code, 200, stats.text)
         self.assertEqual(stats.json()["dispatch_reply_pending"], 0)
+
+    def test_contracts_classify_overdue_request(self):
+        self._register("lead", runtime="codex", sessionMode="resident", sessionHandle="lead-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:1"})
+        self._register("coder", runtime="codex", sessionMode="resident", sessionHandle="coder-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:2"})
+        self.client.put("/api/v1/settings", json={"reply_reminder_minutes": 1})
+
+        created = self._dispatch(
+            from_agent="lead",
+            to="coder",
+            type="request",
+            subject="needs answer",
+            body="please answer",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        run_id = created["runs"][0]["runId"]
+        self._execute("UPDATE dispatch_runs SET requested_at = '2000-01-01T00:00:00Z' WHERE id = ?", (run_id,))
+
+        response = self.client.get("/api/v1/contracts?limit=10")
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        contract = next(item for item in payload["contracts"] if item["id"] == run_id)
+        self.assertEqual(contract["state"], "overdue")
+        self.assertTrue(contract["replyExpected"])
+        self.assertTrue(contract["overdue"])
+        self.assertEqual(contract["category"], "direct")
+        self.assertEqual(payload["summary"]["overdue"], 1)
+
+    def test_contract_reminder_sends_notice_and_records_event(self):
+        self._register("lead", runtime="codex", sessionMode="resident", sessionHandle="lead-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:1"})
+        self._register("coder", runtime="codex", sessionMode="resident", sessionHandle="coder-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:2"})
+        self.client.put("/api/v1/settings", json={"reply_reminder_minutes": 1, "reply_reminder_repeat_minutes": 1})
+
+        created = self._dispatch(
+            from_agent="lead",
+            to="coder",
+            type="review",
+            subject="review please",
+            body="review this",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        run_id = created["runs"][0]["runId"]
+        self._execute("UPDATE dispatch_runs SET requested_at = '2000-01-01T00:00:00Z' WHERE id = ?", (run_id,))
+
+        response = self.client.post(f"/api/v1/contracts/reminders/run?runId={run_id}")
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(len(payload["reminded"]), 1)
+        reminder_message_id = payload["reminded"][0]["messageId"]
+
+        reminder = self._fetchone("SELECT from_agent, to_agent, subject, body, dispatch_requested FROM messages WHERE id = ?", (reminder_message_id,))
+        self.assertIsNotNone(reminder)
+        self.assertEqual(reminder["from_agent"], "dashboard")
+        self.assertEqual(reminder["to_agent"], "coder")
+        self.assertIn("Reminder: reply overdue", reminder["subject"])
+        self.assertIn('comms_inbox(agentId="coder"', reminder["body"])
+        self.assertIn(f'inReplyTo="{created["messageId"]}"', reminder["body"])
+        self.assertIn('comms_send(from="coder", to="lead", type="response"', reminder["body"])
+        self.assertEqual(reminder["dispatch_requested"], 1)
+
+        event = self._fetchone("SELECT event_type, body FROM dispatch_events WHERE run_id = ? AND event_type = 'reply_reminder'", (run_id,))
+        self.assertIsNotNone(event)
+        self.assertIn(reminder_message_id, event["body"])
+
+    def test_contracts_do_not_treat_high_priority_responses_as_missing_replies(self):
+        self._register("lead", runtime="codex", sessionMode="resident", sessionHandle="lead-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:1"})
+        self._register("coder", runtime="codex", sessionMode="resident", sessionHandle="coder-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:2"})
+
+        created = self._dispatch(
+            from_agent="coder",
+            to="lead",
+            type="response",
+            subject="Re: review",
+            body="done",
+            priority="high",
+            mode="start_if_possible",
+            createMessage=True,
+            requireReply=False,
+        )
+        run_id = created["runs"][0]["runId"]
+        self.client.patch(
+            f"/api/v1/dispatch/runs/{run_id}",
+            json={"status": "completed", "summary": "response delivered"},
+        )
+
+        response = self.client.get("/api/v1/contracts?limit=20&includeClosed=true")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(any(item["id"] == run_id for item in response.json()["contracts"]))
+
+    def test_contracts_hide_answered_rows_until_history_is_requested(self):
+        self._register("lead", runtime="codex", sessionMode="resident", sessionHandle="lead-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:1"})
+        self._register("coder", runtime="codex", sessionMode="resident", sessionHandle="coder-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:2"})
+
+        created = self._dispatch(
+            from_agent="lead",
+            to="coder",
+            type="request",
+            subject="needs answer",
+            body="please answer",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        run_id = created["runs"][0]["runId"]
+        self.client.patch(
+            f"/api/v1/dispatch/runs/{run_id}",
+            json={
+                "status": "completed",
+                "summary": "answered",
+                "resultMessageId": "reply-1",
+            },
+        )
+
+        open_view = self.client.get("/api/v1/contracts?limit=20")
+        self.assertEqual(open_view.status_code, 200, open_view.text)
+        self.assertFalse(any(item["id"] == run_id for item in open_view.json()["contracts"]))
+
+        history_view = self.client.get("/api/v1/contracts?limit=20&includeClosed=true")
+        self.assertEqual(history_view.status_code, 200, history_view.text)
+        contract = next(item for item in history_view.json()["contracts"] if item["id"] == run_id)
+        self.assertEqual(contract["state"], "answered")
+
+        answered_view = self.client.get("/api/v1/contracts?limit=20&state=answered")
+        self.assertEqual(answered_view.status_code, 200, answered_view.text)
+        answered_contract = next(item for item in answered_view.json()["contracts"] if item["id"] == run_id)
+        self.assertEqual(answered_contract["state"], "answered")
+
+    def test_contract_history_respects_stale_window(self):
+        self._register("lead", runtime="codex", sessionMode="resident", sessionHandle="lead-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:1"})
+        self._register("coder", runtime="codex", sessionMode="resident", sessionHandle="coder-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:2"})
+        self.client.put("/api/v1/settings", json={"contract_stale_hours": 1})
+
+        created = self._dispatch(
+            from_agent="lead",
+            to="coder",
+            type="request",
+            subject="old answered",
+            body="please answer",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        run_id = created["runs"][0]["runId"]
+        completed = self.client.patch(
+            f"/api/v1/dispatch/runs/{run_id}",
+            json={"status": "completed", "summary": "answered", "resultMessageId": "reply-old"},
+        )
+        self.assertEqual(completed.status_code, 200, completed.text)
+        self._execute("UPDATE dispatch_runs SET requested_at = ?, finished_at = ? WHERE id = ?", ("2000-01-01T00:00:00Z", "2000-01-01T00:00:01Z", run_id))
+
+        history_view = self.client.get("/api/v1/contracts?limit=20&includeClosed=true")
+        self.assertEqual(history_view.status_code, 200, history_view.text)
+        self.assertFalse(any(item["id"] == run_id for item in history_view.json()["contracts"]))
+
+        answered_view = self.client.get("/api/v1/contracts?limit=20&state=answered")
+        self.assertEqual(answered_view.status_code, 200, answered_view.text)
+        self.assertFalse(any(item["id"] == run_id for item in answered_view.json()["contracts"]))
+
+    def test_contracts_can_filter_category_before_limit(self):
+        self._register("lead", runtime="codex", sessionMode="resident", sessionHandle="lead-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:1"})
+        self._register("coder", runtime="codex", sessionMode="resident", sessionHandle="coder-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:2"})
+
+        direct = self._dispatch(
+            from_agent="lead",
+            to="coder",
+            type="request",
+            subject="direct work",
+            body="please answer",
+            mode="start_if_possible",
+            createMessage=True,
+        )["runs"][0]["runId"]
+        self._dispatch(
+            from_agent="lead",
+            to="lead",
+            type="request",
+            subject="self wake",
+            body="continue",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        self.client.post("/api/v1/channels/ops", json={"description": "ops", "createdBy": "lead"})
+        self.client.post("/api/v1/channels/ops/join", json={"agentId": "coder"})
+        self.client.post(
+            "/api/v1/channels/ops/send",
+            json={"from_agent": "lead", "channel": "ops", "type": "request", "body": "channel work", "trigger": True},
+        )
+
+        response = self.client.get("/api/v1/contracts?limit=20&category=direct")
+        self.assertEqual(response.status_code, 200, response.text)
+        contracts = response.json()["contracts"]
+        self.assertTrue(any(item["id"] == direct for item in contracts))
+        self.assertTrue(all(item["category"] == "direct" for item in contracts))
+
+        open_response = self.client.get("/api/v1/contracts?limit=20&category=direct&state=open")
+        self.assertEqual(open_response.status_code, 200, open_response.text)
+        open_contracts = open_response.json()["contracts"]
+        self.assertTrue(any(item["id"] == direct for item in open_contracts))
+        self.assertTrue(all(item["category"] == "direct" for item in open_contracts))
+        self.assertTrue(all(item["state"] in {"sent", "seen", "queued", "working", "overdue"} for item in open_contracts))
 
     def test_deleted_agent_tombstone_blocks_auto_reregister_until_explicit_restore(self):
         self._register("worker", runtime="codex", sessionMode="resident", bridgeId="bridge-1")

@@ -65,7 +65,26 @@ For `info`, reply with a short acknowledgement only when it affects coordination
 
 For channel messages, avoid automatic loops. Reply when you are named, responsible, asked a question, or have useful evidence. Use direct messages for owner-specific follow-up. Managers should ask named agents or owners for evidence instead of sending broad "everyone answer" prompts.
 
+Channel membership is operational state, not message history. Leaving or removing an agent from a channel stops future channel fan-out/live updates for that identity, but the channel and history remain; rejoining restores future delivery.
+
 Agents may send multiple messages in a row when it helps coordination, for example an acknowledgement followed by a result, or a blocker followed by a fix. Do not split one coherent answer into chat spam.
+
+## Work Contracts
+
+A work contract is the operational obligation created by a message/run. It is not a separate communication channel.
+
+Contracts are expected for:
+
+- direct `request`, `review`, and `error` messages
+- high/urgent messages that ask for action or truth
+- dashboard-managed runs with required replies
+- self-wakes that intentionally schedule the same agent's next bounded turn
+
+Contracts are closed by a real answer to the original sender/result, not by silently completing local work. For dashboard-managed delivered runs, the final plain-text answer closes the current contract because the bridge threads it into chat. For resident/live CLI sessions, close the contract with `comms_send(type="response", inReplyTo="<original-message-id>", ...)`.
+
+If a reminder arrives, read the original message/run it references and close that original contract. Do not just reply "ack reminder" unless the reminder itself is the work.
+
+Use `comms_contracts(...)` when acting as manager or when inbox state looks suspicious. It defaults to open direct contracts so old channel fan-out and historical failures do not hide owned work; request `state="missing_reply"`/`"failed"`/`"answered"` or `category="channel"`/`"self_wake"` when auditing history/noise. It shows overdue, working, queued, answered, and missing-reply contracts so agents do not infer truth from unread counts alone.
 
 ## Manager Pattern
 

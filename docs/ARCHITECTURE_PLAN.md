@@ -85,7 +85,7 @@ Fields:
 - `initial_message`
 - `channel_ids`
 - `mode`: `managed-warm` for dashboard-created agents. Older compatibility values may appear in existing data, but the live dashboard should not expose them as product modes.
-- `resume_policy`: `native_first`, `bridge_only`, `fresh_context`
+- `resume_policy`: `native_first`, `bridge_only`, `fresh_context` (fresh context is only for explicit Recreate/Compact flows; ordinary Restart/Recover must preserve the stored native handle or surface a recoverable error)
 - `status`: `queued`, `claimed`, `starting`, `running`, `failed`, `cancelled`
 - `claimed_by_bridge_id`
 - `process_id`

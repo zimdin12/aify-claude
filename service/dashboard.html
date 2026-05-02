@@ -28,6 +28,11 @@ html,body{height:100%;overflow:hidden}
   --mobile-nav-height:calc(72px + env(safe-area-inset-bottom));
 }
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(180deg,#0d0f10 0%,#08090b 36%,#0b0b0c 100%);color:var(--text);display:flex;min-height:100vh}
+*{scrollbar-width:thin;scrollbar-color:#3c4449 #101214}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:#101214}
+*::-webkit-scrollbar-thumb{background:#3c4449;border:2px solid #101214;border-radius:999px}
+*::-webkit-scrollbar-thumb:hover{background:#566168}
 
 .sidebar{width:224px;height:100vh;background:#11171f;border-right:1px solid var(--line-soft);padding:16px 14px;flex-shrink:0;display:flex;flex-direction:column;transition:width .2s,padding .2s;box-shadow:1px 0 0 #0004;position:relative}
 .sidebar.collapsed{width:52px;padding:16px 8px;overflow:visible}
@@ -193,6 +198,23 @@ tr:hover{background:#19212a}
 .work-card{border:1px solid var(--line-soft);border-radius:7px;background:var(--panel-2);padding:10px;min-width:0}
 .work-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
 .work-card b{min-width:0}.work-card p{color:var(--muted);font-size:.8em;line-height:1.35;margin-top:2px}
+.work-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);gap:12px;align-items:start}
+.contract-card{border:1px solid var(--line-soft);border-radius:11px;background:#101214;padding:11px;min-width:0;display:flex;flex-direction:column;gap:8px}
+.contract-card.overdue{border-color:#6a5125;background:#181715}.contract-card.missing_reply,.contract-card.failed{border-color:#6b3030;background:#1a1212}
+.contract-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.contract-route{font-weight:750;color:var(--text);line-height:1.25;min-width:0}
+.contract-subject{color:var(--text);font-size:.9em;line-height:1.3;overflow-wrap:anywhere}
+.contract-preview{color:var(--muted);font-size:.82em;line-height:1.38;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.contract-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.contract-actions{display:flex;flex-wrap:wrap;gap:6px}
+.contract-pill{display:inline-flex;align-items:center;border-radius:999px;padding:2px 7px;font-size:.72em;font-weight:750;background:#2f81f729;color:#9fcdff;white-space:nowrap}
+.contract-pill.overdue,.contract-pill.missing_reply{background:#e2b04424;color:var(--amber)}
+.contract-pill.answered,.contract-pill.closed{background:#55c47524;color:var(--green)}
+.contract-pill.failed{background:#ff6b6624;color:var(--red)}
+.hygiene-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;border:1px solid var(--line-soft);border-radius:10px;background:#101214;padding:9px;margin-bottom:7px}
+.hygiene-row b{display:block;color:var(--text)}.hygiene-row span{display:block;color:var(--muted);font-size:.8em;margin-top:2px}
+.hygiene-count{font-weight:800;color:var(--amber)}
+.work-empty{color:var(--muted);padding:14px;border:1px dashed var(--line);border-radius:10px;background:#101214}
 .team-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
 .team-tile{border:1px solid var(--line-soft);border-radius:7px;background:var(--panel-2);padding:9px;min-width:0;cursor:pointer}
 .team-tile:hover{background:#151d26;border-color:#354456}
@@ -201,8 +223,8 @@ tr:hover{background:#19212a}
 .team-state{display:inline-flex;margin-top:7px;border-radius:999px;padding:2px 7px;font-size:.7em;background:#2f81f729;color:#9fcdff}
 .team-state.working{background:#e2b04424;color:var(--amber)}.team-state.active{background:#55c47524;color:var(--green)}
 .team-state.idle{background:#30363d;color:var(--muted)}
-@media (max-width:1200px){.ops-layout{grid-template-columns:1fr}.ops-strip{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media (max-width:760px){.ops-hero{grid-template-columns:1fr}.ops-status{justify-content:flex-start}.ops-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.activity-row{grid-template-columns:1fr}.activity-time{text-align:left}}
+@media (max-width:1200px){.ops-layout,.work-layout{grid-template-columns:1fr}.ops-strip{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:760px){.ops-hero{grid-template-columns:1fr}.ops-status{justify-content:flex-start}.ops-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.activity-row,.hygiene-row{grid-template-columns:1fr}.activity-time{text-align:left}.contract-head{flex-direction:column}}
 .advanced-panel{border:1px solid var(--line);border-radius:8px;background:var(--panel-2);margin:12px 0;overflow:hidden}
 .advanced-panel[open]{padding-bottom:10px}
 .advanced-panel summary{padding:10px 12px;cursor:pointer;color:var(--text);font-weight:600;font-size:.9em;background:var(--panel)}
@@ -283,14 +305,13 @@ tr:hover{background:#19212a}
 .actions-menu summary::-webkit-details-marker{display:none}
 .actions-menu[open]{z-index:260}
 .actions-menu[open] .actions-menu-panel{display:flex}
-.actions-menu-panel{display:none;position:absolute;right:0;top:calc(100% + 4px);z-index:260;min-width:190px;max-width:min(280px,calc(100vw - 32px));flex-direction:column;gap:6px;background:#0f151c;border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 18px 46px #000c}
+.actions-menu-panel{display:none;position:fixed;right:var(--menu-right,16px);top:var(--menu-top,48px);z-index:420;min-width:190px;max-width:min(280px,calc(100vw - 32px));max-height:min(420px,calc(100dvh - 32px));overflow:auto;flex-direction:column;gap:6px;background:#0f151c;border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 18px 46px #000c}
 .actions-menu-panel .btn{justify-content:flex-start;width:100%}
 .actions-table{overflow:visible}
 .actions-table th,.actions-table td{min-width:0}
 .actions-table th:last-child,.actions-table td:last-child{overflow:visible;width:120px}
 .actions-table tr:has(.actions-menu[open]){position:relative;z-index:240}
 .actions-table .actions-menu{z-index:40}
-.actions-table tbody tr:nth-last-child(-n+3) .actions-menu-panel{top:auto;bottom:calc(100% + 4px)}
 .session-helper{margin-top:8px}
 .session-helper summary{cursor:pointer;color:var(--blue);font-size:.78em;font-weight:700;list-style:none}
 .session-helper summary::-webkit-details-marker{display:none}
@@ -337,6 +358,12 @@ tr:hover{background:#19212a}
 .chat-rail{display:flex;flex-direction:column;overflow:hidden}
 .chat-rail-head{padding:12px;border-bottom:1px solid var(--line-soft)}
 .chat-rail-head input{width:100%;background:#0a0f15;border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:7px;font-size:.85em}
+.chat-global-results{display:none;margin-top:9px;border-top:1px solid var(--line-soft);padding-top:8px;max-height:220px;overflow:auto}
+.chat-global-results.active{display:block}
+.chat-global-hit{display:block;border:1px solid transparent;border-radius:8px;padding:8px;text-decoration:none;color:var(--text);cursor:pointer}
+.chat-global-hit:hover{background:var(--panel-3);border-color:var(--line)}
+.chat-global-hit b{display:block;font-size:.84em}
+.chat-global-hit span{display:block;color:var(--muted);font-size:.74em;margin-top:2px}
 .chat-list{overflow:auto;padding:8px}
 .chat-section-label{color:var(--subtle);font-size:.72em;text-transform:uppercase;letter-spacing:.4px;margin:10px 8px 5px}
 .chat-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;padding:8px;border-radius:6px;cursor:pointer}
@@ -345,13 +372,17 @@ tr:hover{background:#19212a}
 .chat-item-title{font-weight:600;color:var(--text);min-width:0}
 .chat-item-meta{color:var(--muted);font-size:.75em;margin-top:2px;min-width:0}
 .chat-unread{background:#238636;color:#fff;border-radius:999px;min-width:18px;height:18px;padding:0 5px;font-size:.72em;display:inline-flex;align-items:center;justify-content:center}
-.chat-main{display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden}
+.chat-main{display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden;position:relative}
 .chat-topbar{padding:12px 14px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;gap:12px;background:#151d26}
 .chat-title{min-width:0}.chat-title b{display:block}.chat-title span{display:block;color:var(--muted);font-size:.78em;margin-top:2px}
 .chat-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .chat-as-label{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:.78em}
 .chat-as-label select{min-width:150px}
+.chat-message-search{min-width:180px;max-width:240px;background:#0a0f15;border:1px solid var(--line);color:var(--text);padding:7px 9px;border-radius:7px;font-size:.84em}
 .chat-timeline{overflow:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.chat-scroll-bottom{position:absolute;right:18px;bottom:148px;z-index:18;border-radius:999px;padding:8px 12px;background:#1f6f62;border:1px solid #3ca08f;color:#fff;font-weight:750;box-shadow:0 14px 36px #0009;transition:opacity .15s ease,transform .15s ease,visibility .15s ease}
+.chat-scroll-bottom.hidden{opacity:0;visibility:hidden;pointer-events:none;transform:translateY(6px)}
+.chat-scroll-bottom:hover{transform:translateY(-1px);background:#288777}
 .chat-bubble{max-width:min(780px,85%);border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#0a0f15}
 .chat-bubble.mine{align-self:flex-end;background:#10243a;border-color:#2f81f780}
 .chat-bubble.system{align-self:center;background:transparent;border-color:var(--line);color:var(--muted);max-width:80%;font-style:italic}
@@ -724,10 +755,12 @@ tr:hover{background:#1b1f21}
   .chat-actions{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,auto);gap:7px;justify-content:stretch;align-items:center}
   .chat-actions .btn{min-height:34px;padding:6px 9px}
   .chat-actions .btn[title^="Refresh"]{display:none}
+  .chat-message-search{grid-column:1/-1;max-width:none;width:100%;min-width:0;height:34px}
   .chat-as-label{grid-column:auto;display:block;min-width:0}
   .chat-as-label span{display:none}
   .chat-as-label select{max-width:none;width:100%;min-width:0}
   .chat-timeline{padding:12px 10px;gap:8px;min-height:0;overflow:auto;overscroll-behavior:contain}
+  .chat-scroll-bottom{right:12px;bottom:calc(132px + env(safe-area-inset-bottom));padding:7px 10px}
   .chat-bubble,.chat-bubble.mine,.chat-bubble.system{max-width:100%;width:100%;border-radius:14px;padding:11px 12px}
   .chat-bubble .btn-row{display:flex;gap:6px}
   .chat-bubble .btn-row .btn{width:auto}
@@ -783,6 +816,7 @@ tr:hover{background:#1b1f21}
   <div class="nav">
     <div class="nav-section">Operate</div>
     <a onclick="showPage('dashboard')" id="nav-dashboard" class="active" title="Control Room"><span><b>Control</b><small>live overview</small></span></a>
+    <a onclick="showPage('work')" id="nav-work" title="Work Loop"><span><b>Work Loop</b><small>contracts</small></span></a>
     <a onclick="showPage('chat')" id="nav-chat" title="Chat"><span><b>Chat</b><small>DMs and rooms</small></span></a>
     <a onclick="showPage('workers')" id="nav-workers" title="Team"><span><b>Team</b><small>agent identities</small></span></a>
     <a onclick="showPage('analytics')" id="nav-analytics" title="Analytics"><span><b>Analytics</b><small>traffic and health</small></span></a>
@@ -848,12 +882,71 @@ tr:hover{background:#1b1f21}
     <div id="home-control-room"></div>
   </div>
 
+  <!-- ============ WORK LOOP ============ -->
+  <div class="page" id="page-work">
+    <div class="ops-hero">
+      <div>
+        <h2>Work Loop</h2>
+        <p>Tracked requests, reviews, overdue replies, self-wakes, and old inbox noise. Chat stays free-form; this page shows who owes what.</p>
+      </div>
+      <div class="ops-status">
+        <span class="ops-dot"></span>
+        <span class="t">contract view</span>
+        <button class="btn btn-sm" title="Refresh contracts, messages, runs, and agents" onclick="refreshDashboard()">Refresh</button>
+      </div>
+    </div>
+    <div class="stats" id="work-stats"></div>
+    <div class="home-actions">
+      <button class="btn btn-primary" title="Send overdue-reply reminders according to Settings" onclick="runContractReminders()">Send Due Reminders</button>
+      <button class="btn" title="Preview which overdue contracts would receive reminders" onclick="runContractReminders(true)">Preview Reminders</button>
+      <button class="btn" title="Mark old dispatched source messages read when a run already claimed/handled them" onclick="repairContractReadReceipts()">Repair Delivered Reads</button>
+      <button class="btn" title="Create fallback replies for terminal runs that never recorded a handoff" onclick="repairPendingHandoffs()">Repair Handoffs</button>
+    </div>
+    <div class="fb">
+      <input id="contract-filter" placeholder="Search contracts..." oninput="renderWorkLoop()">
+      <select id="contract-state" onchange="refreshDashboard()">
+        <option value="">All states</option>
+        <option value="open" selected>Open</option>
+        <option value="overdue">Overdue</option>
+        <option value="working">Working</option>
+        <option value="queued">Queued</option>
+        <option value="seen">Seen</option>
+        <option value="sent">Sent</option>
+        <option value="missing_reply">Missing reply</option>
+        <option value="failed">Failed</option>
+        <option value="answered">Answered</option>
+      </select>
+      <select id="contract-category" onchange="refreshDashboard()">
+        <option value="">All categories</option>
+        <option value="direct" selected>Direct</option>
+        <option value="channel">Channel</option>
+        <option value="self_wake">Self-wake</option>
+      </select>
+      <label class="switch-row" title="Include recently answered/closed contracts. Keep this off for normal operations.">
+        <input type="checkbox" id="contract-include-closed" onchange="refreshDashboard()">
+        <span>Show answered/closed</span>
+      </label>
+    </div>
+    <div class="work-layout">
+      <section class="ops-panel">
+        <div class="ops-panel-head"><h3>Open Contracts</h3><span class="ops-panel-sub">requests and reviews</span></div>
+        <div id="work-contracts"></div>
+      </section>
+      <section class="ops-panel">
+        <div class="ops-panel-head"><h3>Inbox Hygiene</h3><span class="ops-panel-sub">why unread counts lie</span></div>
+        <div id="work-hygiene"></div>
+      </section>
+    </div>
+  </div>
+
   <!-- ============ CHAT ============ -->
   <div class="page" id="page-chat">
     <div class="chat-shell">
       <aside class="chat-rail">
         <div class="chat-rail-head">
           <input id="chat-filter" placeholder="Search conversations" oninput="renderChatRail()">
+          <input id="chat-global-search" placeholder="Search all loaded inbox messages" oninput="renderGlobalMessageSearch()" style="margin-top:8px">
+          <div class="chat-global-results" id="chat-global-results"></div>
           <div class="chat-filter-row">
             <label class="chat-toggle" title="Show only direct chats that have messages with the selected Viewing as identity">
               <input type="checkbox" id="chat-open-only" onchange="setChatOpenOnly(this.checked)">
@@ -883,6 +976,7 @@ tr:hover{background:#1b1f21}
           </div>
           <div class="chat-actions">
             <label class="chat-as-label"><span>Viewing as</span><select id="chat-from" onchange="changeChatIdentity()"></select></label>
+            <input class="chat-message-search" id="chat-message-filter" placeholder="Search this chat" oninput="renderChat()">
             <button class="btn btn-sm mobile-chat-list-btn" id="chat-rail-toggle" title="Show or hide the conversation list" onclick="toggleMobileChatRail()">Chats</button>
             <button class="btn btn-sm" title="Refresh agents, messages, channels, sessions, and runs now" onclick="refreshDashboard()">Refresh</button>
             <button class="btn btn-sm" id="chat-inspector-toggle" title="Show or hide conversation details" onclick="toggleChatInspector()">Details</button>
@@ -890,6 +984,7 @@ tr:hover{background:#1b1f21}
           </div>
         </div>
         <div class="chat-timeline" id="chat-timeline"></div>
+        <button class="chat-scroll-bottom hidden" id="chat-scroll-bottom" title="Jump to the newest message" onclick="scrollChatToBottom()">Bottom</button>
         <div class="chat-composer">
           <div id="chat-reply-context" class="chat-reply-context" style="display:none"></div>
           <div class="chat-compose-row">
@@ -1182,6 +1277,7 @@ aify-comms</pre>
         <li><b>Agent:</b> teammate identity. Managed agents are dashboard-spawned and recoverable. Manual/resident CLI bindings are human-open compatibility sessions.</li>
         <li><b>Session:</b> concrete runtime backing record for an agent: environment, workspace, process/session handle, resume capability, and lifecycle state.</li>
         <li><b>Run:</b> tracked execution attempt attached to a message. Use it when you need progress, events, interrupt/steer, failure state, or required handoff tracking.</li>
+        <li><b>Work contract:</b> computed obligation from a message/run. It shows who owes a reply, whether the owner is queued/working/overdue/answered, and whether old inbox bookkeeping needs repair.</li>
         <li><b>Artifact:</b> shared file or text blob. Chat can upload a file and insert its reference; the Artifacts page lists and deletes stored artifacts.</li>
       </ul>
 
@@ -1191,9 +1287,9 @@ aify-comms</pre>
 
       <h3>Tools</h3>
       <ul>
-        <li><b>Messaging:</b> <code>comms_register</code>, <code>comms_envs</code>, <code>comms_spawn</code>, <code>comms_compact</code>, <code>comms_agents</code>, <code>comms_status</code>, <code>comms_agent_info</code>, <code>comms_send</code> (normal teamwork; live-gated), <code>comms_inbox</code>, <code>comms_unsend</code>, <code>comms_search</code>. <code>comms_listen</code> remains only as deprecated compatibility/debug long-polling.</li>
+        <li><b>Messaging:</b> <code>comms_register</code>, <code>comms_envs</code>, <code>comms_spawn</code>, <code>comms_compact</code>, <code>comms_agents</code>, <code>comms_status</code>, <code>comms_agent_info</code>, <code>comms_send</code> (normal teamwork; live-gated), <code>comms_inbox</code>, <code>comms_unsend</code>, <code>comms_search</code>, <code>comms_contracts</code>. <code>comms_listen</code> remains only as deprecated compatibility/debug long-polling.</li>
         <li><b>Advanced run control:</b> <code>comms_dispatch</code> (debug/strict run tracking), <code>comms_run_status</code>, <code>comms_run_interrupt</code>. Normal users and agents should send messages, not dispatches.</li>
-        <li><b>Channels:</b> <code>comms_channel_create</code>, <code>comms_channel_join</code> (+ invite others), <code>comms_channel_send</code> (live-gated), <code>comms_channel_read</code>, <code>comms_channel_list</code>. In the dashboard, channels live inside Chat.</li>
+        <li><b>Channels:</b> <code>comms_channel_create</code>, <code>comms_channel_join</code> (+ invite/rejoin others), <code>comms_channel_send</code> (live-gated), <code>comms_channel_read</code>, <code>comms_channel_list</code>. In the dashboard, channels live inside Chat; leaving/removing a member stops future fan-out for that identity but keeps channel history.</li>
         <li><b>File sharing:</b> <code>comms_share</code> (text + binary), <code>comms_read</code>, <code>comms_files</code></li>
         <li><b>Management:</b> <code>comms_clear</code>, <code>comms_dashboard</code></li>
       </ul>
@@ -1225,6 +1321,8 @@ aify-comms</pre>
         <li><code>POST /api/v1/dispatch</code> — Queue active work for triggerable manual sessions or managed agents</li>
         <li><code>GET /api/v1/dispatch/runs/{id}</code> — Inspect a dispatch run, events, and controls</li>
         <li><code>POST /api/v1/dispatch/runs/{id}/control</code> — Request interrupt or steer for an active run</li>
+        <li><code>GET /api/v1/contracts</code> — Computed work contracts over messages/runs</li>
+        <li><code>POST /api/v1/contracts/reminders/run</code> — Send overdue reply reminders</li>
         <li><code>GET /api/v1/dashboard/dispatches</code> — Dispatch-focused dashboard view</li>
         <li><code>GET/POST /api/v1/channels</code> — Channels</li>
         <li><code>POST /api/v1/channels/{name}/join</code> — Join or invite agent</li>
@@ -1280,6 +1378,32 @@ aify-comms</pre>
         <select id="s-rotation"><option value="true">Enabled</option><option value="false">Disabled</option></select>
         <div class="hint">When enabled, rotation expires old messages/files and marks stale agents using the settings above.</div>
       </div>
+      <h3>Work Loop / Reply Contracts</h3>
+      <div class="form-group">
+        <label>Reply Contract Reminders</label>
+        <select id="s-reply-contracts"><option value="true">Enabled</option><option value="false">Disabled</option></select>
+        <div class="hint">When enabled, Work Loop can send reminders for overdue request/review/error contracts.</div>
+      </div>
+      <div class="form-group">
+        <label>Reply Reminder After (minutes)</label>
+        <input type="number" id="s-reply-minutes" min="1" max="240">
+        <div class="hint">How long a required reply may sit without an answer before becoming overdue. Default: 6</div>
+      </div>
+      <div class="form-group">
+        <label>Reminder Repeat (minutes)</label>
+        <input type="number" id="s-reply-repeat" min="1" max="1440">
+        <div class="hint">Minimum delay between repeated reminders for the same original run. Default: 6</div>
+      </div>
+      <div class="form-group">
+        <label>Max Reminders Per Contract</label>
+        <input type="number" id="s-reply-max" min="0" max="20">
+        <div class="hint">Set 0 for unlimited reminders. Default: 3</div>
+      </div>
+      <div class="form-group">
+        <label>Contract History Window (hours)</label>
+        <input type="number" id="s-contract-stale" min="1" max="720">
+        <div class="hint">Answered/closed contracts inside this window can still appear in Work Loop when enabled. Default: 24</div>
+      </div>
       <div class="btn-row">
         <button type="submit" class="btn btn-primary" title="Save dashboard retention, presence, and refresh settings">Save Settings</button>
         <button type="button" class="btn" title="Reload settings from the server without saving current edits" onclick="loadSettings()">Reset</button>
@@ -1322,6 +1446,9 @@ if (window.matchMedia?.('(max-width:860px)').matches && localStorage.getItem('ai
 window._recentMessages = [];
 window._analytics = null;
 window._dashboardStats = null;
+window._contracts = [];
+window._contractSummary = {};
+window._contractSettings = {};
 window._analyticsRange = localStorage.getItem('aifyAnalyticsRange') || 'hour';
 window._showOfflineManualBindings = localStorage.getItem('aifyShowOfflineManualBindings') === '1';
 
@@ -1335,13 +1462,20 @@ function pageUrl(name) {
   return base + window.location.search;
 }
 
+function isKnownPage(name) {
+  return ['dashboard', 'work', 'chat', 'workers', 'analytics', 'environments', 'sessions', 'dispatches', 'files', 'instructions', 'settings'].includes(name);
+}
+
 function initialPageFromLocation() {
-  return window.location.pathname.endsWith('/dashboard/dispatches') ? 'dispatches' : 'dashboard';
+  if (window.location.pathname.endsWith('/dashboard/dispatches')) return 'dispatches';
+  const stored = localStorage.getItem('aifyDashboardPage') || '';
+  return isKnownPage(stored) ? stored : 'dashboard';
 }
 
 function pageTitle(name) {
   return ({
     dashboard: 'Control Room',
+    work: 'Work Loop',
     chat: 'Chat',
     workers: 'Team',
     analytics: 'Analytics',
@@ -1355,7 +1489,9 @@ function pageTitle(name) {
 }
 
 function showPage(name, updateHistory = true) {
+  if (!isKnownPage(name)) name = 'dashboard';
   currentPage = name;
+  localStorage.setItem('aifyDashboardPage', name);
   document.body.dataset.page = name;
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
@@ -1375,6 +1511,7 @@ function showPage(name, updateHistory = true) {
     applyRunFiltersAndRender();
   }
   if (name === 'dashboard') renderHomeFromState();
+  if (name === 'work') renderWorkLoop();
   if (name === 'workers') renderTeamFromState();
   if (name === 'environments') {
     renderEnvironments(window._environments || []);
@@ -1454,6 +1591,15 @@ function chatScrollAnchor(el) {
   return null;
 }
 
+function chatComposerIsEditing() {
+  if (currentPage !== 'chat') return false;
+  const active = document.activeElement;
+  if (!active?.closest?.('.chat-composer')) return false;
+  const body = document.getElementById('chat-body');
+  const subject = document.getElementById('chat-subject-input');
+  return active === body || active === subject || !!(body?.value || subject?.value);
+}
+
 function captureDashboardViewState() {
   const activePage = document.querySelector('.page.active');
   const activeElement = document.activeElement;
@@ -1494,7 +1640,7 @@ function restoreDashboardViewState(state) {
       if (el) el.open = true;
     }
     const activePage = document.querySelector('.page.active');
-    if (activePage) {
+    if (activePage && currentPage !== 'chat') {
       activePage.scrollTop = state.pageScrollTop || 0;
       activePage.scrollLeft = state.pageScrollLeft || 0;
     }
@@ -1559,12 +1705,21 @@ function actionButton(label, title, onclick, classes = '') {
 }
 window._dashboardActions = window._dashboardActions || new Map();
 window._dashboardActionSeq = window._dashboardActionSeq || 0;
+function rememberDashboardAction(id, handler) {
+  window._dashboardActions.set(id, handler);
+  if (window._dashboardActions.size > 2500) {
+    for (const key of window._dashboardActions.keys()) {
+      window._dashboardActions.delete(key);
+      if (window._dashboardActions.size <= 1500) break;
+    }
+  }
+}
 function dashboardActionAttr(id) {
   return `data-dashboard-action="${esc(id)}"`;
 }
 function actionButtonFn(label, title, handler, classes = '') {
   const id = `act_${++window._dashboardActionSeq}`;
-  window._dashboardActions.set(id, handler);
+  rememberDashboardAction(id, handler);
   return `<button class="btn btn-sm ${esc(classes)}"${titleAttr(title || label)} ${dashboardActionAttr(id)}>${esc(label)}</button>`;
 }
 function actionsMenu(items, label = 'Actions', stableKey = '') {
@@ -1617,6 +1772,23 @@ document.addEventListener('toggle', event => {
   document.querySelectorAll('.actions-menu[open]').forEach(other => {
     if (other !== menu) other.open = false;
   });
+  const summary = menu.querySelector('summary');
+  const panel = menu.querySelector('.actions-menu-panel');
+  if (summary && panel) {
+    const rect = summary.getBoundingClientRect();
+    const viewportHeight = Math.max(240, window.innerHeight || document.documentElement.clientHeight || 0);
+    const estimatedHeight = Math.min(420, panel.scrollHeight || 260, Math.max(160, viewportHeight - 16));
+    const belowTop = rect.bottom + 4;
+    const availableBelow = viewportHeight - belowTop - 8;
+    const availableAbove = rect.top - 8;
+    const openUp = availableBelow < estimatedHeight && availableAbove > availableBelow;
+    const top = openUp
+      ? Math.max(8, rect.top - estimatedHeight - 4)
+      : Math.min(Math.max(8, belowTop), Math.max(8, viewportHeight - estimatedHeight - 8));
+    const right = Math.max(8, window.innerWidth - rect.right);
+    menu.style.setProperty('--menu-top', `${Math.round(top)}px`);
+    menu.style.setProperty('--menu-right', `${Math.round(right)}px`);
+  }
 }, true);
 document.addEventListener('click', event => {
   if (!isCompactChat() || currentPage !== 'chat') return;
@@ -1652,7 +1824,10 @@ document.addEventListener('change', event => {
 });
 
 document.addEventListener('scroll', event => {
-  if (event.target?.id === 'chat-timeline') markChatTimelineInteraction();
+  if (event.target?.id === 'chat-timeline') {
+    markChatTimelineInteraction();
+    updateChatScrollButton();
+  }
 }, true);
 
 document.addEventListener('wheel', event => {
@@ -1690,6 +1865,13 @@ function fmtShortTime(ts) {
   const time = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
   if (d.toDateString() === now.toDateString()) return time;
   return `${d.getMonth() + 1}/${d.getDate()} ${time}`;
+}
+
+function timeValue(ts) {
+  if (!ts) return 0;
+  if (typeof ts === 'number') return Number.isFinite(ts) ? ts : 0;
+  const parsed = Date.parse(ts);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function fmtSize(b) {
@@ -1915,8 +2097,13 @@ function dismissResolvedHomeIssues() {
 function syncSelectOptions(selectId, defaultLabel, values) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
+  values = values || [];
   const cur = sel.value;
-  sel.innerHTML = `<option value="">${defaultLabel}</option>` + values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  const signature = JSON.stringify([defaultLabel].concat(values));
+  if (sel.dataset.optionsSignature !== signature) {
+    sel.innerHTML = `<option value="">${defaultLabel}</option>` + values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    sel.dataset.optionsSignature = signature;
+  }
   sel.value = values.includes(cur) ? cur : '';
 }
 
@@ -2277,10 +2464,10 @@ function renderHomePanels(stats, agents, managedAgents, manualAgents, environmen
     const peer = msg.from === identity ? msg._to : (msg._to === identity ? msg.from : '');
     if (!peer || peer === identity || peer.startsWith('#')) continue;
     const existing = seenPeers.get(peer);
-    if (!existing || (msg.timestamp || 0) > (existing.timestamp || 0)) seenPeers.set(peer, msg);
+    if (!existing || timeValue(msg.timestamp) > timeValue(existing.timestamp)) seenPeers.set(peer, msg);
   }
   const conversationRows = [...seenPeers.entries()]
-    .sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0))
+    .sort((a, b) => timeValue(b[1].timestamp) - timeValue(a[1].timestamp))
     .slice(0, 6)
     .map(([peer, msg]) => {
       const unread = unreadForAgentConversation(peer, identity);
@@ -2348,7 +2535,7 @@ function renderHomeControlRoom(stats, agents, managedAgents, residentAgents, env
     const preview = message.preview || '';
     const peer = message.from === chatIdentity() ? (message.to || '') : (message.from || '');
     const actionId = `flow_${++window._dashboardActionSeq}`;
-    window._dashboardActions.set(actionId, () => isChannel ? selectChatConversation(`channel:${message.channel || ''}`) : openAgentChat(peer));
+    rememberDashboardAction(actionId, () => isChannel ? selectChatConversation(`channel:${message.channel || ''}`) : openAgentChat(peer));
     return `<div class="activity-row" ${dashboardActionAttr(actionId)} title="Open this conversation">` +
       `<div class="activity-route">${esc(route)}</div>` +
       `<div class="activity-main"><div class="activity-title clip-1"${titleAttr(title)}>${esc(title)}</div><div class="activity-preview clip-2"${titleAttr(preview)}>${esc(preview)}</div></div>` +
@@ -2380,7 +2567,7 @@ function renderHomeControlRoom(stats, agents, managedAgents, residentAgents, env
       const state = info.dispatchState?.hasActiveRun ? 'working' : String(info.statusRaw || info.status || 'active').toLowerCase();
       const meta = `${info.role || 'agent'} · ${agentRuntimeLabel(info) || info.wakeMode || 'not live-bound'}`;
       const actionId = `team_${++window._dashboardActionSeq}`;
-      window._dashboardActions.set(actionId, () => openAgentChat(id));
+      rememberDashboardAction(actionId, () => openAgentChat(id));
       return `<div class="team-tile" ${dashboardActionAttr(actionId)} title="Open chat with ${esc(id)}"><b class="clip-1">${esc(id)}</b><span class="clip-2">${esc(meta)}</span><em class="team-state ${esc(state)}">${esc(state)}</em></div>`;
     }).join('') || '<div class="home-empty">No online/active agents. Offline identities are hidden here.</div>';
 
@@ -2435,6 +2622,7 @@ function renderTeamFromState() {
 
 async function renderCurrentPageFromState() {
   if (currentPage === 'dashboard') renderHomeFromState();
+  if (currentPage === 'work') renderWorkLoop();
   if (currentPage === 'workers') renderTeamFromState();
   if (currentPage === 'environments') {
     renderEnvironments(window._environments || []);
@@ -2449,8 +2637,146 @@ async function renderCurrentPageFromState() {
   }
   if (currentPage === 'analytics') renderAnalytics(window._analytics || {});
   if (currentPage === 'chat') {
-    await refreshSelectedChannelMessages();
+    const selectedMeta = selectedChatMeta();
+    if (selectedMeta.kind === 'channel') await refreshSelectedChannelMessages();
     renderChat();
+  }
+}
+
+function contractStateLabel(contract) {
+  const state = contract.state || 'sent';
+  return state.replace(/_/g, ' ');
+}
+
+function contractRoute(contract) {
+  return `${contract.from || ''} -> ${contract.targetAgentId || ''}`;
+}
+
+function contractPriorityBadge(contract) {
+  const priority = contract.priority || 'normal';
+  return priority === 'normal' ? '' : `<span class="contract-pill ${esc(priority)}">${esc(priority)}</span>`;
+}
+
+function contractCard(contract) {
+  const state = contract.state || 'sent';
+  const category = contract.category || 'direct';
+  const read = contract.sourceReadAt ? `read ${fmtTime(Date.parse(contract.sourceReadAt) || 0)}` : 'not read';
+  const reminder = contract.reminderCount ? `${contract.reminderCount} reminder(s)` : 'no reminders';
+  const age = Number(contract.ageMinutes || 0);
+  const ageText = age >= 60 ? `${Math.round(age / 6) / 10}h old` : `${Math.round(age)}m old`;
+  const result = contract.resultPreview ? `<div class="contract-preview"><b>Answer:</b> ${esc(contract.resultPreview)}</div>` : '';
+  return `<article class="contract-card ${esc(state)}" data-run-id="${esc(contract.id)}">` +
+    `<div class="contract-head">` +
+      `<div class="contract-route">${esc(contractRoute(contract))}</div>` +
+      `<span class="contract-pill ${esc(state)}">${esc(contractStateLabel(contract))}</span>` +
+    `</div>` +
+    `<div class="contract-subject">${esc(contract.subject || contract.id)}</div>` +
+    `<div class="contract-preview">${esc(contract.preview || '')}</div>` +
+    result +
+    `<div class="contract-meta">` +
+      `<span class="contract-pill">${esc(category)}</span>` +
+      `<span class="contract-pill">${esc(contract.status || '')}</span>` +
+      contractPriorityBadge(contract) +
+      `<span class="contract-pill">${esc(read)}</span>` +
+      `<span class="contract-pill">${esc(ageText)}</span>` +
+      `<span class="contract-pill">${esc(reminder)}</span>` +
+    `</div>` +
+    `<div class="contract-actions">` +
+      actionButtonFn('View run', 'Open run details, events, controls, and result', () => viewRun(contract.id)) +
+      actionButtonFn('Chat', 'Open direct chat with the target agent', () => openAgentChat(contract.targetAgentId)) +
+      (contract.overdue ? actionButtonFn('Remind', 'Send a single overdue-reply reminder for this contract', () => runContractReminders(false, contract.id), 'btn-primary') : '') +
+    `</div>` +
+  `</article>`;
+}
+
+function filteredContracts() {
+  const q = (document.getElementById('contract-filter')?.value || '').trim().toLowerCase();
+  const state = document.getElementById('contract-state')?.value || '';
+  const category = document.getElementById('contract-category')?.value || '';
+  return (window._contracts || []).filter(contract => {
+    const text = `${contract.from} ${contract.targetAgentId} ${contract.subject} ${contract.preview} ${contract.status} ${contract.state}`.toLowerCase();
+    return (!q || text.includes(q)) &&
+      (!state || (state === 'open'
+        ? ['sent', 'seen', 'queued', 'working', 'overdue'].includes(contract.state)
+        : contract.state === state)) &&
+      (!category || contract.category === category);
+  }).sort((a, b) => {
+    const score = value => ({overdue: 100, missing_reply: 90, working: 80, queued: 70, seen: 60, sent: 50, failed: 40, answered: 10, closed: 0}[value.state] || 0);
+    const diff = score(b) - score(a);
+    if (diff) return diff;
+    const priorityScore = value => ({urgent: 20, high: 10, normal: 0}[String(value.priority || 'normal').toLowerCase()] || 0);
+    const priorityDiff = priorityScore(b) - priorityScore(a);
+    if (priorityDiff) return priorityDiff;
+    return (Date.parse(b.requestedAt || '') || 0) - (Date.parse(a.requestedAt || '') || 0);
+  });
+}
+
+function renderWorkLoop() {
+  const settings = window._contractSettings || {};
+  const contracts = filteredContracts();
+  const stats = {
+    overdue: contracts.filter(contract => contract.overdue).length,
+    open: contracts.filter(contract => ['sent', 'seen', 'queued', 'working', 'overdue'].includes(contract.state)).length,
+    working: contracts.filter(contract => contract.state === 'working').length,
+    queued: contracts.filter(contract => contract.state === 'queued').length,
+    missingReply: contracts.filter(contract => contract.state === 'missing_reply').length,
+    selfWake: contracts.filter(contract => contract.category === 'self_wake').length,
+  };
+  const statsEl = document.getElementById('work-stats');
+  if (statsEl) {
+    statsEl.innerHTML =
+      `<div class="sc${stats.overdue ? ' warn' : ''}"><div class="n">${stats.overdue || 0}</div><div class="l">Overdue</div></div>` +
+      `<div class="sc"><div class="n">${stats.open || 0}</div><div class="l">Open</div></div>` +
+      `<div class="sc"><div class="n">${stats.working || 0}</div><div class="l">Working</div></div>` +
+      `<div class="sc"><div class="n">${stats.queued || 0}</div><div class="l">Queued</div></div>` +
+      `<div class="sc${stats.missingReply ? ' warn' : ''}"><div class="n">${stats.missingReply || 0}</div><div class="l">Missing Reply</div></div>`;
+  }
+  const contractsEl = document.getElementById('work-contracts');
+  if (contractsEl) {
+    contractsEl.innerHTML = contracts.length
+      ? `<div class="work-list">${contracts.map(contractCard).join('')}</div>`
+      : `<div class="work-empty">No matching work contracts. Free chat still exists; this page shows messages that behave like requests/reviews/work handoffs.</div>`;
+  }
+
+  const directUnread = (window._allMsgs || []).filter(message => !message.read && message._to !== 'dashboard').length;
+  const answeredUnread = (window._contracts || []).filter(contract => contract.resultMessageId && !contract.sourceReadAt).length;
+  const hygieneRows = [
+    ['Direct unread', directUnread, 'Direct unread messages in the current visible inbox cache. Some may be old pre-repair rows.'],
+    ['Channel unread', window._dashboardStats?.channel_unread_messages || 0, 'Channel fan-out unread should not be treated the same as direct work contracts.'],
+    ['Self-wakes', stats.selfWake || 0, 'Self-scheduled reminders should be operational loop items, not normal human chat.'],
+    ['Answered but unread', answeredUnread, 'Contracts that have a result but whose source message still lacks a read receipt. Use Repair Delivered Reads.'],
+    ['Reminder policy', settings.replyContractsEnabled === false ? 'off' : `${settings.replyReminderMinutes || 6}m`, `Repeat ${settings.replyReminderRepeatMinutes || 6}m, max ${settings.replyReminderMaxCount || 3}. Configure in Settings.`],
+  ];
+  const hygieneEl = document.getElementById('work-hygiene');
+  if (hygieneEl) {
+    hygieneEl.innerHTML = hygieneRows.map(([label, count, text]) =>
+      `<div class="hygiene-row"><div><b>${esc(label)}</b><span>${esc(text)}</span></div><div class="hygiene-count">${esc(String(count))}</div></div>`
+    ).join('');
+  }
+}
+
+async function runContractReminders(dryRun = false, runId = '') {
+  try {
+    const url = API + `/contracts/reminders/run?dryRun=${dryRun ? 'true' : 'false'}` + (runId ? `&runId=${encodeURIComponent(runId)}` : '');
+    const res = await apiFetch(url, {method: 'POST'}).then(r => r.json());
+    if (!res.ok) throw new Error(res.detail || 'Reminder run failed');
+    const count = (res.reminded || []).length;
+    const skipped = (res.skipped || []).length;
+    toast(dryRun ? `Would remind ${count}; skipped ${skipped}` : `Sent ${count} reminder(s); skipped ${skipped}`);
+    await refreshDashboard();
+  } catch (e) {
+    toast(e.message || 'Reminder run failed', '#f85149');
+  }
+}
+
+async function repairContractReadReceipts() {
+  try {
+    const res = await apiFetch(API + '/contracts/hygiene/repair-read-receipts', {method: 'POST'}).then(r => r.json());
+    if (!res.ok) throw new Error(res.detail || 'Repair failed');
+    toast(`Repaired ${res.repaired || 0} delivered read receipt(s)`);
+    await refreshDashboard();
+  } catch (e) {
+    toast(e.message || 'Repair failed', '#f85149');
   }
 }
 
@@ -2829,7 +3155,11 @@ function syncChatFromOptions() {
   if (!sel) return;
   const current = sel.value || localStorage.getItem('aifyChatIdentity') || 'dashboard';
   const ids = ['dashboard'].concat(agentIdsForChat());
-  sel.innerHTML = ids.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join('');
+  const signature = ids.join('\u001f');
+  if (sel.dataset.optionsSignature !== signature) {
+    sel.innerHTML = ids.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join('');
+    sel.dataset.optionsSignature = signature;
+  }
   sel.value = ids.includes(current) ? current : 'dashboard';
   localStorage.setItem('aifyChatIdentity', sel.value);
 }
@@ -2848,7 +3178,7 @@ function changeChatIdentity() {
 function conversationPreviewForAgent(agentId, identity = chatIdentity()) {
   return (window._allMsgs || [])
     .filter(m => (m.from === agentId && m._to === identity) || (m.from === identity && m._to === agentId))
-    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))[0] || null;
+    .sort((a, b) => timeValue(b.timestamp) - timeValue(a.timestamp))[0] || null;
 }
 
 function unreadForAgentConversation(agentId, identity = chatIdentity()) {
@@ -2895,11 +3225,11 @@ function chatConversations() {
   for (const m of window._allMsgs || []) {
     const fromInfo = (window._allAgents || []).find(([agentId]) => agentId === m.from)?.[1] || null;
     const toInfo = (window._allAgents || []).find(([agentId]) => agentId === m._to)?.[1] || null;
-    if (m._to === identity && m.from && m.from !== '_system' && fromInfo && isLiveWakeAgent(fromInfo)) agentIds.add(m.from);
-    if (m.from === identity && m._to && toInfo && isLiveWakeAgent(toInfo)) agentIds.add(m._to);
+    if (m._to === identity && m.from && m.from !== '_system' && fromInfo) agentIds.add(m.from);
+    if (m.from === identity && m._to && toInfo) agentIds.add(m._to);
   }
   agentIds.delete(identity);
-  const dmItems = [...agentIds].sort().map(id => {
+  const dmItems = [...agentIds].map(id => {
     const info = (window._allAgents || []).find(([agentId]) => agentId === id)?.[1] || {};
     const last = conversationPreviewForAgent(id, identity);
     if (openOnly && !last) return null;
@@ -2911,9 +3241,15 @@ function chatConversations() {
       title: id,
       meta: `${info.role || 'agent'}${info.statusRaw ? ' · ' + info.statusRaw : ''}${last?.preview ? ' · ' + last.preview : ''}`,
       unread: unreadForAgentConversation(id, identity),
-      ts: last?.timestamp || Date.parse(info.lastSeen || '') || 0,
+      ts: timeValue(last?.timestamp) || timeValue(info.lastSeen),
     };
-  }).filter(Boolean);
+  }).filter(Boolean).sort((a, b) => {
+    const unreadDiff = Number(b.unread > 0) - Number(a.unread > 0);
+    if (unreadDiff) return unreadDiff;
+    const timeDiff = (b.ts || 0) - (a.ts || 0);
+    if (timeDiff) return timeDiff;
+    return a.title.localeCompare(b.title);
+  });
   const channelItems = (window._channels || []).map(ch => ({
     key: `channel:${ch.name}`,
     kind: 'channel',
@@ -2945,6 +3281,50 @@ function renderChatRail() {
     el.innerHTML = html;
     el._chatRailSignature = html;
   }
+  renderGlobalMessageSearch();
+}
+
+function renderGlobalMessageSearch() {
+  const box = document.getElementById('chat-global-search');
+  const el = document.getElementById('chat-global-results');
+  if (!box || !el) return;
+  const q = (box.value || '').trim().toLowerCase();
+  if (!q) {
+    el.classList.remove('active');
+    el.innerHTML = '';
+    el._searchSignature = '';
+    return;
+  }
+  const hits = (window._allMsgs || []).filter(m => {
+    const haystack = `${m.from || ''} ${m._to || ''} ${m.type || ''} ${m.subject || ''} ${m.body || m.preview || ''}`.toLowerCase();
+    return haystack.includes(q);
+  }).sort((a, b) => timeValue(b.timestamp) - timeValue(a.timestamp)).slice(0, 20);
+  const html = hits.length ? hits.map(m => {
+    return `<div class="chat-global-hit" onclick="openGlobalMessageHit(${esc(jsArg(m.from || ''))},${esc(jsArg(m._to || ''))})">` +
+      `<b class="clip-1">${esc(m.subject || m.preview || m.body || 'Message')}</b>` +
+      `<span class="clip-1">${esc(m.from || '')} -> ${esc(m._to || '')} · ${esc(fmtTime(m.timestamp))}</span>` +
+      `</div>`;
+  }).join('') : '<p class="em">No matching loaded inbox messages.</p>';
+  const signature = `${q}\u001f${html}`;
+  if (el._searchSignature !== signature) {
+    el.innerHTML = html;
+    el._searchSignature = signature;
+  }
+  el.classList.add('active');
+}
+
+function openGlobalMessageHit(fromAgent, toAgent) {
+  const identity = chatIdentity();
+  let viewer = identity;
+  let other = fromAgent === identity ? toAgent : fromAgent;
+  if (fromAgent !== identity && toAgent !== identity) {
+    viewer = toAgent || identity;
+    other = fromAgent;
+    const select = document.getElementById('chat-from');
+    if (select) select.value = viewer;
+    localStorage.setItem('aifyChatIdentity', viewer);
+  }
+  selectChatConversation(`dm:${other}`);
 }
 
 function chatEmptyDmText() {
@@ -2958,9 +3338,7 @@ function chatEmptyDmText() {
 
 function renderChatRailItem(item) {
   const active = window._chatSelected === item.key ? ' active' : '';
-  const actionId = `chat_${++window._dashboardActionSeq}`;
-  window._dashboardActions.set(actionId, () => selectChatConversation(item.key));
-  return `<div class="chat-item${active}" ${dashboardActionAttr(actionId)}>` +
+  return `<div class="chat-item${active}" onclick="selectChatConversation(${esc(jsArg(item.key))})">` +
     `<div><div class="chat-item-title clip-1">${esc(item.title)}</div><div class="chat-item-meta clip-1">${esc(item.meta || '')}</div></div>` +
     `${item.unread ? `<span class="chat-unread">${item.unread}</span>` : ''}` +
     `</div>`;
@@ -2986,9 +3364,10 @@ async function refreshSelectedChannelMessages() {
 }
 
 function selectedChatMeta() {
+  const {dmItems, channelItems} = chatConversations();
+  const validKeys = new Set(dmItems.concat(channelItems).map(item => item.key));
   let key = window._chatSelected;
-  if (!key) {
-    const {dmItems, channelItems} = chatConversations();
+  if (!key || !validKeys.has(key)) {
     key = dmItems[0]?.key || channelItems[0]?.key || '';
     window._chatSelected = key;
   }
@@ -3018,7 +3397,7 @@ function messagesForSelectedChat(meta) {
   if (meta.kind === 'dm') {
     return (window._allMsgs || [])
       .filter(m => (m.from === meta.id && m._to === identity) || (m.from === identity && m._to === meta.id))
-      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      .sort((a, b) => timeValue(a.timestamp) - timeValue(b.timestamp));
   }
   return [];
 }
@@ -3072,21 +3451,25 @@ async function markSelectedChatRead() {
 
 function renderChat() {
   syncChatFromOptions();
-  renderChatRail();
   const meta = selectedChatMeta();
+  renderChatRail();
   updateChatControls(meta);
   updateChatInspectorVisibility();
   updateChatReplyContext(meta);
   document.getElementById('chat-title').textContent = meta.title;
   document.getElementById('chat-subtitle').textContent = meta.subtitle;
-  const messages = messagesForSelectedChat(meta);
+  const allMessages = messagesForSelectedChat(meta);
+  const messageFilter = (document.getElementById('chat-message-filter')?.value || '').trim().toLowerCase();
+  const messages = messageFilter
+    ? allMessages.filter(m => `${m.from || ''} ${m._to || ''} ${m.type || ''} ${m.subject || ''} ${m.body || m.preview || ''}`.toLowerCase().includes(messageFilter))
+    : allMessages;
   const timeline = document.getElementById('chat-timeline');
   if (!timeline) return;
   const previousKey = timeline.dataset.chatKey || '';
   const latestMessage = messages[messages.length - 1] || {};
   const latestKey = latestMessage.id || String(latestMessage.timestamp || '');
   const shouldStickToBottom = chatIsAtBottom(timeline) && !chatTimelineInteractionActive();
-  const prelude = chatPeekBanner() + chatLiveWarning(meta);
+  const prelude = chatPeekBanner() + chatLiveWarning(meta) + chatSearchBanner(messageFilter, messages.length, allMessages.length);
   const from = chatIdentity();
   const messageSignature = messages.map(m => {
     const delivery = messageDeliveryRun(m.id);
@@ -3118,8 +3501,37 @@ function renderChat() {
   if (previousKey !== (window._chatSelected || '') || shouldStickToBottom) {
     timeline.scrollTop = timeline.scrollHeight;
   }
-  renderChatInspector(meta, messages);
+  updateChatScrollButton();
+  renderChatInspector(meta, allMessages);
   if (!chatPeekMode()) markSelectedChatRead();
+}
+
+function chatSearchBanner(query, shown, total) {
+  if (!query) return '';
+  return `<div class="banner"><div class="banner-row"><span><b>Search:</b> ${esc(String(shown))} of ${esc(String(total))} message(s) match "${esc(query)}".</span>` +
+    actionButton('Clear', 'Clear this chat message search', 'clearChatMessageSearch()') +
+    `</div></div>`;
+}
+
+function clearChatMessageSearch() {
+  const el = document.getElementById('chat-message-filter');
+  if (el) el.value = '';
+  renderChat();
+}
+
+function scrollChatToBottom() {
+  const timeline = document.getElementById('chat-timeline');
+  if (!timeline) return;
+  timeline.scrollTo({top: timeline.scrollHeight, behavior: 'smooth'});
+  window._chatTimelineInteractingUntil = 0;
+  setTimeout(updateChatScrollButton, 180);
+}
+
+function updateChatScrollButton() {
+  const button = document.getElementById('chat-scroll-bottom');
+  const timeline = document.getElementById('chat-timeline');
+  if (!button || !timeline) return;
+  button.classList.toggle('hidden', chatIsAtBottom(timeline));
 }
 
 function chatPeekBanner() {
@@ -3365,7 +3777,7 @@ function renderChatInspector(meta, messages) {
       : disabledActionButton('Add member', 'All known agents are already members of this channel');
     html += '<h3>Members</h3>' +
       (members.length
-        ? `<div class="mini-list">${members.slice().sort((a, b) => a.localeCompare(b)).map(member => `<div class="mini-row"><span class="env-pill">${esc(member)}</span>${actionButtonFn('Remove', `Remove ${member} from #${meta.id}`, () => removeChannelMember(meta.id, member), 'btn-danger')}</div>`).join('')}</div>`
+        ? `<div class="mini-list">${members.slice().sort((a, b) => a.localeCompare(b)).map(member => renderChannelMemberRow(meta.id, member)).join('')}</div>`
         : '<p class="em">No members.</p>') +
       `<div class="send-row">` +
         `<select id="chat-channel-add-member" data-channel-member-select="${esc(meta.id)}" title="Agent to add to #${esc(meta.id)}">` +
@@ -3406,7 +3818,8 @@ function renderChatInspector(meta, messages) {
         '<div class="btn-row">' +
         actionButton('Sessions', 'Open the Sessions page filtered mentally to this agent', "showPage('sessions')") +
         (resumeCommand ? actionButtonFn('Pause for CLI', 'Pause dashboard delivery for this session and copy the native CLI resume command', () => takeOverSessionInCli(session.id)) : '') +
-        actionButtonFn('Compact', 'Compact this session. Handoff starts a fresh managed backing; native internal compact is adapter-dependent.', () => continueSessionAs(session.id)) +
+        actionButtonFn('Compact', 'Compact this session into a fresh backing while keeping the same agent ID', () => continueSessionAs(session.id, false)) +
+        actionButtonFn('Continue as', 'Split this session into a new agent identity with an editable handoff packet', () => continueSessionAs(session.id, true)) +
         actionButtonFn('Restart', 'Restore dashboard control using the saved spawn spec and native resume handle', () => controlSession(session.id, 'restart')) +
         `</div>`;
     } else {
@@ -3420,6 +3833,16 @@ function renderChatInspector(meta, messages) {
   const recent = messages.slice(-5).reverse();
   html += '<h3>Recent Activity</h3><div class="mini-list">' + (recent.length ? recent.map(m => `<div class="mini-row"><span class="clip-1"${titleAttr(m.subject || m.preview || m.body || '')}>${esc(m.subject || m.preview || m.body || 'Message')}</span><span class="t">${esc(fmtTime(m.timestamp))}</span></div>`).join('') : '<p class="em">No activity.</p>') + '</div>';
   el.innerHTML = html;
+}
+
+function renderChannelMemberRow(channelName, member) {
+  const isSelf = member === chatIdentity();
+  const label = isSelf ? 'Leave' : 'Remove';
+  const title = isSelf
+    ? `Leave #${channelName} as ${member}; you will stop receiving channel updates until re-added`
+    : `Remove ${member} from #${channelName}`;
+  return `<div class="mini-row"><span class="env-pill">${esc(member)}${isSelf ? ' (you)' : ''}</span>` +
+    `${actionButtonFn(label, title, () => removeChannelMember(channelName, member), 'btn-danger')}</div>`;
 }
 
 async function addSelectedChannelMember(channelName) {
@@ -3453,7 +3876,11 @@ async function addSelectedChannelMember(channelName) {
 }
 
 async function removeChannelMember(channelName, agentId) {
-  if (!confirm(`Remove ${agentId} from #${channelName}?`)) return;
+  const isSelf = agentId === chatIdentity();
+  const message = isSelf
+    ? `Leave #${channelName} as ${agentId}?\n\nThis identity will stop receiving channel fan-out/live updates and cannot send to the channel until it is added again. The channel and history remain.`
+    : `Remove ${agentId} from #${channelName}?\n\nThey will stop receiving channel fan-out/live updates and cannot send to the channel until re-added.`;
+  if (!confirm(message)) return;
   try {
     const response = await apiFetch(API + `/channels/${encodeURIComponent(channelName)}/leave`, {
       method: 'POST',
@@ -3469,9 +3896,9 @@ async function removeChannelMember(channelName, agentId) {
     }
     await refreshSelectedChannelMessages();
     renderChat();
-    toast(`${agentId} removed from #${channelName}`);
+    toast(isSelf ? `Left #${channelName}` : `${agentId} removed from #${channelName}`);
   } catch (e) {
-    toast(e.message || 'Remove member failed', '#f85149');
+    toast(e.message || (isSelf ? 'Leave channel failed' : 'Remove member failed'), '#f85149');
   }
 }
 
@@ -3778,7 +4205,8 @@ function renderSessions(sessions) {
       spawnControl,
       resumeCommand ? actionButtonFn('Pause for CLI', 'Pause dashboard delivery for this session and copy the native CLI resume command', () => takeOverSessionInCli(session.id)) : '',
       actionButtonFn('Recreate', 'Leave the old native session behind and queue a fresh managed backing. Messages and identity remain.', () => controlSession(session.id, 'recreate'), 'btn-danger'),
-      actionButtonFn('Compact', 'Compact this session. Handoff starts a fresh managed backing; native internal compact is adapter-dependent.', () => continueSessionAs(session.id)),
+      actionButtonFn('Compact', 'Compact this session into a fresh backing while keeping the same agent ID', () => continueSessionAs(session.id, false)),
+      actionButtonFn('Continue as', 'Split this session into a new agent identity with an editable handoff packet', () => continueSessionAs(session.id, true)),
       canStopSession ? actionButtonFn('Stop', 'Stop this managed session and interrupt/cancel work where supported', () => controlSession(session.id, 'stop'), 'btn-danger') : '',
     ];
     html += `<tr>` +
@@ -3799,7 +4227,7 @@ function renderSessions(sessions) {
   container.innerHTML = html;
 }
 
-async function continueSessionAs(sessionId) {
+async function continueSessionAs(sessionId, splitIdentity = false) {
   const session = (window._sessions || []).find(item => item.id === sessionId);
   if (!session) {
     toast('Session not found', '#f85149');
@@ -3807,15 +4235,19 @@ async function continueSessionAs(sessionId) {
   }
   const agentInfo = (window._allAgents || []).find(([id]) => id === session.agentId)?.[1] || {};
   const packet = continuePacketForSession(session, 24);
-  openModal('Compact Session', `
+  const targetAgentId = splitIdentity ? `${session.agentId}-next` : (session.agentId || '');
+  openModal(splitIdentity ? 'Continue As New Agent' : 'Compact Session', `
     <div class="modal-section">
-      <p class="worker-note">Choose how to reduce context pressure. Handoff compaction is reliable across runtimes and starts a fresh managed backing from an editable packet. Internal compaction would keep the native runtime session in place, but current Claude/Codex managed adapters do not expose a verified native compact API yet.</p>
+      <input type="hidden" id="cont-split" value="${splitIdentity ? '1' : '0'}">
+      <p class="worker-note">${splitIdentity
+        ? 'Create a separate teammate identity from this session using an editable handoff packet. Use this when you intentionally want a split, role change, or parallel successor.'
+        : 'Compact this same teammate identity into a fresh managed backing using an editable packet. The agent ID stays the same. Internal compaction would keep the native runtime session in place, but current Claude/Codex managed adapters do not expose a verified native compact API yet.'}</p>
       <div class="send-row">
-        <div class="form-group"><label>Mode</label><select id="cont-mode" onchange="updateCompactModeUi()">
+        ${splitIdentity ? '<input type="hidden" id="cont-mode" value="handoff">' : `<div class="form-group"><label>Mode</label><select id="cont-mode" onchange="updateCompactModeUi()">
           <option value="handoff" selected>Handoff (fresh backing)</option>
           <option value="internal">Internal native (when supported)</option>
-        </select></div>
-        <div class="form-group cont-handoff-field"><label>Agent ID</label><input id="cont-agent-id" value="${esc(session.agentId || '')}"></div>
+        </select></div>`}
+        <div class="form-group cont-handoff-field"><label>${splitIdentity ? 'New agent ID' : 'Agent ID (kept)'}</label><input id="cont-agent-id" value="${esc(targetAgentId)}"${splitIdentity ? '' : ' readonly'}></div>
         <div class="form-group"><label>Role</label><select id="cont-role">
           ${['coder','reviewer','tester','researcher','architect','manager','operator'].map(role => `<option value="${role}"${role === (agentInfo.role || 'coder') ? ' selected' : ''}>${role}</option>`).join('')}
         </select></div>
@@ -3829,12 +4261,12 @@ async function continueSessionAs(sessionId) {
       <div class="form-group cont-handoff-field">
         <label>Editable starting packet</label>
         <textarea id="cont-packet">${esc(packet)}</textarea>
-        <div class="hint">Handoff defaults to the same agent ID. Use a different ID only when you intentionally want a second teammate identity. The packet includes session identity plus recent direct messages involving the source agent and channel posts authored by it.</div>
+        <div class="hint">${splitIdentity ? 'Continue as intentionally creates a second teammate identity.' : 'Compact keeps the same agent ID; use Continue as when you want a split/new identity.'} The packet includes session identity plus recent direct messages involving the source agent and channel posts authored by it.</div>
       </div>
       <div id="cont-internal-note" class="worker-note" style="display:none">Internal native compaction is not currently supported by the managed Claude Code, Codex, or OpenCode adapters. Use handoff compaction unless a future adapter advertises native support.</div>
       <div class="btn-row">
         <span class="cont-handoff-field">${actionButtonFn('Regenerate', 'Regenerate the packet from the selected message count', () => regenerateContinuePacket(sessionId))}</span>
-        ${actionButtonFn('Compact', 'Run the selected compaction mode', () => submitContinueSessionAs(sessionId), 'btn-primary')}
+        ${actionButtonFn(splitIdentity ? 'Continue as' : 'Compact', 'Queue the selected handoff action', () => submitContinueSessionAs(sessionId), 'btn-primary')}
       </div>
     </div>
   `);
@@ -3855,7 +4287,7 @@ function recentContextForAgent(agentId, count) {
   const direct = (window._allMsgs || [])
     .filter(message => message.from === agentId || message._to === agentId)
     .map(message => ({
-      timestamp: message.timestamp || 0,
+      timestamp: message.timestamp || '',
       route: `${message.from || ''} -> ${message._to || ''}`,
       subject: message.subject || '',
       preview: message.body || message.preview || '',
@@ -3863,13 +4295,13 @@ function recentContextForAgent(agentId, count) {
   const channel = (window._recentMessages || [])
     .filter(message => message.source === 'channel' && message.from === agentId)
     .map(message => ({
-      timestamp: message.timestamp || 0,
+      timestamp: message.timestamp || '',
       route: `${message.from || ''} -> #${message.channel || ''}`,
       subject: message.subject || `#${message.channel || ''}`,
       preview: message.preview || '',
     }));
   return direct.concat(channel)
-    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+    .sort((a, b) => timeValue(b.timestamp) - timeValue(a.timestamp))
     .slice(0, Math.max(0, count || 0))
     .reverse();
 }
@@ -3916,12 +4348,14 @@ async function submitContinueSessionAs(sessionId) {
     toast('Session not found', '#f85149');
     return;
   }
+  const splitIdentity = document.getElementById('cont-split')?.value === '1';
   const mode = document.getElementById('cont-mode')?.value || 'handoff';
   if (mode === 'internal') {
     toast('Internal/native compact is not supported by the current managed runtime adapters yet. Use handoff compact.', '#f0b429');
     return;
   }
-  const newAgentId = document.getElementById('cont-agent-id')?.value.trim();
+  const requestedAgentId = document.getElementById('cont-agent-id')?.value.trim();
+  const newAgentId = splitIdentity ? requestedAgentId : session.agentId;
   const role = document.getElementById('cont-role')?.value || 'coder';
   const environmentId = document.getElementById('cont-env')?.value.trim() || session.environmentId;
   const runtime = document.getElementById('cont-runtime')?.value.trim() || session.runtime;
@@ -3943,15 +4377,21 @@ async function submitContinueSessionAs(sessionId) {
         runtime,
         workspace,
         initialMessage: packet,
-        subject: `Handoff compact from ${session.agentId}`,
+        subject: splitIdentity ? `Continue as from ${session.agentId}` : `Handoff compact from ${session.agentId}`,
         mode: 'managed-warm',
         resumePolicy: 'fresh_context',
-        metadata: {continuedFromSessionId: session.id, continuedFromAgentId: session.agentId, compactMode: 'handoff', sameAgentId: newAgentId === session.agentId},
+        metadata: {
+          continuedFromSessionId: session.id,
+          continuedFromAgentId: session.agentId,
+          compactMode: 'handoff',
+          sameAgentId: newAgentId === session.agentId,
+          splitIdentity,
+        },
       }),
     });
     const res = await response.json();
     if (!response.ok || res.ok === false) throw new Error(res.detail || res.error || 'Continue failed');
-    toast(`Handoff compact queued for ${newAgentId}`);
+    toast(splitIdentity ? `Continue-as queued for ${newAgentId}` : `Compact queued for ${newAgentId}`);
     closeModal();
     await refreshDashboard();
     showPage('environments');
@@ -4003,7 +4443,13 @@ async function refreshDashboard() {
   refreshInFlight = true;
   const viewState = captureDashboardViewState();
   try {
-    const [statsRes, agentsRes, runsRes, envRes, spawnRes, sessionsRes, channelsRes, recentRes] = await Promise.all([
+    const contractParams = new URLSearchParams({limit: '200'});
+    if (document.getElementById('contract-include-closed')?.checked) contractParams.set('includeClosed', 'true');
+    const contractState = document.getElementById('contract-state')?.value || '';
+    const contractCategory = document.getElementById('contract-category')?.value || '';
+    if (contractState) contractParams.set('state', contractState);
+    if (contractCategory) contractParams.set('category', contractCategory);
+    const [statsRes, agentsRes, runsRes, envRes, spawnRes, sessionsRes, channelsRes, recentRes, contractsRes] = await Promise.all([
       apiFetch(API + '/stats').then(r => r.json()),
       apiFetch(API + '/agents').then(r => r.json()),
       apiFetch(API + '/dispatch/runs?limit=200').then(r => r.json()),
@@ -4012,6 +4458,7 @@ async function refreshDashboard() {
       apiFetch(API + '/sessions?limit=100').then(r => r.json()),
       apiFetch(API + `/channels?agentId=${encodeURIComponent(chatIdentity())}`).then(r => r.json()),
       apiFetch(API + '/messages/recent?limit=120').then(r => r.json()),
+      apiFetch(API + `/contracts?${contractParams.toString()}`).then(r => r.json()).catch(() => ({contracts: [], summary: {}, settings: {}})),
     ]);
     const analyticsRes = await apiFetch(API + '/analytics').then(r => r.json()).catch(() => ({}));
     const runs = runsRes.runs || [];
@@ -4028,6 +4475,9 @@ async function refreshDashboard() {
     window._recentMessages = recentMessages;
     window._analytics = analyticsRes;
     window._dashboardStats = statsRes;
+    window._contracts = contractsRes.contracts || [];
+    window._contractSummary = contractsRes.summary || {};
+    window._contractSettings = contractsRes.settings || {};
     const agents = Object.entries(agentsRes.agents || {});
     const residentAgents = agents.filter(([, info]) => !isManagedWorker(info));
     const managedWorkers = agents.filter(([, info]) => isManagedWorker(info));
@@ -4082,7 +4532,7 @@ async function refreshDashboard() {
         }
       } catch(e) {}
     }
-    allMsgs.sort((a,b) => (b.timestamp||0) - (a.timestamp||0));
+    allMsgs.sort((a,b) => timeValue(b.timestamp) - timeValue(a.timestamp));
     window._allMsgs = allMsgs;
     window._msgPage = window._msgPage || 0;
     await renderCurrentPageFromState();
@@ -4299,10 +4749,11 @@ function applyRunFiltersAndRender() {
   const runtime = document.getElementById('run-runtime')?.value || '';
   const filtered = (window._allRuns || []).filter(run => {
     const runtimeValue = run.runtime || run.requestedRuntime || '';
-    const haystack = `${run.id} ${run.from} ${run.targetAgentId} ${run.subject} ${run.summary || ''} ${run.error || ''}`.toLowerCase();
+    const mergedFrom = run.mergedFromAgents || [];
+    const haystack = `${run.id} ${run.from} ${mergedFrom.join(' ')} ${run.targetAgentId} ${run.subject} ${run.summary || ''} ${run.error || ''}`.toLowerCase();
     return (!text || haystack.includes(text)) &&
            (!status || run.status === status) &&
-           (!fromAgent || run.from === fromAgent) &&
+           (!fromAgent || run.from === fromAgent || mergedFrom.includes(fromAgent)) &&
            (!toAgent || run.targetAgentId === toAgent) &&
            (!runtime || runtimeValue === runtime);
   });
@@ -4334,7 +4785,7 @@ async function showChannelList() {
     let html = '<h2>Channels</h2><div class="table-wrap"><table class="compact-table"><thead><tr><th>Channel</th><th>Members</th><th>Messages</th><th>Unread</th><th>Created By</th></tr></thead><tbody>';
     for (const ch of channels) {
       const actionId = `channel_${++window._dashboardActionSeq}`;
-      window._dashboardActions.set(actionId, () => openChannel(ch.name));
+      rememberDashboardAction(actionId, () => openChannel(ch.name));
       html += `<tr style="cursor:pointer" ${dashboardActionAttr(actionId)}>` +
         `<td><b style="color:#58a6ff">#${esc(ch.name)}</b><br><span class="t clip-1"${titleAttr(ch.description || '')}>${esc(ch.description||'')}</span></td>` +
         `<td><span class="clip-2"${titleAttr((ch.members||[]).join(', '))}>${esc((ch.members||[]).join(', '))}</span></td>` +
@@ -4715,6 +5166,11 @@ async function loadSettings() {
   document.getElementById('s-offline').value = s.offline_minutes;
   document.getElementById('s-stale').value = s.stale_agent_hours;
   document.getElementById('s-rotation').value = String(s.rotation_enabled);
+  document.getElementById('s-reply-contracts').value = String(s.reply_contracts_enabled);
+  document.getElementById('s-reply-minutes').value = s.reply_reminder_minutes;
+  document.getElementById('s-reply-repeat').value = s.reply_reminder_repeat_minutes;
+  document.getElementById('s-reply-max').value = s.reply_reminder_max_count;
+  document.getElementById('s-contract-stale').value = s.contract_stale_hours;
   if (refreshInterval) clearInterval(refreshInterval);
   refreshInterval = setInterval(refreshDashboard, s.dashboard_refresh_seconds * 1000);
 }
@@ -4731,6 +5187,11 @@ async function saveSettings(e) {
       offline_minutes: parseInt(document.getElementById('s-offline').value),
       stale_agent_hours: parseInt(document.getElementById('s-stale').value),
       rotation_enabled: document.getElementById('s-rotation').value === 'true',
+      reply_contracts_enabled: document.getElementById('s-reply-contracts').value === 'true',
+      reply_reminder_minutes: parseInt(document.getElementById('s-reply-minutes').value),
+      reply_reminder_repeat_minutes: parseInt(document.getElementById('s-reply-repeat').value),
+      reply_reminder_max_count: parseInt(document.getElementById('s-reply-max').value),
+      contract_stale_hours: parseInt(document.getElementById('s-contract-stale').value),
     })});
   toast('Settings saved'); loadSettings();
 }

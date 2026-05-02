@@ -5,11 +5,13 @@
 Initial dashboard sections:
 
 - **Home**: operational overview and "what needs attention".
+- **Work Loop**: computed reply/work contracts, overdue reminders, self-wakes, and inbox hygiene.
 - **Chat**: direct messages and channel conversations.
 - **Team**: identities and current status.
 - **Analytics**: communication volume, agent availability, run health, and recent failure rates.
 - **Environments**: connected spawn targets.
 - **Sessions**: concrete runtime processes/threads.
+- **Browser CLI** (future): embedded terminal access to a paused/taken-over managed or resident session when an environment bridge advertises attach capability.
 - **Runs**: dispatch/run/handoff table.
 - **Artifacts**: shared files and text artifacts.
 - **Help**: product concepts and setup pointers.
@@ -41,19 +43,38 @@ Primary cards:
 - **Active work**: current running sessions/runs.
 - **Recent conversation**: latest DMs and channels.
 
+## Work Loop
+
+Work Loop is the operations view over chat obligations. It should not introduce a second message concept. It computes contracts from direct requests, reviews, errors, high/urgent messages, required handoff runs, and self-wakes.
+
+It should show:
+
+- open/overdue/working/queued/missing-reply counts
+- route, subject, age, read state, reminder count, and latest answer preview
+- filters for state, category (`direct`, `channel`, `self-wake`), and free text; the daily default should be open direct contracts, with historical failures, answered items, channel fan-out, and self-wake audits opt-in
+- one-click run detail, chat jump, single-contract reminder, and batch due-reminder actions
+- hygiene indicators for old unread fan-out, answered-but-unread source messages, self-wakes, and pending fallback handoffs
+
+Reminder policy belongs in Settings: enabled/disabled, first overdue threshold, repeat interval, maximum reminders, and history window. Reminders should be explicit automated messages, not hidden state changes. A reminder should tell the target which original message/run to open and should instruct the agent to close the original contract rather than merely acknowledging the reminder.
+
+Agents can inspect the same view through `comms_contracts(...)` when they need to audit outstanding work. The dashboard remains the primary place for batch repair actions.
+
 ## Chat
 
 Chat should feel like a real team messenger:
 
 - left sidebar: DMs and channels
+- sidebar search: filter conversations, and search loaded direct-message inbox history across identities
 - main pane: message timeline
+- timeline search: filter the selected conversation without changing the selected conversation or read state
+- scroll behavior: realtime refresh should not steal composer focus or force-scroll while the operator is reading; show a bottom-jump button when the newest messages are below the viewport
 - composer: body-first for normal chat; subject remains available for handoffs and searchable task titles
 - message badges: `live`, `not sent`, `handoff pending`, `handoff done`; legacy stored-only messages may appear in history/debug views
 - mention support: `@agent`, `@group`, `@channel`
 - quick actions: reply/follow-up, mark read, clear DM/delete channel, share artifact
 - thread drawer for run details, artifacts, and handoff state
 - peek mode: watch a selected conversation without automatically marking incoming messages read; explicit Mark read remains available for direct messages and selected channels
-- channel details: show current members and allow adding/removing known agents from the right-side Members panel; add selection must be stable across realtime refreshes
+- channel details: show current members and allow adding/removing known agents from the right-side Members panel; the current viewing identity uses a clear **Leave** action and can be re-added later; add selection must be stable across realtime refreshes
 - artifact uploads store bytes in the aify-comms shared artifact service and inserted chat text should tell agents to use `comms_read(name="...")`
 - reply expectations are inferred from message type: requests/reviews should get explicit replies; routine info does not need a special toggle
 - normal dashboard chat has one send path; strict dispatch remains an advanced API/debug path, not a primary composer option
@@ -213,6 +234,8 @@ Do not show stop/kill-style actions for rows that only represent offline identit
 Ended/completed/cancelled sessions are debug history. The normal Sessions page should hide them by default and expose a **Show ended/debug sessions** toggle for lifecycle investigation.
 
 Manual/resident identities may expose **Edit** and **Adopt env** when at least one environment is online. Adoption should be explicit: it creates managed backing for future dashboard work, but it does not magically attach the currently open CLI process. The UI should tell the operator to close/stop the old resident CLI for that `agentId` and restart the managed session from Sessions.
+
+Future browser terminal mode should reuse the same ownership model as native CLI access. Opening an in-browser terminal should visibly pause dashboard chat delivery for that session, attach through the owning environment bridge, and provide a clear **Return to dashboard** path. It should not let dashboard chat and terminal input drive the same Claude/Codex/OpenCode handle concurrently.
 
 ## Continue From Session Flow
 

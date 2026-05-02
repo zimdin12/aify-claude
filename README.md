@@ -25,8 +25,9 @@ It now adds a first-class agent lifecycle layer:
 - automatic identity/registration for spawned agents
 - managed-warm sessions for long-lived agents
 - portable compact/continue into fresh managed backings when a phase changes or context gets noisy
+- Work Loop contracts for overdue replies, self-wakes, missing handoffs, and inbox hygiene
 - runtime/session visibility, with token/cost telemetry shown only when runtimes expose it
-- real chat UI with DMs, channels, mentions, artifacts, and run/handoff state near the conversation
+- real chat UI with DMs, channels, conversation/inbox search, bottom-jump, artifacts, and run/handoff state near the conversation
 
 ## Target Mental Model
 
@@ -38,9 +39,11 @@ It now adds a first-class agent lifecycle layer:
 6. The agent identity, spawn spec, and session backing appear automatically.
 7. Talk to it in direct chat or channels, assign work through messages, inspect output, stop/restart/recover it, or compact it into a fresh backing.
 
-Manual `comms_register(...)` should become an advanced/debug path, not the normal user workflow.
+Manual `comms_register(...)` is an advanced/debug and resident-CLI path, not the normal dashboard-managed workflow.
 
 Normal dashboard chat is live-delivery gated for unreachable targets: offline, stale, stopped, or no-wake agents fail visibly and the message is not stored for a future run. Busy live targets receive ordinary sends as steer when supported, or as queued/merged next-turn work when steering is not available; the explicit **Queue** action forces next-turn delivery. Required handoffs are repaired automatically when a terminal run finishes without an explicit reply, and the Home page exposes repair/dismiss actions for old issue states.
+
+The **Work Loop** page turns message/run state into operational contracts: who asked, who owns the reply, whether the run is queued/working/overdue/answered, and whether old read receipts or handoffs need repair. It does not replace chat; it makes the implicit obligations in chat visible enough for an autonomous team to keep moving without guessing from raw unread counts.
 
 Reliable compaction in `aify-comms` means creating a fresh managed backing from an editable handoff packet and recent comms context. It is portable across Claude Code, Codex, and OpenCode, and it defaults to the same agent ID so chats and team identity remain stable. Native in-place compaction is runtime-adapter dependent; current managed Claude Code and Codex adapters do not expose a verified internal compact API.
 
@@ -75,6 +78,15 @@ curl http://localhost:8800/health
 ```
 
 The default port is `8800`. Change `.env` only if another service already uses that port.
+
+Install the host-side CLI integration on every machine/runtime that should expose `aify-comms`, `codex-aify`, or `claude-aify`. Pick the client you use on that host:
+
+```bash
+bash install.sh --client codex http://localhost:8800 --with-hook
+bash install.sh --client claude http://localhost:8800 --with-hook
+```
+
+After an update, rerun the relevant install command and restart both the CLI client and any long-running `aify-comms` bridge process so managed spawns and resident sessions load the same code/skills.
 
 ## Connect Environments
 

@@ -10,7 +10,7 @@ You have access to the aify-comms MCP tools (`comms_*` prefix). These let you co
 
 ## Quick Start
 
-**Register the live session first** — always do this at session start or right after an update/restart:
+**For resident/live CLI sessions, register the live session first** — do this at session start or right after an update/restart:
 ```
 comms_register(agentId="my-agent", role="coder", cwd="/path/to/project")
 ```
@@ -39,7 +39,7 @@ comms_envs()
 comms_spawn(from="my-agent", agentId="feature-coder", role="coder", runtime="codex", workspace="/path/to/project", initialMessage="Brief for the new agent")
 ```
 
-Dashboard **Environments -> Spawn Agent** and `comms_spawn` are the same product path: persistent managed agent sessions backed by an environment, workspace, runtime, spawn spec, and session record. Short-lived local subagents inside one Codex task should stay private unless the user explicitly wants them promoted to a comms-visible teammate.
+Dashboard **Environments -> Spawn Agent** and `comms_spawn` are the same product path: persistent managed agent sessions backed by an environment, workspace, runtime, spawn spec, and session record. Dashboard-managed delivered runs are already registered by the environment bridge; do not call `comms_register` inside those runs. Short-lived local subagents inside one Codex task should stay private unless the user explicitly wants them promoted to a comms-visible teammate.
 
 ## Team Communication Contract
 
@@ -57,6 +57,8 @@ Use aify-comms like a focused team chat:
 - Treat dashboard-origin direct messages as human/operator chat. Dashboard-managed delivered runs should answer the current message in final plain text; the bridge stores that final answer in dashboard chat.
 - For later asynchronous updates outside the current delivered run, send the human-facing update with `comms_send(to="dashboard", type="info" or "response", ...)` when it completes a promise to the dashboard.
 - In dashboard-managed delivered runs, final plain text is the current chat reply and is captured/threaded by the bridge. Use `comms_send` from managed runs only for separate out-of-band/proactive messages.
+- Work Loop contracts are computed from messages/runs. Close the original contract with a real reply/result; do not treat old unread counts, reminders, or run summaries as proof that communication happened.
+- If an automated reminder arrives, read the original message/run it references and answer that original sender/result. Do not merely acknowledge the reminder unless the reminder itself asks for that.
 - Use DMs for owned handoffs and channels for shared context. Do not ping the whole team when one owner is enough.
 - When you ask teammates for parallel work, name the expected reply target and completion condition so their replies wake the right owner and can be judged done.
 - In channels, reply when you are named, responsible, asked a question, or have useful evidence. Avoid broad automatic acknowledgement loops.
@@ -73,6 +75,7 @@ Managed runtime policy:
 - Dashboard-managed Codex uses a managed `CODEX_HOME`; the bridge copies the bundled `aify-comms` and `aify-comms-debug` skills into that managed home when it prepares Codex. Use the dashboard's generated resume command so `codex resume --include-non-interactive <thread-id>` reads the correct thread store and skills.
 - Delivered dashboard-managed runs use final plain text as the primary reply protocol. The bridge captures the final answer as run output and stores/threads it into chat; do not call `comms_send` for the current delivered message.
 - Use dashboard **Pause for CLI** before opening a managed session directly. It pauses dashboard delivery so normal chat sends fail fast instead of racing the open CLI and hitting `Session ID ... is already in use`. Re-register from the opened CLI with the same `agentId` so the dashboard stores the current Claude session ID, Codex thread ID, or OpenCode session ID. `claude-aify --resume <id>` exports `CLAUDE_SESSION_ID=<id>` for the MCP process; Codex should still register with `$CODEX_THREAD_ID` and `$AIFY_CODEX_APP_SERVER_URL` when available. Use **Restart** from Sessions when you want dashboard control back.
+- Browser CLI is a planned dashboard ownership mode, not current behavior. Until an environment advertises browser terminal/PTY attach, use **Pause for CLI** plus the native resume command. When browser CLI exists, it must use the same ownership rule: opening the terminal pauses dashboard chat delivery for that session, and returning control resumes dashboard chat delivery.
 - Fresh native handles should come from a new spawn or explicit **Recreate**. Ordinary adopt/restart should preserve the stored handle when the runtime is unchanged; if it cannot, treat that as a recoverable problem instead of accepting context loss silently.
 - Resident sessions keep the permission mode of the CLI the user started. If a resident Claude session says comms tools need approval, restart it with the desired Claude permission flags or use a dashboard-managed session for unattended work.
 - Every delivered managed message includes the recipient's own `agentId`; use that exact ID for `comms_inbox(agentId="...")` when asked to check recent messages between you and the sender.
@@ -98,7 +101,7 @@ Subagent rule:
 Do these steps in order:
 
 1. Rerun the install command from the repo install doc.
-2. Restart the client.
+2. Restart the relevant CLI wrapper/client and any long-running `aify-comms` environment bridge.
 3. Re-register from the exact live session you want other agents to trigger.
 4. Confirm your runtime and resident state with `comms_agent_info`.
 
@@ -124,7 +127,7 @@ Gotchas regardless of runtime:
 - `agentId` must be unique per session. Re-registering the same ID supersedes the previous bridge for that agent on that machine.
 - One session per tab; don't register the same agent from two tabs — the old one is replaced.
 
-## Tools (27)
+## Tools (28)
 
 ### Identity And Lifecycle (7)
 | Tool | Use |
@@ -155,11 +158,16 @@ Gotchas regardless of runtime:
 | `comms_run_status` | Check the status, summary, and recent events of a dispatched run. |
 | `comms_run_interrupt` | Request interruption of an active run. Works when the target runtime supports interrupt. |
 
+### Work Loop (1)
+| Tool | Use |
+|------|-----|
+| `comms_contracts` | List computed reply/work contracts. Defaults to open direct contracts; pass `state="missing_reply"`/`"failed"`/`"answered"` or `category="channel"`/`"self_wake"` when auditing history/noise. |
+
 ### Channels (5)
 | Tool | Use |
 |------|-----|
 | `comms_channel_create` | Create a named channel. You're auto-joined. |
-| `comms_channel_join` | Join yourself or add another agent: `comms_channel_join(channel, from, agentId="coder")`. |
+| `comms_channel_join` | Join/rejoin yourself or add another agent: `comms_channel_join(channel, from, agentId="coder")`. |
 | `comms_channel_send` | Send to a channel. Like direct send, it is live-delivery gated for channel members. |
 | `comms_channel_read` | Read recent canonical channel messages. Inbox fan-out copies are not shown as extra channel posts. |
 | `comms_channel_list` | List all channels with member/message counts. |
@@ -233,10 +241,11 @@ When you receive a wake notification or finish a task, check inbox before starti
 - Dashboard-uploaded files are stored in the aify-comms shared artifact store, not necessarily in the workspace. If a message says `Artifact: name`, call `comms_read(name="name")` before trying filesystem search.
 - If you already sent the same handoff directly to someone, posting it to a channel right after will keep the channel history entry but will not create a second personal inbox copy for that member.
 - `comms_run_interrupt` to stop an active run. `comms_send(...)` injects guidance mid-turn for busy steer-capable targets and queues/merges for busy non-steer targets; use `queueIfBusy=true` to force next-turn delivery.
+- `comms_contracts(...)` when acting as manager or when messages seem lost. It shows obligations derived from runs/messages; use it to decide whether to remind, retry, inspect a run, or clean up old bookkeeping.
 - Before diagnosing another agent's issues, call `comms_agent_info` first — don't guess.
 - Brief acks are fine — "on it" beats a paragraph.
 
-Dashboard note: Home is a live operations queue, not a full audit log. Pending handoffs can be repaired from the dashboard, and reviewed historical failures can be dismissed from Home while remaining available in Runs/Environments. Sessions hides ended/completed/cancelled rows by default; use "Show ended/debug sessions" when investigating lifecycle history. Chat Peek mode lets an operator watch conversations without marking incoming messages read; explicit Mark read acknowledges direct messages or the selected channel for the current viewing identity.
+Dashboard note: Home is a live operations queue, not a full audit log. Work Loop is the contract view: overdue replies, working/queued requests, self-wakes, old unread noise, and repair actions. Pending handoffs can be repaired from the dashboard, and reviewed historical failures can be dismissed from Home while remaining available in Runs/Environments. Sessions hides ended/completed/cancelled rows by default; use "Show ended/debug sessions" when investigating lifecycle history. Chat Peek mode lets an operator watch conversations without marking incoming messages read; explicit Mark read acknowledges direct messages or the selected channel for the current viewing identity. Channel Leave/Remove stops future fan-out for that identity but keeps history; re-add the identity from Chat details to rejoin. Chat has selected-conversation search, loaded inbox search, and a bottom-jump button for long active conversations.
 
 ## Reference Docs
 

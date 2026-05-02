@@ -72,6 +72,11 @@ DEFAULT_SETTINGS = {
     "idle_minutes": 5,
     "offline_minutes": 30,
     "environment_offline_seconds": 90,
+    "reply_contracts_enabled": True,
+    "reply_reminder_minutes": 6,
+    "reply_reminder_repeat_minutes": 6,
+    "reply_reminder_max_count": 3,
+    "contract_stale_hours": 24,
 }
 
 _RUNTIME_ALIASES = {
@@ -214,6 +219,103 @@ def _dispatch_reply_state(row) -> str:
 
 def _dispatch_reply_pending(row) -> bool:
     return _dispatch_reply_state(row) == "pending"
+
+
+def _contract_reply_expected(row) -> bool:
+    if not row:
+        return False
+    if _row_require_reply(row):
+        return True
+    message_type = str((row["message_type"] if "message_type" in row.keys() else "") or "").strip().lower()
+    if message_type in {"response", "approval"}:
+        return False
+    priority = str((row["priority"] if "priority" in row.keys() else "") or "").strip().lower()
+    return message_type in {"request", "review", "error"} or priority in {"high", "urgent"}
+
+
+def _contract_state(row, *, settings: dict[str, Any], now_s: Optional[float] = None) -> dict[str, Any]:
+    now_s = now_s or time.time()
+    requested_s = _iso_to_epoch((row["requested_at"] if row and "requested_at" in row.keys() else "") or "")
+    age_minutes = max(0.0, (now_s - requested_s) / 60.0) if requested_s else 0.0
+    status = str((row["status"] if row and "status" in row.keys() else "") or "").strip().lower()
+    result_message_id = str((row["result_message_id"] if row and "result_message_id" in row.keys() else "") or "").strip()
+    reply_expected = _contract_reply_expected(row)
+    reminder_minutes = max(1, int(settings.get("reply_reminder_minutes", 6) or 6))
+    reminder_count = int((row["reminder_count"] if row and "reminder_count" in row.keys() else 0) or 0)
+    source_read_at = str((row["source_read_at"] if row and "source_read_at" in row.keys() else "") or "").strip()
+    same_agent = str((row["from_agent"] if row else "") or "") == str((row["target_agent"] if row else "") or "")
+
+    if result_message_id:
+        state = "answered"
+    elif status in {"failed", "cancelled"}:
+        state = "failed"
+    elif status == "completed":
+        state = "missing_reply" if reply_expected else "closed"
+    elif status in {"claimed", "running"}:
+        state = "working"
+    elif status == "queued":
+        state = "queued"
+    elif source_read_at:
+        state = "seen"
+    else:
+        state = "sent"
+
+    overdue = bool(
+        reply_expected
+        and not result_message_id
+        and status not in _DISPATCH_TERMINAL_STATUSES
+        and age_minutes >= reminder_minutes
+    )
+    if overdue:
+        state = "overdue"
+
+    category = "self_wake" if same_agent else "direct"
+    source = str((row["message_source"] if row and "message_source" in row.keys() else "") or "").strip().lower()
+    if source == "channel":
+        category = "channel"
+
+    return {
+        "state": state,
+        "replyExpected": reply_expected,
+        "overdue": overdue,
+        "ageMinutes": round(age_minutes, 1),
+        "reminderCount": reminder_count,
+        "category": category,
+        "actionable": bool(reply_expected and not result_message_id and category != "self_wake"),
+    }
+
+
+def _contract_row_to_dict(row, *, settings: dict[str, Any], now_s: Optional[float] = None) -> dict[str, Any]:
+    state = _contract_state(row, settings=settings, now_s=now_s)
+    body = str((row["message_body"] if row and "message_body" in row.keys() else "") or row["body"] or "")
+    result_body = str((row["result_body"] if row and "result_body" in row.keys() else "") or "")
+    result_message_id = str(row["result_message_id"] or "").strip()
+    reply_state = _dispatch_reply_state(row)
+    if state["replyExpected"] and reply_state == "not_required":
+        reply_state = "sent" if result_message_id else "awaiting"
+    return {
+        "id": row["id"],
+        "messageId": row["message_id"] or "",
+        "from": row["from_agent"],
+        "targetAgentId": row["target_agent"],
+        "type": row["message_type"],
+        "subject": row["subject"] or "",
+        "preview": body[:420],
+        "priority": row["priority"] or "normal",
+        "status": row["status"],
+        "runtime": row["runtime"] or "",
+        "requireReply": _row_require_reply(row),
+        "replyState": reply_state,
+        "resultMessageId": result_message_id,
+        "resultPreview": result_body[:420],
+        "requestedAt": row["requested_at"],
+        "claimedAt": row["claimed_at"],
+        "startedAt": row["started_at"],
+        "finishedAt": row["finished_at"],
+        "sourceReadAt": row["source_read_at"] or "",
+        "lastReminderAt": row["last_reminder_at"] or "",
+        **state,
+    }
 
 
 def _serialize_dispatch_run_row(row, *, blocked_by=None, include_body: bool = False, include_events=None, include_controls=None) -> dict[str, Any]:
@@ -1562,19 +1664,19 @@ async def _find_mergeable_queued_run(
     recipient_id: str,
     from_agent: str,
 ):
-    # Merge across ALL senders, not just the same sender. The merged body
-    # includes sender attribution per item so the recipient knows who sent
-    # what. Oldest message at the top, newest at the bottom.
+    # Keep queued merge ownership scoped to one sender. Cross-sender merge
+    # loses the contract owner and makes handoff replies go to the wrong agent.
     cursor = await db.execute(
         """
         SELECT *
         FROM dispatch_runs
         WHERE target_agent = ?
+          AND from_agent = ?
           AND status = 'queued'
         ORDER BY requested_at ASC
         LIMIT 1
         """,
-        (recipient_id,),
+        (recipient_id, from_agent),
     )
     return await cursor.fetchone()
 
@@ -1830,6 +1932,40 @@ async def _create_dispatch_runs(
                     body=steer_body,
                     source_message_id=source_message_id,
                 )
+                steer_contract_run_id = None
+                if source_message_id:
+                    steer_contract_run_id = f"run_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+                    await db.execute(
+                        """
+                        INSERT INTO dispatch_runs (
+                            id, message_id, from_agent, target_agent, dispatch_mode, execution_mode, requested_runtime,
+                            message_type, subject, body, priority, in_reply_to, status, require_reply, requested_at
+                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        """,
+                        (
+                            steer_contract_run_id,
+                            source_message_id,
+                            from_agent,
+                            recipient_id,
+                            "steer",
+                            execution_mode,
+                            requested_runtime or "",
+                            message_type,
+                            subject,
+                            body,
+                            priority,
+                            in_reply_to,
+                            "delivered",
+                            1 if require_reply else 0,
+                            requested_at,
+                        ),
+                    )
+                    await _append_dispatch_event(
+                        db,
+                        steer_contract_run_id,
+                        "steered",
+                        f"Delivered as steer control {control_id} into active run {active_run['runId']}",
+                    )
                 runs.append({
                     "runId": active_run["runId"],
                     "targetAgentId": recipient_id,
@@ -1837,6 +1973,7 @@ async def _create_dispatch_runs(
                     "steered": True,
                     "requireReply": require_reply,
                     "controlId": control_id,
+                    "contractRunId": steer_contract_run_id,
                     "steeredIntoActiveRun": {
                         "runId": active_run["runId"],
                         "status": active_run["status"],
@@ -2099,6 +2236,9 @@ def _is_replaceable_auto_handoff_message(existing_message, replied_run) -> bool:
     )
 
 
+_HANDOFF_REPLY_TYPES = {"response", "review", "error", "approval"}
+
+
 async def _link_reply_message_to_dispatch_run(
     db,
     *,
@@ -2108,6 +2248,8 @@ async def _link_reply_message_to_dispatch_run(
     reply_type: str,
     reply_body: str,
 ) -> bool:
+    if str(reply_type or "").strip().lower() not in _HANDOFF_REPLY_TYPES:
+        return False
     run_cursor = await db.execute(
         """
         SELECT * FROM dispatch_runs
@@ -2154,8 +2296,67 @@ async def _link_reply_message_to_dispatch_run(
     return True
 
 
-_UNTHREADED_HANDOFF_TYPES = {"response", "review", "error", "approval"}
+_UNTHREADED_HANDOFF_TYPES = _HANDOFF_REPLY_TYPES
 _UNTHREADED_HANDOFF_WINDOW_MS = 24 * 60 * 60 * 1000
+
+
+async def _close_steered_contracts_for_parent_run(
+    db,
+    parent_row,
+    *,
+    result_message_id: str,
+) -> int:
+    """Close same-sender steer contracts that were injected into a terminal run.
+
+    Steer controls are extra guidance for the active turn. If the active turn's
+    final result answers the same sender, that result also satisfies same-sender
+    steered contracts that were delivered into the run.
+    """
+    result_message_id = str(result_message_id or "").strip()
+    if not parent_row or not result_message_id:
+        return 0
+    parent_run_id = str(parent_row["id"] or "").strip()
+    from_agent = str(parent_row["from_agent"] or "").strip()
+    target_agent = str(parent_row["target_agent"] or "").strip()
+    if not parent_run_id or not from_agent or not target_agent:
+        return 0
+
+    cursor = await db.execute(
+        """
+        SELECT r.id
+        FROM dispatch_runs r
+        JOIN dispatch_controls c ON c.source_message_id = r.message_id
+        WHERE c.run_id = ?
+          AND r.dispatch_mode = 'steer'
+          AND r.status = 'delivered'
+          AND r.from_agent = ?
+          AND r.target_agent = ?
+          AND COALESCE(r.result_message_id, '') = ''
+        """,
+        (parent_run_id, from_agent, target_agent),
+    )
+    rows = await cursor.fetchall()
+    closed = 0
+    for row in rows:
+        await db.execute(
+            "UPDATE dispatch_runs SET result_message_id = ? WHERE id = ?",
+            (result_message_id, row["id"]),
+        )
+        await _append_dispatch_event(
+            db,
+            row["id"],
+            "handoff",
+            f"Closed by parent run {parent_run_id} result {result_message_id}",
+        )
+        closed += 1
+    if closed:
+        await _append_dispatch_event(
+            db,
+            parent_run_id,
+            "handoff",
+            f"Closed {closed} same-sender steered contract(s) with result {result_message_id}",
+        )
+    return closed
 
 
 async def _link_unthreaded_reply_to_recent_dispatch_run(
@@ -2180,7 +2381,7 @@ async def _link_unthreaded_reply_to_recent_dispatch_run(
         WHERE target_agent = ?
           AND from_agent = ?
           AND require_reply = 1
-          AND status IN ('claimed', 'running', 'completed', 'failed', 'cancelled')
+          AND status IN ('delivered', 'claimed', 'running', 'completed', 'failed', 'cancelled')
           AND requested_at >= ?
           AND requested_at <= ?
         ORDER BY requested_at DESC
@@ -4815,6 +5016,8 @@ async def create_dispatch(req: DispatchRequest, request: Request):
             reason = None if row else "agent is not registered"
             if row:
                 execution_mode, reason = _agent_execution_mode(row, req.requestedRuntime)
+                if not reason and execution_mode:
+                    reason = await _managed_environment_unavailable_reason(db, row)
             if reason or not execution_mode:
                 not_started.append(_dispatch_fix_hint(recipient_id, row, reason or "active dispatch unavailable"))
             else:
@@ -5291,6 +5494,326 @@ async def repair_dispatch_handoffs(request: Request, limit: int = Query(100, ge=
         await db.close()
 
 
+def _contract_list_query(
+    *,
+    where_sql: str = "",
+    order_sql: str = "ORDER BY r.requested_at DESC",
+    limit_sql: str = "LIMIT ?",
+) -> str:
+    return f"""
+        SELECT
+            r.*,
+            m.source AS message_source,
+            m.body AS message_body,
+            m.timestamp AS message_timestamp,
+            rr.read_at AS source_read_at,
+            result.body AS result_body,
+            result.timestamp AS result_timestamp,
+            COALESCE(reminder.reminder_count, 0) AS reminder_count,
+            COALESCE(reminder.last_reminder_at, '') AS last_reminder_at
+        FROM dispatch_runs r
+        LEFT JOIN messages m ON m.id = r.message_id
+        LEFT JOIN read_receipts rr ON rr.message_id = r.message_id AND rr.agent_id = r.target_agent
+        LEFT JOIN messages result ON result.id = r.result_message_id
+        LEFT JOIN (
+            SELECT run_id, COUNT(*) AS reminder_count, MAX(created_at) AS last_reminder_at
+            FROM dispatch_events
+            WHERE event_type = 'reply_reminder'
+            GROUP BY run_id
+        ) reminder ON reminder.run_id = r.id
+        WHERE (
+            r.require_reply = 1
+            OR r.message_type IN ('request','review','error')
+            OR (r.priority IN ('high','urgent') AND r.message_type NOT IN ('response','approval'))
+        )
+        {where_sql}
+        {order_sql}
+        {limit_sql}
+    """
+
+
+@router.get("/contracts")
+async def list_work_contracts(
+    request: Request,
+    agentId: Optional[str] = None,
+    fromAgent: Optional[str] = None,
+    state: Optional[str] = Query(None, pattern="^(open|overdue|working|queued|seen|sent|missing_reply|failed|answered|closed)$"),
+    category: Optional[str] = Query(None, pattern="^(direct|channel|self_wake)$"),
+    includeClosed: bool = Query(False),
+    limit: int = Query(120, ge=1, le=500),
+):
+    db = await get_db()
+    try:
+        settings = await _load_settings(db)
+        where = []
+        params: list[Any] = []
+        if agentId:
+            where.append("AND r.target_agent = ?")
+            params.append(agentId)
+        if fromAgent:
+            where.append("AND r.from_agent = ?")
+            params.append(fromAgent)
+        if category == "direct":
+            where.append("AND r.from_agent != r.target_agent AND COALESCE(m.source, 'direct') != 'channel'")
+        elif category == "channel":
+            where.append("AND COALESCE(m.source, '') = 'channel'")
+        elif category == "self_wake":
+            where.append("AND r.from_agent = r.target_agent")
+        stale_hours = max(1, int(settings.get("contract_stale_hours", 24) or 24))
+        normalized_state = str(state or "").strip().lower()
+        if normalized_state == "open":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status NOT IN ('completed','failed','cancelled')")
+        elif normalized_state == "answered":
+            where.append("AND COALESCE(r.result_message_id, '') != ''")
+        elif normalized_state == "closed":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status = 'completed' AND r.require_reply = 0")
+        elif normalized_state == "missing_reply":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status = 'completed'")
+        elif normalized_state == "failed":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status IN ('failed','cancelled')")
+        elif normalized_state == "working":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status IN ('claimed','running')")
+        elif normalized_state == "queued":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status = 'queued'")
+        elif normalized_state == "overdue":
+            reminder_minutes = max(1, int(settings.get("reply_reminder_minutes", 6) or 6))
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status NOT IN ('completed','failed','cancelled') AND datetime(r.requested_at) <= datetime('now', ?)")
+            params.append(f"-{reminder_minutes} minutes")
+        elif normalized_state == "seen":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status NOT IN ('queued','claimed','running','completed','failed','cancelled') AND COALESCE(rr.read_at, '') != ''")
+        elif normalized_state == "sent":
+            where.append("AND COALESCE(r.result_message_id, '') = '' AND r.status NOT IN ('queued','claimed','running','completed','failed','cancelled') AND COALESCE(rr.read_at, '') = ''")
+
+        closed_state_requested = normalized_state in {"answered", "closed"}
+        if includeClosed or closed_state_requested:
+            where.append(
+                """
+                AND (
+                    COALESCE(r.result_message_id, '') = ''
+                    OR r.status IN ('queued','claimed','running')
+                    OR datetime(COALESCE(r.finished_at, r.requested_at)) >= datetime('now', ?)
+                )
+                """
+            )
+            params.append(f"-{stale_hours} hours")
+        else:
+            where.append(
+                """
+                AND COALESCE(r.result_message_id, '') = ''
+                """
+            )
+        params.append(limit)
+        cursor = await db.execute(_contract_list_query(where_sql="\n".join(where)), params)
+        now_s = time.time()
+        rows = [_contract_row_to_dict(row, settings=settings, now_s=now_s) for row in await cursor.fetchall()]
+        if normalized_state == "open":
+            rows = [row for row in rows if row["state"] in {"sent", "seen", "queued", "working", "overdue"}]
+        elif normalized_state:
+            rows = [row for row in rows if row["state"] == normalized_state]
+
+        summary = {
+            "total": len(rows),
+            "open": sum(1 for row in rows if row["state"] in {"sent", "seen", "queued", "working", "overdue"}),
+            "overdue": sum(1 for row in rows if row["overdue"]),
+            "working": sum(1 for row in rows if row["state"] == "working"),
+            "queued": sum(1 for row in rows if row["state"] == "queued"),
+            "missingReply": sum(1 for row in rows if row["state"] == "missing_reply"),
+            "answered": sum(1 for row in rows if row["state"] == "answered"),
+            "selfWake": sum(1 for row in rows if row["category"] == "self_wake"),
+            "channel": sum(1 for row in rows if row["category"] == "channel"),
+        }
+        return {"ok": True, "summary": summary, "contracts": rows, "settings": {
+            "replyContractsEnabled": bool(settings.get("reply_contracts_enabled", True)),
+            "replyReminderMinutes": int(settings.get("reply_reminder_minutes", 6) or 6),
+            "replyReminderRepeatMinutes": int(settings.get("reply_reminder_repeat_minutes", 6) or 6),
+            "replyReminderMaxCount": int(settings.get("reply_reminder_max_count", 3) or 3),
+            "contractStaleHours": int(settings.get("contract_stale_hours", 24) or 24),
+        }}
+    finally:
+        await db.close()
+
+
+def _contract_reminder_due(row, *, settings: dict[str, Any], now_s: Optional[float] = None) -> tuple[bool, str]:
+    if not settings.get("reply_contracts_enabled", True):
+        return False, "reply contract reminders are disabled"
+    state = _contract_state(row, settings=settings, now_s=now_s)
+    if not state["overdue"]:
+        return False, f'contract state is {state["state"]}'
+    max_count = max(0, int(settings.get("reply_reminder_max_count", 3) or 3))
+    if max_count and state["reminderCount"] >= max_count:
+        return False, f"max reminders reached ({state['reminderCount']}/{max_count})"
+    last_reminder_at = str((row["last_reminder_at"] if row and "last_reminder_at" in row.keys() else "") or "").strip()
+    if last_reminder_at:
+        repeat_minutes = max(1, int(settings.get("reply_reminder_repeat_minutes", 6) or 6))
+        last_s = _iso_to_epoch(last_reminder_at)
+        if last_s and ((now_s or time.time()) - last_s) < repeat_minutes * 60:
+            return False, f"last reminder was less than {repeat_minutes} minutes ago"
+    return True, ""
+
+
+def _contract_reminder_body(row) -> str:
+    message_id = str(row["message_id"] or "").strip()
+    target = str(row["target_agent"] or "").strip()
+    sender = str(row["from_agent"] or "").strip()
+    subject = str(row["subject"] or "").strip() or "(no subject)"
+    read_hint = (
+        f'comms_inbox(agentId="{target}", messageId="{message_id}")'
+        if message_id
+        else f'comms_run_status(runId="{row["id"]}")'
+    )
+    reply_hint = (
+        f'comms_send(from="{target}", to="{sender}", type="response", inReplyTo="{message_id}", '
+        f'subject="Re: {subject}", body="<answer, blocker, or result>")'
+        if message_id and sender
+        else f'comms_send(from="{target}", to="{sender or "original-sender"}", type="response", body="<answer, blocker, or result>")'
+    )
+    return (
+        "Automated aify-comms reminder: this work message still needs an explicit reply.\n\n"
+        f"Original sender: {sender}\n"
+        f"Original subject: {subject}\n"
+        f"Original message id: {message_id or '(run has no source message id)'}\n"
+        f"Original run id: {row['id']}\n\n"
+        "Read it if needed:\n"
+        f"{read_hint}\n\n"
+        "Use this exact reply anchor when closing the original contract:\n"
+        f"{reply_hint}\n\n"
+        "Close the contract by replying to the original sender/result, not by merely acknowledging this reminder. "
+        "If you are blocked, reply with blocker, evidence checked, and next action."
+    )
+
+
+@router.post("/contracts/reminders/run")
+async def run_contract_reminders(
+    request: Request,
+    runId: Optional[str] = None,
+    dryRun: bool = Query(False),
+    limit: int = Query(50, ge=1, le=200),
+):
+    db = await get_db()
+    try:
+        settings = await _load_settings(db)
+        where = [
+            "AND COALESCE(r.result_message_id, '') = ''",
+            "AND r.status NOT IN ('completed','failed','cancelled')",
+            "AND r.from_agent != r.target_agent",
+        ]
+        params: list[Any] = []
+        if runId:
+            where.append("AND r.id = ?")
+            params.append(runId)
+        params.append(limit)
+        cursor = await db.execute(_contract_list_query(where_sql="\n".join(where), order_sql="ORDER BY r.requested_at ASC"), params)
+        now_s = time.time()
+        candidates = await cursor.fetchall()
+        reminded = []
+        skipped = []
+        for row in candidates:
+            due, reason = _contract_reminder_due(row, settings=settings, now_s=now_s)
+            if not due:
+                skipped.append({"runId": row["id"], "reason": reason})
+                continue
+
+            subject = f"Reminder: reply overdue - {str(row['subject'] or row['id'])[:96]}"
+            body = _contract_reminder_body(row)
+            if dryRun:
+                reminded.append({"runId": row["id"], "targetAgentId": row["target_agent"], "subject": subject, "dryRun": True})
+                continue
+
+            launchable, not_started = await _preflight_live_send_recipients(
+                db,
+                [row["target_agent"]],
+                allow_steer=True,
+                allow_queue_busy=True,
+            )
+            if not launchable:
+                skipped.append({"runId": row["id"], "targetAgentId": row["target_agent"], "reason": "target cannot receive live reminder", "notStarted": not_started})
+                await _append_dispatch_event(db, row["id"], "reply_reminder_skipped", json.dumps(not_started))
+                continue
+
+            message_id = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
+            timestamp_ms = int(time.time() * 1000)
+            await db.execute(
+                """
+                INSERT INTO messages (id, from_agent, to_agent, source, type, subject, body, priority, dispatch_requested, in_reply_to, timestamp)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    message_id,
+                    "dashboard",
+                    row["target_agent"],
+                    "direct",
+                    "info",
+                    subject,
+                    body,
+                    "high" if str(row["priority"] or "").lower() == "urgent" else "normal",
+                    1,
+                    row["message_id"] or None,
+                    timestamp_ms,
+                ),
+            )
+            runs = await _create_dispatch_runs(
+                db,
+                [target for target, _ in launchable],
+                from_agent="dashboard",
+                message_type="info",
+                subject=subject,
+                body=body,
+                priority="high" if str(row["priority"] or "").lower() == "urgent" else "normal",
+                in_reply_to=row["message_id"] or None,
+                dispatch_mode="start_if_possible",
+                execution_mode="managed",
+                requested_runtime=None,
+                message_id=message_id,
+                source_message_ids={row["target_agent"]: message_id},
+                steer=True,
+                require_reply=False,
+            )
+            finalized = await _finalize_dispatch_runs(db, runs, launchable, not_started)
+            await _append_dispatch_event(db, row["id"], "reply_reminder", f"Sent reminder message {message_id}")
+            reminded.append({
+                "runId": row["id"],
+                "targetAgentId": row["target_agent"],
+                "messageId": message_id,
+                "dispatchRuns": finalized,
+            })
+
+        await db.commit()
+        ws = await _get_ws(request)
+        if ws and reminded and not dryRun:
+            await ws.broadcast("contract_reminders_sent", {"count": len(reminded)})
+        return {"ok": True, "dryRun": dryRun, "reminded": reminded, "skipped": skipped}
+    finally:
+        await db.close()
+
+
+@router.post("/contracts/hygiene/repair-read-receipts")
+async def repair_contract_read_receipts(request: Request, limit: int = Query(500, ge=1, le=2000)):
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """
+            SELECT *
+            FROM dispatch_runs
+            WHERE COALESCE(message_id, '') != ''
+              AND status IN ('claimed','running','completed','failed','cancelled')
+            ORDER BY requested_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        now = _now()
+        repaired = 0
+        for row in await cursor.fetchall():
+            repaired += await _mark_dispatch_source_messages_read(db, row, row["target_agent"], now)
+        await db.commit()
+        ws = await _get_ws(request)
+        if ws and repaired:
+            await ws.broadcast("contract_read_receipts_repaired", {"count": repaired})
+        return {"ok": True, "repaired": repaired}
+    finally:
+        await db.close()
+
+
 @router.patch("/dispatch/runs/{run_id}")
 async def update_dispatch_run(run_id: str, req: DispatchRunUpdate, request: Request):
     db = await get_db()
@@ -5346,7 +5869,13 @@ async def update_dispatch_run(run_id: str, req: DispatchRunUpdate, request: Requ
                 )
                 refreshed_cursor = await db.execute("SELECT * FROM dispatch_runs WHERE id = ?", (run_id,))
                 refreshed_row = await refreshed_cursor.fetchone()
-                await _mirror_missing_dispatch_handoff(db, refreshed_row)
+                mirrored_message_id = await _mirror_missing_dispatch_handoff(db, refreshed_row)
+                result_message_id = str((refreshed_row["result_message_id"] if refreshed_row else "") or mirrored_message_id or "").strip()
+                await _close_steered_contracts_for_parent_run(
+                    db,
+                    refreshed_row,
+                    result_message_id=result_message_id,
+                )
                 await _maybe_report_async_manager_result_to_dashboard(db, refreshed_row)
 
         if req.agentStatus:
@@ -5875,25 +6404,30 @@ async def delete_channel(name: str, request: Request):
 @router.post("/channels/{name}/join")
 async def join_channel(name: str, req: ChannelJoin, request: Request):
     validate_name(name, "channel name")
+    validate_name(req.agentId, "agent ID")
     db = await get_db()
     try:
         cursor = await db.execute("SELECT * FROM channels WHERE name = ?", (name,))
         if not await cursor.fetchone():
             raise HTTPException(404, f"Channel '{name}' not found")
         now = _now()
-        await db.execute(
+        insert_cursor = await db.execute(
             "INSERT OR IGNORE INTO channel_members (channel_name, agent_id, joined_at) VALUES (?,?,?)",
             (name, req.agentId, now)
         )
-        # System message
-        await db.execute(
-            "INSERT INTO messages (id, from_agent, channel, source, type, subject, body, timestamp) VALUES (?,?,?,?,?,?,?,?)",
-            (f"{int(time.time()*1000)}-{uuid.uuid4().hex[:8]}", "_system", name, "channel", "info", f"#{name}", f"{req.agentId} joined the channel", int(time.time()*1000))
-        )
+        changed = insert_cursor.rowcount > 0
+        if changed:
+            await db.execute(
+                "INSERT INTO messages (id, from_agent, channel, source, type, subject, body, timestamp) VALUES (?,?,?,?,?,?,?,?)",
+                (f"{int(time.time()*1000)}-{uuid.uuid4().hex[:8]}", "_system", name, "channel", "info", f"#{name}", f"{req.agentId} joined the channel", int(time.time()*1000))
+            )
         await db.commit()
         mem_c = await db.execute("SELECT agent_id FROM channel_members WHERE channel_name = ?", (name,))
         members = [r["agent_id"] for r in await mem_c.fetchall()]
-        return {"ok": True, "members": members}
+        ws = await _get_ws(request)
+        if ws and changed:
+            await ws.broadcast("channel_membership", {"channel": name, "agentId": req.agentId, "action": "join", "members": members})
+        return {"ok": True, "members": members, "changed": changed}
     finally:
         await db.close()
 
@@ -5901,17 +6435,26 @@ async def join_channel(name: str, req: ChannelJoin, request: Request):
 @router.post("/channels/{name}/leave")
 async def leave_channel(name: str, req: ChannelJoin, request: Request):
     validate_name(name, "channel name")
+    validate_name(req.agentId, "agent ID")
     db = await get_db()
     try:
-        await db.execute("DELETE FROM channel_members WHERE channel_name = ? AND agent_id = ?", (name, req.agentId))
-        await db.execute(
-            "INSERT INTO messages (id, from_agent, channel, source, type, subject, body, timestamp) VALUES (?,?,?,?,?,?,?,?)",
-            (f"{int(time.time()*1000)}-{uuid.uuid4().hex[:8]}", "_system", name, "channel", "info", f"#{name}", f"{req.agentId} left the channel", int(time.time()*1000))
-        )
+        cursor = await db.execute("SELECT * FROM channels WHERE name = ?", (name,))
+        if not await cursor.fetchone():
+            raise HTTPException(404, f"Channel '{name}' not found")
+        delete_cursor = await db.execute("DELETE FROM channel_members WHERE channel_name = ? AND agent_id = ?", (name, req.agentId))
+        changed = delete_cursor.rowcount > 0
+        if changed:
+            await db.execute(
+                "INSERT INTO messages (id, from_agent, channel, source, type, subject, body, timestamp) VALUES (?,?,?,?,?,?,?,?)",
+                (f"{int(time.time()*1000)}-{uuid.uuid4().hex[:8]}", "_system", name, "channel", "info", f"#{name}", f"{req.agentId} left the channel", int(time.time()*1000))
+            )
         await db.commit()
         mem_c = await db.execute("SELECT agent_id FROM channel_members WHERE channel_name = ?", (name,))
         members = [r["agent_id"] for r in await mem_c.fetchall()]
-        return {"ok": True, "members": members}
+        ws = await _get_ws(request)
+        if ws and changed:
+            await ws.broadcast("channel_membership", {"channel": name, "agentId": req.agentId, "action": "leave", "members": members})
+        return {"ok": True, "members": members, "changed": changed}
     finally:
         await db.close()
 
