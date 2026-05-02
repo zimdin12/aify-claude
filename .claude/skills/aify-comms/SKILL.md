@@ -10,7 +10,7 @@ You have access to the aify-comms MCP tools (`comms_*` prefix). These let you co
 
 ## Quick Start
 
-**Register the live session first** — always do this at session start or right after an update/restart:
+**For resident/live CLI sessions, register the live session first** — do this at session start or right after an update/restart:
 ```
 comms_register(agentId="my-agent", role="coder", cwd="/path/to/project")
 ```
@@ -39,7 +39,7 @@ comms_envs()
 comms_spawn(from="my-agent", agentId="feature-coder", role="coder", runtime="codex", workspace="/path/to/project", initialMessage="Brief for the new agent")
 ```
 
-Dashboard **Environments -> Spawn Agent** and `comms_spawn` are the same product path: persistent managed agent sessions backed by an environment, workspace, runtime, spawn spec, and session record. Short-lived local subagents inside one Codex task should stay private unless the user explicitly wants them promoted to a comms-visible teammate.
+Dashboard **Environments -> Spawn Agent** and `comms_spawn` are the same product path: persistent managed agent sessions backed by an environment, workspace, runtime, spawn spec, and session record. Dashboard-managed delivered runs are already registered by the environment bridge; do not call `comms_register` inside those runs. Short-lived local subagents inside one Codex task should stay private unless the user explicitly wants them promoted to a comms-visible teammate.
 
 ## Team Communication Contract
 
@@ -75,6 +75,7 @@ Managed runtime policy:
 - Dashboard-managed Codex uses a managed `CODEX_HOME`; the bridge copies the bundled `aify-comms` and `aify-comms-debug` skills into that managed home when it prepares Codex. Use the dashboard's generated resume command so `codex resume --include-non-interactive <thread-id>` reads the correct thread store and skills.
 - Delivered dashboard-managed runs use final plain text as the primary reply protocol. The bridge captures the final answer as run output and stores/threads it into chat; do not call `comms_send` for the current delivered message.
 - Use dashboard **Pause for CLI** before opening a managed session directly. It pauses dashboard delivery so normal chat sends fail fast instead of racing the open CLI and hitting `Session ID ... is already in use`. Re-register from the opened CLI with the same `agentId` so the dashboard stores the current Claude session ID, Codex thread ID, or OpenCode session ID. `claude-aify --resume <id>` exports `CLAUDE_SESSION_ID=<id>` for the MCP process; Codex should still register with `$CODEX_THREAD_ID` and `$AIFY_CODEX_APP_SERVER_URL` when available. Use **Restart** from Sessions when you want dashboard control back.
+- Browser CLI is a planned dashboard ownership mode, not current behavior. Until an environment advertises browser terminal/PTY attach, use **Pause for CLI** plus the native resume command. When browser CLI exists, it must use the same ownership rule: opening the terminal pauses dashboard chat delivery for that session, and returning control resumes dashboard chat delivery.
 - Fresh native handles should come from a new spawn or explicit **Recreate**. Ordinary adopt/restart should preserve the stored handle when the runtime is unchanged; if it cannot, treat that as a recoverable problem instead of accepting context loss silently.
 - Resident sessions keep the permission mode of the CLI the user started. If a resident Claude session says comms tools need approval, restart it with the desired Claude permission flags or use a dashboard-managed session for unattended work.
 - Every delivered managed message includes the recipient's own `agentId`; use that exact ID for `comms_inbox(agentId="...")` when asked to check recent messages between you and the sender.
@@ -100,7 +101,7 @@ Subagent rule:
 Do these steps in order:
 
 1. Rerun the install command from the repo install doc.
-2. Restart the client.
+2. Restart the relevant CLI wrapper/client and any long-running `aify-comms` environment bridge.
 3. Re-register from the exact live session you want other agents to trigger.
 4. Confirm your runtime and resident state with `comms_agent_info`.
 

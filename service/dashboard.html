@@ -1441,8 +1441,14 @@ function pageUrl(name) {
   return base + window.location.search;
 }
 
+function isKnownPage(name) {
+  return ['dashboard', 'work', 'chat', 'workers', 'analytics', 'environments', 'sessions', 'dispatches', 'files', 'instructions', 'settings'].includes(name);
+}
+
 function initialPageFromLocation() {
-  return window.location.pathname.endsWith('/dashboard/dispatches') ? 'dispatches' : 'dashboard';
+  if (window.location.pathname.endsWith('/dashboard/dispatches')) return 'dispatches';
+  const stored = localStorage.getItem('aifyDashboardPage') || '';
+  return isKnownPage(stored) ? stored : 'dashboard';
 }
 
 function pageTitle(name) {
@@ -1462,7 +1468,9 @@ function pageTitle(name) {
 }
 
 function showPage(name, updateHistory = true) {
+  if (!isKnownPage(name)) name = 'dashboard';
   currentPage = name;
+  localStorage.setItem('aifyDashboardPage', name);
   document.body.dataset.page = name;
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
@@ -1676,12 +1684,21 @@ function actionButton(label, title, onclick, classes = '') {
 }
 window._dashboardActions = window._dashboardActions || new Map();
 window._dashboardActionSeq = window._dashboardActionSeq || 0;
+function rememberDashboardAction(id, handler) {
+  window._dashboardActions.set(id, handler);
+  if (window._dashboardActions.size > 2500) {
+    for (const key of window._dashboardActions.keys()) {
+      window._dashboardActions.delete(key);
+      if (window._dashboardActions.size <= 1500) break;
+    }
+  }
+}
 function dashboardActionAttr(id) {
   return `data-dashboard-action="${esc(id)}"`;
 }
 function actionButtonFn(label, title, handler, classes = '') {
   const id = `act_${++window._dashboardActionSeq}`;
-  window._dashboardActions.set(id, handler);
+  rememberDashboardAction(id, handler);
   return `<button class="btn btn-sm ${esc(classes)}"${titleAttr(title || label)} ${dashboardActionAttr(id)}>${esc(label)}</button>`;
 }
 function actionsMenu(items, label = 'Actions', stableKey = '') {
@@ -1738,9 +1755,15 @@ document.addEventListener('toggle', event => {
   const panel = menu.querySelector('.actions-menu-panel');
   if (summary && panel) {
     const rect = summary.getBoundingClientRect();
-    const estimatedHeight = Math.min(420, panel.scrollHeight || 260);
-    const openUp = rect.bottom + estimatedHeight + 12 > window.innerHeight && rect.top > estimatedHeight;
-    const top = openUp ? Math.max(8, rect.top - estimatedHeight - 4) : Math.min(window.innerHeight - 8, rect.bottom + 4);
+    const viewportHeight = Math.max(240, window.innerHeight || document.documentElement.clientHeight || 0);
+    const estimatedHeight = Math.min(420, panel.scrollHeight || 260, Math.max(160, viewportHeight - 16));
+    const belowTop = rect.bottom + 4;
+    const availableBelow = viewportHeight - belowTop - 8;
+    const availableAbove = rect.top - 8;
+    const openUp = availableBelow < estimatedHeight && availableAbove > availableBelow;
+    const top = openUp
+      ? Math.max(8, rect.top - estimatedHeight - 4)
+      : Math.min(Math.max(8, belowTop), Math.max(8, viewportHeight - estimatedHeight - 8));
     const right = Math.max(8, window.innerWidth - rect.right);
     menu.style.setProperty('--menu-top', `${Math.round(top)}px`);
     menu.style.setProperty('--menu-right', `${Math.round(right)}px`);
@@ -2050,8 +2073,13 @@ function dismissResolvedHomeIssues() {
 function syncSelectOptions(selectId, defaultLabel, values) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
+  values = values || [];
   const cur = sel.value;
-  sel.innerHTML = `<option value="">${defaultLabel}</option>` + values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  const signature = JSON.stringify([defaultLabel].concat(values));
+  if (sel.dataset.optionsSignature !== signature) {
+    sel.innerHTML = `<option value="">${defaultLabel}</option>` + values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    sel.dataset.optionsSignature = signature;
+  }
   sel.value = values.includes(cur) ? cur : '';
 }
 
@@ -2483,7 +2511,7 @@ function renderHomeControlRoom(stats, agents, managedAgents, residentAgents, env
     const preview = message.preview || '';
     const peer = message.from === chatIdentity() ? (message.to || '') : (message.from || '');
     const actionId = `flow_${++window._dashboardActionSeq}`;
-    window._dashboardActions.set(actionId, () => isChannel ? selectChatConversation(`channel:${message.channel || ''}`) : openAgentChat(peer));
+    rememberDashboardAction(actionId, () => isChannel ? selectChatConversation(`channel:${message.channel || ''}`) : openAgentChat(peer));
     return `<div class="activity-row" ${dashboardActionAttr(actionId)} title="Open this conversation">` +
       `<div class="activity-route">${esc(route)}</div>` +
       `<div class="activity-main"><div class="activity-title clip-1"${titleAttr(title)}>${esc(title)}</div><div class="activity-preview clip-2"${titleAttr(preview)}>${esc(preview)}</div></div>` +
@@ -2515,7 +2543,7 @@ function renderHomeControlRoom(stats, agents, managedAgents, residentAgents, env
       const state = info.dispatchState?.hasActiveRun ? 'working' : String(info.statusRaw || info.status || 'active').toLowerCase();
       const meta = `${info.role || 'agent'} · ${agentRuntimeLabel(info) || info.wakeMode || 'not live-bound'}`;
       const actionId = `team_${++window._dashboardActionSeq}`;
-      window._dashboardActions.set(actionId, () => openAgentChat(id));
+      rememberDashboardAction(actionId, () => openAgentChat(id));
       return `<div class="team-tile" ${dashboardActionAttr(actionId)} title="Open chat with ${esc(id)}"><b class="clip-1">${esc(id)}</b><span class="clip-2">${esc(meta)}</span><em class="team-state ${esc(state)}">${esc(state)}</em></div>`;
     }).join('') || '<div class="home-empty">No online/active agents. Offline identities are hidden here.</div>';
 
@@ -2585,10 +2613,11 @@ async function renderCurrentPageFromState() {
   }
   if (currentPage === 'analytics') renderAnalytics(window._analytics || {});
   if (currentPage === 'chat') {
-    await refreshSelectedChannelMessages();
+    const selectedMeta = selectedChatMeta();
+    if (selectedMeta.kind === 'channel') await refreshSelectedChannelMessages();
     if (chatComposerIsEditing()) {
       renderChatRail();
-      updateChatControls(selectedChatMeta());
+      updateChatControls(selectedMeta);
       updateChatInspectorVisibility();
       return;
     }
@@ -3105,7 +3134,11 @@ function syncChatFromOptions() {
   if (!sel) return;
   const current = sel.value || localStorage.getItem('aifyChatIdentity') || 'dashboard';
   const ids = ['dashboard'].concat(agentIdsForChat());
-  sel.innerHTML = ids.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join('');
+  const signature = ids.join('\u001f');
+  if (sel.dataset.optionsSignature !== signature) {
+    sel.innerHTML = ids.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join('');
+    sel.dataset.optionsSignature = signature;
+  }
   sel.value = ids.includes(current) ? current : 'dashboard';
   localStorage.setItem('aifyChatIdentity', sel.value);
 }
@@ -3241,7 +3274,7 @@ function chatEmptyDmText() {
 function renderChatRailItem(item) {
   const active = window._chatSelected === item.key ? ' active' : '';
   const actionId = `chat_${++window._dashboardActionSeq}`;
-  window._dashboardActions.set(actionId, () => selectChatConversation(item.key));
+  rememberDashboardAction(actionId, () => selectChatConversation(item.key));
   return `<div class="chat-item${active}" ${dashboardActionAttr(actionId)}>` +
     `<div><div class="chat-item-title clip-1">${esc(item.title)}</div><div class="chat-item-meta clip-1">${esc(item.meta || '')}</div></div>` +
     `${item.unread ? `<span class="chat-unread">${item.unread}</span>` : ''}` +
@@ -3268,9 +3301,10 @@ async function refreshSelectedChannelMessages() {
 }
 
 function selectedChatMeta() {
+  const {dmItems, channelItems} = chatConversations();
+  const validKeys = new Set(dmItems.concat(channelItems).map(item => item.key));
   let key = window._chatSelected;
-  if (!key) {
-    const {dmItems, channelItems} = chatConversations();
+  if (!key || !validKeys.has(key)) {
     key = dmItems[0]?.key || channelItems[0]?.key || '';
     window._chatSelected = key;
   }
@@ -3354,8 +3388,8 @@ async function markSelectedChatRead() {
 
 function renderChat() {
   syncChatFromOptions();
-  renderChatRail();
   const meta = selectedChatMeta();
+  renderChatRail();
   updateChatControls(meta);
   updateChatInspectorVisibility();
   updateChatReplyContext(meta);
@@ -4605,10 +4639,11 @@ function applyRunFiltersAndRender() {
   const runtime = document.getElementById('run-runtime')?.value || '';
   const filtered = (window._allRuns || []).filter(run => {
     const runtimeValue = run.runtime || run.requestedRuntime || '';
-    const haystack = `${run.id} ${run.from} ${run.targetAgentId} ${run.subject} ${run.summary || ''} ${run.error || ''}`.toLowerCase();
+    const mergedFrom = run.mergedFromAgents || [];
+    const haystack = `${run.id} ${run.from} ${mergedFrom.join(' ')} ${run.targetAgentId} ${run.subject} ${run.summary || ''} ${run.error || ''}`.toLowerCase();
     return (!text || haystack.includes(text)) &&
            (!status || run.status === status) &&
-           (!fromAgent || run.from === fromAgent) &&
+           (!fromAgent || run.from === fromAgent || mergedFrom.includes(fromAgent)) &&
            (!toAgent || run.targetAgentId === toAgent) &&
            (!runtime || runtimeValue === runtime);
   });
@@ -4640,7 +4675,7 @@ async function showChannelList() {
     let html = '<h2>Channels</h2><div class="table-wrap"><table class="compact-table"><thead><tr><th>Channel</th><th>Members</th><th>Messages</th><th>Unread</th><th>Created By</th></tr></thead><tbody>';
     for (const ch of channels) {
       const actionId = `channel_${++window._dashboardActionSeq}`;
-      window._dashboardActions.set(actionId, () => openChannel(ch.name));
+      rememberDashboardAction(actionId, () => openChannel(ch.name));
       html += `<tr style="cursor:pointer" ${dashboardActionAttr(actionId)}>` +
         `<td><b style="color:#58a6ff">#${esc(ch.name)}</b><br><span class="t clip-1"${titleAttr(ch.description || '')}>${esc(ch.description||'')}</span></td>` +
         `<td><span class="clip-2"${titleAttr((ch.members||[]).join(', '))}>${esc((ch.members||[]).join(', '))}</span></td>` +

@@ -289,6 +289,10 @@ def _contract_row_to_dict(row, *, settings: dict[str, Any], now_s: Optional[floa
     state = _contract_state(row, settings=settings, now_s=now_s)
     body = str((row["message_body"] if row and "message_body" in row.keys() else "") or row["body"] or "")
     result_body = str((row["result_body"] if row and "result_body" in row.keys() else "") or "")
+    result_message_id = str(row["result_message_id"] or "").strip()
+    reply_state = _dispatch_reply_state(row)
+    if state["replyExpected"] and reply_state == "not_required":
+        reply_state = "sent" if result_message_id else "awaiting"
     return {
         "id": row["id"],
         "messageId": row["message_id"] or "",
@@ -301,8 +305,8 @@ def _contract_row_to_dict(row, *, settings: dict[str, Any], now_s: Optional[floa
         "status": row["status"],
         "runtime": row["runtime"] or "",
         "requireReply": _row_require_reply(row),
-        "replyState": _dispatch_reply_state(row),
-        "resultMessageId": row["result_message_id"] or "",
+        "replyState": reply_state,
+        "resultMessageId": result_message_id,
         "resultPreview": result_body[:420],
         "requestedAt": row["requested_at"],
         "claimedAt": row["claimed_at"],
@@ -1660,19 +1664,19 @@ async def _find_mergeable_queued_run(
     recipient_id: str,
     from_agent: str,
 ):
-    # Merge across ALL senders, not just the same sender. The merged body
-    # includes sender attribution per item so the recipient knows who sent
-    # what. Oldest message at the top, newest at the bottom.
+    # Keep queued merge ownership scoped to one sender. Cross-sender merge
+    # loses the contract owner and makes handoff replies go to the wrong agent.
     cursor = await db.execute(
         """
         SELECT *
         FROM dispatch_runs
         WHERE target_agent = ?
+          AND from_agent = ?
           AND status = 'queued'
         ORDER BY requested_at ASC
         LIMIT 1
         """,
-        (recipient_id,),
+        (recipient_id, from_agent),
     )
     return await cursor.fetchone()
 
@@ -1928,6 +1932,40 @@ async def _create_dispatch_runs(
                     body=steer_body,
                     source_message_id=source_message_id,
                 )
+                steer_contract_run_id = None
+                if source_message_id:
+                    steer_contract_run_id = f"run_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+                    await db.execute(
+                        """
+                        INSERT INTO dispatch_runs (
+                            id, message_id, from_agent, target_agent, dispatch_mode, execution_mode, requested_runtime,
+                            message_type, subject, body, priority, in_reply_to, status, require_reply, requested_at
+                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        """,
+                        (
+                            steer_contract_run_id,
+                            source_message_id,
+                            from_agent,
+                            recipient_id,
+                            "steer",
+                            execution_mode,
+                            requested_runtime or "",
+                            message_type,
+                            subject,
+                            body,
+                            priority,
+                            in_reply_to,
+                            "delivered",
+                            1 if require_reply else 0,
+                            requested_at,
+                        ),
+                    )
+                    await _append_dispatch_event(
+                        db,
+                        steer_contract_run_id,
+                        "steered",
+                        f"Delivered as steer control {control_id} into active run {active_run['runId']}",
+                    )
                 runs.append({
                     "runId": active_run["runId"],
                     "targetAgentId": recipient_id,
@@ -1935,6 +1973,7 @@ async def _create_dispatch_runs(
                     "steered": True,
                     "requireReply": require_reply,
                     "controlId": control_id,
+                    "contractRunId": steer_contract_run_id,
                     "steeredIntoActiveRun": {
                         "runId": active_run["runId"],
                         "status": active_run["status"],
@@ -2197,6 +2236,9 @@ def _is_replaceable_auto_handoff_message(existing_message, replied_run) -> bool:
     )
 
 
+_HANDOFF_REPLY_TYPES = {"response", "review", "error", "approval"}
+
+
 async def _link_reply_message_to_dispatch_run(
     db,
     *,
@@ -2206,6 +2248,8 @@ async def _link_reply_message_to_dispatch_run(
     reply_type: str,
     reply_body: str,
 ) -> bool:
+    if str(reply_type or "").strip().lower() not in _HANDOFF_REPLY_TYPES:
+        return False
     run_cursor = await db.execute(
         """
         SELECT * FROM dispatch_runs
@@ -2252,7 +2296,7 @@ async def _link_reply_message_to_dispatch_run(
     return True
 
 
-_UNTHREADED_HANDOFF_TYPES = {"response", "review", "error", "approval"}
+_UNTHREADED_HANDOFF_TYPES = _HANDOFF_REPLY_TYPES
 _UNTHREADED_HANDOFF_WINDOW_MS = 24 * 60 * 60 * 1000
 
 
@@ -4913,6 +4957,8 @@ async def create_dispatch(req: DispatchRequest, request: Request):
             reason = None if row else "agent is not registered"
             if row:
                 execution_mode, reason = _agent_execution_mode(row, req.requestedRuntime)
+                if not reason and execution_mode:
+                    reason = await _managed_environment_unavailable_reason(db, row)
             if reason or not execution_mode:
                 not_started.append(_dispatch_fix_hint(recipient_id, row, reason or "active dispatch unavailable"))
             else:

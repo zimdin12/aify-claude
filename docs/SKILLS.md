@@ -24,6 +24,7 @@ Current dashboard behavior reflected by the skills:
 - normal sends are live-delivery gated for offline/stale/stopped/no-wake targets; busy steer-capable targets receive normal sends as current-run steer, busy non-steer targets queue/merge as next-turn work, and `queueIfBusy=true` forces explicit next-turn delivery
 - environment bridge roots are safety boundaries, not per-agent workspace defaults; current launchers/service builds reject or ignore flag-like roots such as `--help`
 - managed agents have real turn boundaries, but teamwork is not lockstep: agents may exchange messages mid-turn, run independent lanes in parallel, and continue bounded work inside a turn. Final text replies do not schedule later work. For autonomous project work, agents must send the next wake before finishing when more work should happen after the current turn. If they own the next bounded chunk, they self-schedule with `comms_send(to="<own-agent-id>", type="request", queueIfBusy=true, ...)`; if another teammate owns it, they message that teammate. Vague "need confirmation" is not a stop condition when docs/team roles can answer it.
+- browser CLI is a planned dashboard ownership mode, not current behavior. Skills should not imply it works until the environment bridge advertises terminal/PTY attach. Current direct CLI access uses **Pause for CLI** plus the native resume command; future browser CLI must pause dashboard chat delivery while the terminal owns the session.
 - delivered dashboard-managed runs should answer the current message in final plain text; the bridge captures and stores/threads that answer into chat
 - delivered dashboard-managed runs must not call `comms_register`; managed identities are already registered by the environment bridge, and current builds reject that call to prevent accidental resident/manual downgrades
 - if a later teammate reply completes a promise to report back to the human outside the current delivered run, managers/operators should send `comms_send(to="dashboard", type="info" or "response", ...)`; dashboard is a store-only human recipient, and backend summary mirroring is only a safety net
@@ -42,6 +43,14 @@ No new skill name was added in this pass. The existing `aify-comms` and `aify-co
 ```bash
 bash install.sh --client codex http://localhost:8800 --with-hook
 ```
+
+For Claude Code installs, use:
+
+```bash
+bash install.sh --client claude http://localhost:8800 --with-hook
+```
+
+After either install/update, restart the relevant CLI wrapper/client and any long-running `aify-comms` environment bridge so both resident sessions and managed environment spawns load the updated skills and bridge code.
 
 The installer copies the Codex skills from:
 

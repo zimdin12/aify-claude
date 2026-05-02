@@ -2,6 +2,8 @@
 
 This document pressure-tests the plan after the initial scaffold.
 
+Status note: this is a design-pressure document, not the current operator guide. For live setup and behavior, prefer `README.md`, `docs/BRIDGE_SETUP.md`, `docs/SESSION_MODEL.md`, `docs/COMMUNICATION_GUIDE.md`, `docs/DASHBOARD_REVIEW.md`, and the installed `aify-comms` / `aify-comms-debug` skills.
+
 ## Strongest Direction
 
 The project should be framed as a **control plane for agent teams**, not as "a better message bus."

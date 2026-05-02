@@ -79,6 +79,15 @@ curl http://localhost:8800/health
 
 The default port is `8800`. Change `.env` only if another service already uses that port.
 
+Install the host-side CLI integration on every machine/runtime that should expose `aify-comms`, `codex-aify`, or `claude-aify`. Pick the client you use on that host:
+
+```bash
+bash install.sh --client codex http://localhost:8800 --with-hook
+bash install.sh --client claude http://localhost:8800 --with-hook
+```
+
+After an update, rerun the relevant install command and restart both the CLI client and any long-running `aify-comms` bridge process so managed spawns and resident sessions load the same code/skills.
+
 ## Connect Environments
 
 Dashboard spawns require at least one host-side environment bridge. The bridge is the process that actually runs Codex, Claude Code, or OpenCode on Windows, WSL, Linux, Docker, or a remote machine.
