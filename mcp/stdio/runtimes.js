@@ -95,10 +95,11 @@ export function terminateProcessTree(proc, signal = "SIGTERM") {
     const pid = Number(proc.pid);
     if (Number.isInteger(pid) && pid > 0) {
       // Managed Codex/OpenCode spawn long-lived MCP children. Kill the
-      // process group first, then explicitly walk descendants as a fallback
-      // for processes that escaped the group or were orphaned during shutdown.
+      // process group and descendants. Capture descendants before killing the
+      // parent, otherwise escaped children can be reparented before we see them.
+      const descendants = descendantPids(pid).reverse();
       killPid(-pid, signal);
-      for (const childPid of descendantPids(pid).reverse()) {
+      for (const childPid of descendants) {
         killPid(childPid, signal);
       }
     }

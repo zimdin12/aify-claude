@@ -1117,7 +1117,7 @@ def _normalize_roots(roots: Optional[list[str]]) -> list[str]:
     seen: set[str] = set()
     for root in roots or []:
         value = str(root or "").strip()
-        if not value:
+        if not value or value.startswith("-"):
             continue
         key = value.replace("\\", "/").rstrip("/").lower()
         if key in seen:

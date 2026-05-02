@@ -240,6 +240,10 @@ if [ "\${1:-}" != "" ] && [[ "\${1:-}" == http* ]]; then
   SERVER_URL="\$1"
   shift
 fi
+if [ "\${1:-}" != "" ] && [[ "\${1:-}" == -* ]]; then
+  echo "aify-comms: unknown option '\$1'. Run 'aify-comms --help' for usage." >&2
+  exit 2
+fi
 
 ROOTS="\$(node - "\$SAFE_CWD" "\${AIFY_CWD_ROOTS:-}" "\$@" <<'NODE'
 const path = require("path");
@@ -249,11 +253,19 @@ if (envRoots) roots.push(...String(envRoots).split(path.delimiter));
 roots.push(...extraRoots);
 const seen = new Set();
 const result = [];
+const skipped = [];
 for (const raw of roots) {
   const value = String(raw || "").trim();
+  if (value.startsWith("-")) {
+    skipped.push(value);
+    continue;
+  }
   if (!value || seen.has(value)) continue;
   seen.add(value);
   result.push(value);
+}
+if (skipped.length) {
+  console.error("aify-comms: ignored invalid root argument(s): " + skipped.join(", "));
 }
 console.log(result.join(path.delimiter));
 NODE

@@ -195,6 +195,12 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(rows[0]["label"], "Updated bridge")
         self.assertEqual(rows[0]["cwd_roots"], '["/mnt/c/Docker", "/home/test"]')
 
+    def test_environment_heartbeat_ignores_flag_like_roots(self):
+        env = self._heartbeat_environment(cwdRoots=["/workspace", "--help", "-h", "/extra"])
+
+        self.assertEqual(env["cwdRoots"], ["/workspace", "/extra"])
+        self.assertEqual(env["metadata"]["advertisedCwdRoots"], ["/workspace", "/extra"])
+
     def test_environment_roots_override_survives_heartbeat_until_reset(self):
         first = self._heartbeat_environment(cwdRoots=["/workspace"])
         self.assertEqual(first["cwdRoots"], ["/workspace"])
