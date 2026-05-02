@@ -1289,7 +1289,7 @@ aify-comms</pre>
       <ul>
         <li><b>Messaging:</b> <code>comms_register</code>, <code>comms_envs</code>, <code>comms_spawn</code>, <code>comms_compact</code>, <code>comms_agents</code>, <code>comms_status</code>, <code>comms_agent_info</code>, <code>comms_send</code> (normal teamwork; live-gated), <code>comms_inbox</code>, <code>comms_unsend</code>, <code>comms_search</code>, <code>comms_contracts</code>. <code>comms_listen</code> remains only as deprecated compatibility/debug long-polling.</li>
         <li><b>Advanced run control:</b> <code>comms_dispatch</code> (debug/strict run tracking), <code>comms_run_status</code>, <code>comms_run_interrupt</code>. Normal users and agents should send messages, not dispatches.</li>
-        <li><b>Channels:</b> <code>comms_channel_create</code>, <code>comms_channel_join</code> (+ invite others), <code>comms_channel_send</code> (live-gated), <code>comms_channel_read</code>, <code>comms_channel_list</code>. In the dashboard, channels live inside Chat.</li>
+        <li><b>Channels:</b> <code>comms_channel_create</code>, <code>comms_channel_join</code> (+ invite/rejoin others), <code>comms_channel_send</code> (live-gated), <code>comms_channel_read</code>, <code>comms_channel_list</code>. In the dashboard, channels live inside Chat; leaving/removing a member stops future fan-out for that identity but keeps channel history.</li>
         <li><b>File sharing:</b> <code>comms_share</code> (text + binary), <code>comms_read</code>, <code>comms_files</code></li>
         <li><b>Management:</b> <code>comms_clear</code>, <code>comms_dashboard</code></li>
       </ul>
@@ -3300,9 +3300,7 @@ function renderGlobalMessageSearch() {
     return haystack.includes(q);
   }).sort((a, b) => timeValue(b.timestamp) - timeValue(a.timestamp)).slice(0, 20);
   const html = hits.length ? hits.map(m => {
-    const actionId = `global_msg_${++window._dashboardActionSeq}`;
-    rememberDashboardAction(actionId, () => openGlobalMessageHit(m.from, m._to));
-    return `<div class="chat-global-hit" ${dashboardActionAttr(actionId)}>` +
+    return `<div class="chat-global-hit" onclick="openGlobalMessageHit(${esc(jsArg(m.from || ''))},${esc(jsArg(m._to || ''))})">` +
       `<b class="clip-1">${esc(m.subject || m.preview || m.body || 'Message')}</b>` +
       `<span class="clip-1">${esc(m.from || '')} -> ${esc(m._to || '')} · ${esc(fmtTime(m.timestamp))}</span>` +
       `</div>`;
@@ -3340,9 +3338,7 @@ function chatEmptyDmText() {
 
 function renderChatRailItem(item) {
   const active = window._chatSelected === item.key ? ' active' : '';
-  const actionId = `chat_${++window._dashboardActionSeq}`;
-  rememberDashboardAction(actionId, () => selectChatConversation(item.key));
-  return `<div class="chat-item${active}" ${dashboardActionAttr(actionId)}>` +
+  return `<div class="chat-item${active}" onclick="selectChatConversation(${esc(jsArg(item.key))})">` +
     `<div><div class="chat-item-title clip-1">${esc(item.title)}</div><div class="chat-item-meta clip-1">${esc(item.meta || '')}</div></div>` +
     `${item.unread ? `<span class="chat-unread">${item.unread}</span>` : ''}` +
     `</div>`;

@@ -27,7 +27,7 @@ It now adds a first-class agent lifecycle layer:
 - portable compact/continue into fresh managed backings when a phase changes or context gets noisy
 - Work Loop contracts for overdue replies, self-wakes, missing handoffs, and inbox hygiene
 - runtime/session visibility, with token/cost telemetry shown only when runtimes expose it
-- real chat UI with DMs, channels, mentions, artifacts, and run/handoff state near the conversation
+- real chat UI with DMs, channels, conversation/inbox search, bottom-jump, artifacts, and run/handoff state near the conversation
 
 ## Target Mental Model
 

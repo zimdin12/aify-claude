@@ -6404,25 +6404,30 @@ async def delete_channel(name: str, request: Request):
 @router.post("/channels/{name}/join")
 async def join_channel(name: str, req: ChannelJoin, request: Request):
     validate_name(name, "channel name")
+    validate_name(req.agentId, "agent ID")
     db = await get_db()
     try:
         cursor = await db.execute("SELECT * FROM channels WHERE name = ?", (name,))
         if not await cursor.fetchone():
             raise HTTPException(404, f"Channel '{name}' not found")
         now = _now()
-        await db.execute(
+        insert_cursor = await db.execute(
             "INSERT OR IGNORE INTO channel_members (channel_name, agent_id, joined_at) VALUES (?,?,?)",
             (name, req.agentId, now)
         )
-        # System message
-        await db.execute(
-            "INSERT INTO messages (id, from_agent, channel, source, type, subject, body, timestamp) VALUES (?,?,?,?,?,?,?,?)",
-            (f"{int(time.time()*1000)}-{uuid.uuid4().hex[:8]}", "_system", name, "channel", "info", f"#{name}", f"{req.agentId} joined the channel", int(time.time()*1000))
-        )
+        changed = insert_cursor.rowcount > 0
+        if changed:
+            await db.execute(
+                "INSERT INTO messages (id, from_agent, channel, source, type, subject, body, timestamp) VALUES (?,?,?,?,?,?,?,?)",
+                (f"{int(time.time()*1000)}-{uuid.uuid4().hex[:8]}", "_system", name, "channel", "info", f"#{name}", f"{req.agentId} joined the channel", int(time.time()*1000))
+            )
         await db.commit()
         mem_c = await db.execute("SELECT agent_id FROM channel_members WHERE channel_name = ?", (name,))
         members = [r["agent_id"] for r in await mem_c.fetchall()]
-        return {"ok": True, "members": members}
+        ws = await _get_ws(request)
+        if ws and changed:
+            await ws.broadcast("channel_membership", {"channel": name, "agentId": req.agentId, "action": "join", "members": members})
+        return {"ok": True, "members": members, "changed": changed}
     finally:
         await db.close()
 
@@ -6430,17 +6435,26 @@ async def join_channel(name: str, req: ChannelJoin, request: Request):
 @router.post("/channels/{name}/leave")
 async def leave_channel(name: str, req: ChannelJoin, request: Request):
     validate_name(name, "channel name")
+    validate_name(req.agentId, "agent ID")
     db = await get_db()
     try:
-        await db.execute("DELETE FROM channel_members WHERE channel_name = ? AND agent_id = ?", (name, req.agentId))
-        await db.execute(
-            "INSERT INTO messages (id, from_agent, channel, source, type, subject, body, timestamp) VALUES (?,?,?,?,?,?,?,?)",
-            (f"{int(time.time()*1000)}-{uuid.uuid4().hex[:8]}", "_system", name, "channel", "info", f"#{name}", f"{req.agentId} left the channel", int(time.time()*1000))
-        )
+        cursor = await db.execute("SELECT * FROM channels WHERE name = ?", (name,))
+        if not await cursor.fetchone():
+            raise HTTPException(404, f"Channel '{name}' not found")
+        delete_cursor = await db.execute("DELETE FROM channel_members WHERE channel_name = ? AND agent_id = ?", (name, req.agentId))
+        changed = delete_cursor.rowcount > 0
+        if changed:
+            await db.execute(
+                "INSERT INTO messages (id, from_agent, channel, source, type, subject, body, timestamp) VALUES (?,?,?,?,?,?,?,?)",
+                (f"{int(time.time()*1000)}-{uuid.uuid4().hex[:8]}", "_system", name, "channel", "info", f"#{name}", f"{req.agentId} left the channel", int(time.time()*1000))
+            )
         await db.commit()
         mem_c = await db.execute("SELECT agent_id FROM channel_members WHERE channel_name = ?", (name,))
         members = [r["agent_id"] for r in await mem_c.fetchall()]
-        return {"ok": True, "members": members}
+        ws = await _get_ws(request)
+        if ws and changed:
+            await ws.broadcast("channel_membership", {"channel": name, "agentId": req.agentId, "action": "leave", "members": members})
+        return {"ok": True, "members": members, "changed": changed}
     finally:
         await db.close()
 

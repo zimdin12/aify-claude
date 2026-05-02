@@ -64,14 +64,17 @@ Agents can inspect the same view through `comms_contracts(...)` when they need t
 Chat should feel like a real team messenger:
 
 - left sidebar: DMs and channels
+- sidebar search: filter conversations, and search loaded direct-message inbox history across identities
 - main pane: message timeline
+- timeline search: filter the selected conversation without changing the selected conversation or read state
+- scroll behavior: realtime refresh should not steal composer focus or force-scroll while the operator is reading; show a bottom-jump button when the newest messages are below the viewport
 - composer: body-first for normal chat; subject remains available for handoffs and searchable task titles
 - message badges: `live`, `not sent`, `handoff pending`, `handoff done`; legacy stored-only messages may appear in history/debug views
 - mention support: `@agent`, `@group`, `@channel`
 - quick actions: reply/follow-up, mark read, clear DM/delete channel, share artifact
 - thread drawer for run details, artifacts, and handoff state
 - peek mode: watch a selected conversation without automatically marking incoming messages read; explicit Mark read remains available for direct messages and selected channels
-- channel details: show current members and allow adding/removing known agents from the right-side Members panel; add selection must be stable across realtime refreshes
+- channel details: show current members and allow adding/removing known agents from the right-side Members panel; the current viewing identity uses a clear **Leave** action and can be re-added later; add selection must be stable across realtime refreshes
 - artifact uploads store bytes in the aify-comms shared artifact service and inserted chat text should tell agents to use `comms_read(name="...")`
 - reply expectations are inferred from message type: requests/reviews should get explicit replies; routine info does not need a special toggle
 - normal dashboard chat has one send path; strict dispatch remains an advanced API/debug path, not a primary composer option

@@ -13,10 +13,16 @@ from service.routers.api_v2 import router
 
 
 class _DummyWS:
+    def __init__(self):
+        self.broadcasts = []
+        self.notifications = []
+
     async def broadcast(self, *_args, **_kwargs):
+        self.broadcasts.append((_args, _kwargs))
         return None
 
     async def notify_agent(self, *_args, **_kwargs):
+        self.notifications.append((_args, _kwargs))
         return None
 
 
@@ -27,7 +33,8 @@ class ApiV2RegressionTests(unittest.TestCase):
         asyncio.run(init_db(self._db_path))
 
         app = FastAPI()
-        app.state.ws_manager = _DummyWS()
+        self.ws = _DummyWS()
+        app.state.ws_manager = self.ws
         app.state.config = SimpleNamespace(data_dir=self._tmpdir.name)
         app.include_router(router, prefix="/api/v1")
         self.client = TestClient(app)
@@ -142,6 +149,41 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(channels.status_code, 200, channels.text)
         listed = {item["name"]: item for item in channels.json()["channels"]}
         self.assertEqual(listed["room"]["messageCount"], 2)
+
+    def test_channel_join_leave_are_idempotent_and_validate_channel(self):
+        self._register("alice")
+        self._register("bob")
+
+        response = self.client.post(
+            "/api/v1/channels",
+            json={"name": "room", "description": "", "createdBy": "alice"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        first_join = self.client.post("/api/v1/channels/room/join", json={"agentId": "bob"})
+        self.assertEqual(first_join.status_code, 200, first_join.text)
+        self.assertTrue(first_join.json()["changed"])
+        second_join = self.client.post("/api/v1/channels/room/join", json={"agentId": "bob"})
+        self.assertEqual(second_join.status_code, 200, second_join.text)
+        self.assertFalse(second_join.json()["changed"])
+
+        channel = self.client.get("/api/v1/channels/room")
+        self.assertEqual(channel.status_code, 200, channel.text)
+        self.assertEqual([message["body"] for message in channel.json()["messages"]].count("bob joined the channel"), 1)
+
+        first_leave = self.client.post("/api/v1/channels/room/leave", json={"agentId": "bob"})
+        self.assertEqual(first_leave.status_code, 200, first_leave.text)
+        self.assertTrue(first_leave.json()["changed"])
+        second_leave = self.client.post("/api/v1/channels/room/leave", json={"agentId": "bob"})
+        self.assertEqual(second_leave.status_code, 200, second_leave.text)
+        self.assertFalse(second_leave.json()["changed"])
+
+        channel = self.client.get("/api/v1/channels/room")
+        self.assertEqual(channel.status_code, 200, channel.text)
+        self.assertEqual([message["body"] for message in channel.json()["messages"]].count("bob left the channel"), 1)
+
+        missing = self.client.post("/api/v1/channels/missing/leave", json={"agentId": "bob"})
+        self.assertEqual(missing.status_code, 404, missing.text)
 
     def test_environment_heartbeat_upserts_persistent_record(self):
         payload = {

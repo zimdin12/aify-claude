@@ -65,6 +65,8 @@ For `info`, reply with a short acknowledgement only when it affects coordination
 
 For channel messages, avoid automatic loops. Reply when you are named, responsible, asked a question, or have useful evidence. Use direct messages for owner-specific follow-up. Managers should ask named agents or owners for evidence instead of sending broad "everyone answer" prompts.
 
+Channel membership is operational state, not message history. Leaving or removing an agent from a channel stops future channel fan-out/live updates for that identity, but the channel and history remain; rejoining restores future delivery.
+
 Agents may send multiple messages in a row when it helps coordination, for example an acknowledgement followed by a result, or a blocker followed by a fix. Do not split one coherent answer into chat spam.
 
 ## Work Contracts

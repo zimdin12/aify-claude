@@ -167,7 +167,7 @@ Gotchas regardless of runtime:
 | Tool | Use |
 |------|-----|
 | `comms_channel_create` | Create a named channel. You're auto-joined. |
-| `comms_channel_join` | Join yourself or add another agent: `comms_channel_join(channel, from, agentId="coder")`. |
+| `comms_channel_join` | Join/rejoin yourself or add another agent: `comms_channel_join(channel, from, agentId="coder")`. |
 | `comms_channel_send` | Send to a channel. Like direct send, it is live-delivery gated for channel members. |
 | `comms_channel_read` | Read recent canonical channel messages. Inbox fan-out copies are not shown as extra channel posts. |
 | `comms_channel_list` | List all channels with member/message counts. |
@@ -245,7 +245,7 @@ When you receive a wake notification or finish a task, check inbox before starti
 - Before diagnosing another agent's issues, call `comms_agent_info` first — don't guess.
 - Brief acks are fine — "on it" beats a paragraph.
 
-Dashboard note: Home is a live operations queue, not a full audit log. Work Loop is the contract view: overdue replies, working/queued requests, self-wakes, old unread noise, and repair actions. Pending handoffs can be repaired from the dashboard, and reviewed historical failures can be dismissed from Home while remaining available in Runs/Environments. Sessions hides ended/completed/cancelled rows by default; use "Show ended/debug sessions" when investigating lifecycle history. Chat Peek mode lets an operator watch conversations without marking incoming messages read; explicit Mark read acknowledges direct messages or the selected channel for the current viewing identity.
+Dashboard note: Home is a live operations queue, not a full audit log. Work Loop is the contract view: overdue replies, working/queued requests, self-wakes, old unread noise, and repair actions. Pending handoffs can be repaired from the dashboard, and reviewed historical failures can be dismissed from Home while remaining available in Runs/Environments. Sessions hides ended/completed/cancelled rows by default; use "Show ended/debug sessions" when investigating lifecycle history. Chat Peek mode lets an operator watch conversations without marking incoming messages read; explicit Mark read acknowledges direct messages or the selected channel for the current viewing identity. Channel Leave/Remove stops future fan-out for that identity but keeps history; re-add the identity from Chat details to rejoin. Chat has selected-conversation search, loaded inbox search, and a bottom-jump button for long active conversations.
 
 ## Reference Docs
 
