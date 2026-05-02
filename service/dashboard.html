@@ -1820,6 +1820,13 @@ function fmtShortTime(ts) {
   return `${d.getMonth() + 1}/${d.getDate()} ${time}`;
 }
 
+function timeValue(ts) {
+  if (!ts) return 0;
+  if (typeof ts === 'number') return Number.isFinite(ts) ? ts : 0;
+  const parsed = Date.parse(ts);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function fmtSize(b) {
   if (b > 1048576) return (b/1048576).toFixed(1) + ' MB';
   if (b > 1024) return (b/1024).toFixed(1) + ' KB';
@@ -2405,10 +2412,10 @@ function renderHomePanels(stats, agents, managedAgents, manualAgents, environmen
     const peer = msg.from === identity ? msg._to : (msg._to === identity ? msg.from : '');
     if (!peer || peer === identity || peer.startsWith('#')) continue;
     const existing = seenPeers.get(peer);
-    if (!existing || (msg.timestamp || 0) > (existing.timestamp || 0)) seenPeers.set(peer, msg);
+    if (!existing || timeValue(msg.timestamp) > timeValue(existing.timestamp)) seenPeers.set(peer, msg);
   }
   const conversationRows = [...seenPeers.entries()]
-    .sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0))
+    .sort((a, b) => timeValue(b[1].timestamp) - timeValue(a[1].timestamp))
     .slice(0, 6)
     .map(([peer, msg]) => {
       const unread = unreadForAgentConversation(peer, identity);
@@ -3117,7 +3124,7 @@ function changeChatIdentity() {
 function conversationPreviewForAgent(agentId, identity = chatIdentity()) {
   return (window._allMsgs || [])
     .filter(m => (m.from === agentId && m._to === identity) || (m.from === identity && m._to === agentId))
-    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))[0] || null;
+    .sort((a, b) => timeValue(b.timestamp) - timeValue(a.timestamp))[0] || null;
 }
 
 function unreadForAgentConversation(agentId, identity = chatIdentity()) {
@@ -3164,11 +3171,11 @@ function chatConversations() {
   for (const m of window._allMsgs || []) {
     const fromInfo = (window._allAgents || []).find(([agentId]) => agentId === m.from)?.[1] || null;
     const toInfo = (window._allAgents || []).find(([agentId]) => agentId === m._to)?.[1] || null;
-    if (m._to === identity && m.from && m.from !== '_system' && fromInfo && isLiveWakeAgent(fromInfo)) agentIds.add(m.from);
-    if (m.from === identity && m._to && toInfo && isLiveWakeAgent(toInfo)) agentIds.add(m._to);
+    if (m._to === identity && m.from && m.from !== '_system' && fromInfo) agentIds.add(m.from);
+    if (m.from === identity && m._to && toInfo) agentIds.add(m._to);
   }
   agentIds.delete(identity);
-  const dmItems = [...agentIds].sort().map(id => {
+  const dmItems = [...agentIds].map(id => {
     const info = (window._allAgents || []).find(([agentId]) => agentId === id)?.[1] || {};
     const last = conversationPreviewForAgent(id, identity);
     if (openOnly && !last) return null;
@@ -3180,9 +3187,15 @@ function chatConversations() {
       title: id,
       meta: `${info.role || 'agent'}${info.statusRaw ? ' · ' + info.statusRaw : ''}${last?.preview ? ' · ' + last.preview : ''}`,
       unread: unreadForAgentConversation(id, identity),
-      ts: last?.timestamp || Date.parse(info.lastSeen || '') || 0,
+      ts: timeValue(last?.timestamp) || timeValue(info.lastSeen),
     };
-  }).filter(Boolean);
+  }).filter(Boolean).sort((a, b) => {
+    const unreadDiff = Number(b.unread > 0) - Number(a.unread > 0);
+    if (unreadDiff) return unreadDiff;
+    const timeDiff = (b.ts || 0) - (a.ts || 0);
+    if (timeDiff) return timeDiff;
+    return a.title.localeCompare(b.title);
+  });
   const channelItems = (window._channels || []).map(ch => ({
     key: `channel:${ch.name}`,
     kind: 'channel',
@@ -3287,7 +3300,7 @@ function messagesForSelectedChat(meta) {
   if (meta.kind === 'dm') {
     return (window._allMsgs || [])
       .filter(m => (m.from === meta.id && m._to === identity) || (m.from === identity && m._to === meta.id))
-      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      .sort((a, b) => timeValue(a.timestamp) - timeValue(b.timestamp));
   }
   return [];
 }
@@ -4130,7 +4143,7 @@ function recentContextForAgent(agentId, count) {
   const direct = (window._allMsgs || [])
     .filter(message => message.from === agentId || message._to === agentId)
     .map(message => ({
-      timestamp: message.timestamp || 0,
+      timestamp: message.timestamp || '',
       route: `${message.from || ''} -> ${message._to || ''}`,
       subject: message.subject || '',
       preview: message.body || message.preview || '',
@@ -4138,13 +4151,13 @@ function recentContextForAgent(agentId, count) {
   const channel = (window._recentMessages || [])
     .filter(message => message.source === 'channel' && message.from === agentId)
     .map(message => ({
-      timestamp: message.timestamp || 0,
+      timestamp: message.timestamp || '',
       route: `${message.from || ''} -> #${message.channel || ''}`,
       subject: message.subject || `#${message.channel || ''}`,
       preview: message.preview || '',
     }));
   return direct.concat(channel)
-    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+    .sort((a, b) => timeValue(b.timestamp) - timeValue(a.timestamp))
     .slice(0, Math.max(0, count || 0))
     .reverse();
 }
@@ -4375,7 +4388,7 @@ async function refreshDashboard() {
         }
       } catch(e) {}
     }
-    allMsgs.sort((a,b) => (b.timestamp||0) - (a.timestamp||0));
+    allMsgs.sort((a,b) => timeValue(b.timestamp) - timeValue(a.timestamp));
     window._allMsgs = allMsgs;
     window._msgPage = window._msgPage || 0;
     await renderCurrentPageFromState();

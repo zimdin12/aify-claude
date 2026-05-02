@@ -11,6 +11,7 @@ Initial dashboard sections:
 - **Analytics**: communication volume, agent availability, run health, and recent failure rates.
 - **Environments**: connected spawn targets.
 - **Sessions**: concrete runtime processes/threads.
+- **Browser CLI** (future): embedded terminal access to a paused/taken-over managed or resident session when an environment bridge advertises attach capability.
 - **Runs**: dispatch/run/handoff table.
 - **Artifacts**: shared files and text artifacts.
 - **Help**: product concepts and setup pointers.
@@ -230,6 +231,8 @@ Do not show stop/kill-style actions for rows that only represent offline identit
 Ended/completed/cancelled sessions are debug history. The normal Sessions page should hide them by default and expose a **Show ended/debug sessions** toggle for lifecycle investigation.
 
 Manual/resident identities may expose **Edit** and **Adopt env** when at least one environment is online. Adoption should be explicit: it creates managed backing for future dashboard work, but it does not magically attach the currently open CLI process. The UI should tell the operator to close/stop the old resident CLI for that `agentId` and restart the managed session from Sessions.
+
+Future browser terminal mode should reuse the same ownership model as native CLI access. Opening an in-browser terminal should visibly pause dashboard chat delivery for that session, attach through the owning environment bridge, and provide a clear **Return to dashboard** path. It should not let dashboard chat and terminal input drive the same Claude/Codex/OpenCode handle concurrently.
 
 ## Continue From Session Flow
 
