@@ -523,6 +523,39 @@ def _agent_execution_mode(row, requested_runtime: Optional[str] = None) -> tuple
     return "resident", None
 
 
+async def _managed_environment_unavailable_reason(db, row) -> Optional[str]:
+    if not row or _normalize_session_mode(row["session_mode"] or "resident") != "managed":
+        return None
+    runtime_state = _json_loads_or(row["runtime_state"], {})
+    environment_id = str(runtime_state.get("environmentId") or "").strip()
+    if not environment_id:
+        session_cursor = await db.execute(
+            """
+            SELECT environment_id
+            FROM agent_sessions
+            WHERE agent_id = ?
+            ORDER BY last_seen DESC
+            LIMIT 1
+            """,
+            (row["id"],),
+        )
+        session = await session_cursor.fetchone()
+        environment_id = str((session["environment_id"] if session else "") or "").strip()
+    if not environment_id:
+        return None
+
+    settings = await _load_settings(db)
+    env_cursor = await db.execute("SELECT * FROM environments WHERE id = ?", (environment_id,))
+    env = await env_cursor.fetchone()
+    env_status = _environment_effective_status(
+        env,
+        offline_seconds=settings.get("environment_offline_seconds", 90),
+    ) if env else "offline"
+    if env_status not in {"online", "degraded"}:
+        return f'managed environment "{environment_id}" is {env_status}'
+    return None
+
+
 def _dispatch_fix_hint(recipient_id: str, row, reason: str) -> dict[str, Any]:
     runtime = _normalize_runtime((row["runtime"] if row else "") or "generic")
     session_mode = _normalize_session_mode((row["session_mode"] if row else "") or "resident")
@@ -704,10 +737,14 @@ async def _bridge_claim_block_reason(db, *, bridge_id: str, agent_id: str, agent
     if session_mode == "managed":
         environment_id = managed_environment_id
         if environment_id:
-            env_cursor = await db.execute("SELECT bridge_id, status FROM environments WHERE id = ?", (environment_id,))
+            env_cursor = await db.execute("SELECT * FROM environments WHERE id = ?", (environment_id,))
             env_row = await env_cursor.fetchone()
             current_environment_bridge = str((env_row["bridge_id"] if env_row else "") or "").strip()
-            env_status = str((env_row["status"] if env_row else "") or "").strip().lower()
+            settings = await _load_settings(db)
+            env_status = _environment_effective_status(
+                env_row,
+                offline_seconds=settings.get("environment_offline_seconds", 90),
+            ) if env_row else "offline"
             if current_environment_bridge and current_environment_bridge != bridge_id:
                 return {
                     "reason": "environment_bridge_not_current",
@@ -1238,6 +1275,9 @@ async def _preflight_live_send_recipients(
             continue
 
         dispatch_state = await _get_dispatch_state_for_agent(db, recipient_id)
+        active = dispatch_state.get("activeRun")
+        if active and await _discard_unusable_active_run(db, recipient_id, active):
+            dispatch_state = await _get_dispatch_state_for_agent(db, recipient_id)
         base_status = await _compute_agent_status(
             row,
             settings.get("idle_minutes", 5),
@@ -1255,6 +1295,13 @@ async def _preflight_live_send_recipients(
         if reason or not execution_mode:
             hint = _dispatch_fix_hint(recipient_id, row, reason or "active dispatch unavailable")
             hint["recipientStatus"] = effective_status
+            not_started.append(hint)
+            continue
+
+        environment_reason = await _managed_environment_unavailable_reason(db, row)
+        if environment_reason:
+            hint = _dispatch_fix_hint(recipient_id, row, environment_reason)
+            hint["recipientStatus"] = "offline"
             not_started.append(hint)
             continue
 
@@ -1548,6 +1595,145 @@ async def _discard_superseded_active_run(db, recipient_id: str, active_run: dict
     return True
 
 
+async def _fail_stale_active_run(
+    db,
+    active_run: dict[str, Any],
+    *,
+    reason: str,
+    summary: str,
+    event_body: str,
+) -> bool:
+    run_id = str(active_run.get("runId") or "").strip()
+    if not run_id:
+        return False
+    finished_at = _now()
+    await db.execute(
+        "UPDATE dispatch_runs SET status = 'failed', summary = ?, error_text = ?, finished_at = ? WHERE id = ?",
+        (summary, reason, finished_at, run_id),
+    )
+    await _append_dispatch_event(db, run_id, "auto_heal", event_body)
+    await _fail_pending_controls_for_run(
+        db,
+        run_id,
+        handled_at=finished_at,
+        response_text=reason,
+    )
+    return True
+
+
+async def _discard_unclaimable_active_run(db, recipient_id: str, active_run: dict[str, Any]) -> bool:
+    """Fail active runs whose owner cannot possibly consume controls anymore.
+
+    Steer controls are only useful while the owning bridge is current and
+    heartbeating. If the environment is offline or the bridge row is stale, a
+    normal send would otherwise appear successful while its control sits
+    unclaimed forever.
+    """
+    owner_bridge_id = str(active_run.get("claimBridgeId") or "").strip()
+    if not owner_bridge_id:
+        return False
+
+    agent_cursor = await db.execute("SELECT * FROM agents WHERE id = ?", (recipient_id,))
+    agent = await agent_cursor.fetchone()
+    runtime_state = _json_loads_or(agent["runtime_state"], {}) if agent else {}
+    current_agent_bridge = str(runtime_state.get("bridgeInstanceId") or "").strip()
+    environment_id = str(runtime_state.get("environmentId") or "").strip()
+
+    if agent and _normalize_session_mode(agent["session_mode"] or "resident") == "managed":
+        if not environment_id:
+            session_cursor = await db.execute(
+                """
+                SELECT environment_id
+                FROM agent_sessions
+                WHERE agent_id = ?
+                ORDER BY last_seen DESC
+                LIMIT 1
+                """,
+                (recipient_id,),
+            )
+            session = await session_cursor.fetchone()
+            environment_id = str((session["environment_id"] if session else "") or "").strip()
+        if environment_id:
+            settings = await _load_settings(db)
+            env_cursor = await db.execute("SELECT * FROM environments WHERE id = ?", (environment_id,))
+            env = await env_cursor.fetchone()
+            env_status = _environment_effective_status(
+                env,
+                offline_seconds=settings.get("environment_offline_seconds", 90),
+            ) if env else "offline"
+            env_bridge = str((env["bridge_id"] if env else "") or "").strip()
+            if env_status not in {"online", "degraded"}:
+                return await _fail_stale_active_run(
+                    db,
+                    active_run,
+                    reason=f'Managed environment "{environment_id}" is {env_status}; active run owner bridge "{owner_bridge_id}" can no longer receive controls.',
+                    summary=f'Active run failed because environment "{environment_id}" is {env_status}. Restart the environment bridge and retry.',
+                    event_body=f"Stale active run cleaned before send: environment {environment_id} is {env_status}",
+                )
+            if env_bridge and env_bridge != owner_bridge_id:
+                return await _fail_stale_active_run(
+                    db,
+                    active_run,
+                    reason=f'Active run owner bridge "{owner_bridge_id}" is not the current environment bridge "{env_bridge}".',
+                    summary=f'Active run failed because bridge "{owner_bridge_id}" was replaced by "{env_bridge}". Retry after the current bridge is stable.',
+                    event_body=f"Stale active run cleaned before send: {owner_bridge_id} -> {env_bridge}",
+                )
+
+    if current_agent_bridge and current_agent_bridge != owner_bridge_id:
+        return await _fail_stale_active_run(
+            db,
+            active_run,
+            reason=f'Active run owner bridge "{owner_bridge_id}" is not the current agent bridge "{current_agent_bridge}".',
+            summary=f'Active run failed because bridge "{owner_bridge_id}" was replaced by "{current_agent_bridge}". Retry after the current bridge is stable.',
+            event_body=f"Stale active run cleaned before send: {owner_bridge_id} -> {current_agent_bridge}",
+        )
+
+    bridge_cursor = await db.execute(
+        "SELECT last_seen FROM bridge_instances WHERE id = ? AND agent_id = ?",
+        (owner_bridge_id, recipient_id),
+    )
+    bridge = await bridge_cursor.fetchone()
+    bridge_last_seen = _iso_to_epoch((bridge["last_seen"] if bridge else "") or "")
+    if bridge and bridge_last_seen and time.time() - bridge_last_seen > ACTIVE_RUN_BRIDGE_STALE_SECONDS:
+        return await _fail_stale_active_run(
+            db,
+            active_run,
+            reason=f'Active run owner bridge "{owner_bridge_id}" has not heartbeated for more than {ACTIVE_RUN_BRIDGE_STALE_SECONDS}s.',
+            summary=f'Active run failed because bridge "{owner_bridge_id}" stopped heartbeating. Restart the bridge and retry.',
+            event_body=f"Stale active run cleaned before send: bridge heartbeat expired for {owner_bridge_id}",
+        )
+
+    return False
+
+
+async def _discard_unusable_active_run(db, recipient_id: str, active_run: dict[str, Any]) -> bool:
+    if await _discard_superseded_active_run(db, recipient_id, active_run):
+        return True
+    return await _discard_unclaimable_active_run(db, recipient_id, active_run)
+
+
+async def _repair_unusable_active_runs(db, *, limit: int = 100) -> int:
+    cursor = await db.execute(
+        """
+        SELECT id, target_agent
+        FROM dispatch_runs
+        WHERE status IN ('claimed', 'running')
+        ORDER BY COALESCE(started_at, claimed_at, requested_at) ASC
+        LIMIT ?
+        """,
+        (max(1, int(limit or 100)),),
+    )
+    repaired = 0
+    for row in await cursor.fetchall():
+        state = await _get_dispatch_state_for_agent(db, row["target_agent"])
+        active = state.get("activeRun")
+        if not active or active.get("runId") != row["id"]:
+            continue
+        if await _discard_unusable_active_run(db, row["target_agent"], active):
+            repaired += 1
+    return repaired
+
+
 async def _finalize_dispatch_runs(
     db,
     runs: list[dict[str, Any]],
@@ -1618,7 +1804,7 @@ async def _create_dispatch_runs(
             capabilities = _row_capabilities(recipient_row) if recipient_row else []
             active_state = await _get_dispatch_state_for_agent(db, recipient_id)
             active_run = active_state.get("activeRun")
-            if active_run and await _discard_superseded_active_run(db, recipient_id, active_run):
+            if active_run and await _discard_unusable_active_run(db, recipient_id, active_run):
                 active_state = await _get_dispatch_state_for_agent(db, recipient_id)
                 active_run = active_state.get("activeRun")
             if active_run and "steer" in capabilities:
@@ -3369,6 +3555,9 @@ async def control_session(session_id: str, req: SessionControlRequest, request: 
 async def list_agents(request: Request):
     db = await get_db()
     try:
+        repaired_active_runs = await _repair_unusable_active_runs(db)
+        if repaired_active_runs:
+            await db.commit()
         settings = await _load_settings(db)
         idle_minutes = settings.get("idle_minutes", 5)
         offline_minutes = settings.get("offline_minutes", 30)
@@ -4914,6 +5103,9 @@ async def list_dispatch_runs(
 ):
     db = await get_db()
     try:
+        repaired_active_runs = await _repair_unusable_active_runs(db)
+        if repaired_active_runs:
+            await db.commit()
         query = "SELECT * FROM dispatch_runs WHERE 1=1"
         params = []
         if agentId:
@@ -5947,6 +6139,9 @@ async def update_settings(request: Request):
 async def get_stats(request: Request):
     db = await get_db()
     try:
+        repaired_active_runs = await _repair_unusable_active_runs(db)
+        if repaired_active_runs:
+            await db.commit()
         agents_c = await db.execute("SELECT COUNT(*) FROM agents")
         agents = (await agents_c.fetchone())[0]
 

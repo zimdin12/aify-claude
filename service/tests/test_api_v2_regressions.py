@@ -1,4 +1,5 @@
 import asyncio
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -346,6 +347,171 @@ class ApiV2RegressionTests(unittest.TestCase):
         by_id = {env["id"]: env for env in environments}
         self.assertEqual(by_id["windows:test-host:default"]["status"], "online")
         self.assertEqual(by_id["wsl:test-host:default"]["status"], "offline")
+
+    def test_send_does_not_steer_into_offline_environment_active_run(self):
+        self._heartbeat_environment(
+            id="wsl:test-host:default",
+            label="WSL on test-host",
+            bridgeId="bridge-stale",
+            machineId="wsl-Ubuntu:test-host",
+        )
+        self._register(
+            "managed-coder",
+            role="coder",
+            runtime="codex",
+            machineId="wsl-Ubuntu:test-host",
+            cwd="/workspace/project",
+            launchMode="managed",
+            sessionMode="managed",
+            capabilities=["managed-run", "resume", "interrupt", "steer", "spawn"],
+            status="active",
+        )
+        self._execute(
+            "UPDATE environments SET last_seen = '2020-01-01T00:00:00Z' WHERE id = ?",
+            ("wsl:test-host:default",),
+        )
+        self._execute(
+            "UPDATE agents SET runtime_state = ? WHERE id = ?",
+            (
+                json.dumps({
+                    "bridgeInstanceId": "bridge-stale",
+                    "environmentId": "wsl:test-host:default",
+                    "threadId": "thread-1",
+                }),
+                "managed-coder",
+            ),
+        )
+        self._execute(
+            """
+            INSERT INTO bridge_instances (
+                id, agent_id, machine_id, runtime, session_mode, registered_at, last_seen
+            ) VALUES (?,?,?,?,?,?,?)
+            """,
+            ("bridge-stale", "managed-coder", "wsl-Ubuntu:test-host", "codex", "managed", "2020-01-01T00:00:00Z", "2020-01-01T00:00:00Z"),
+        )
+        self._execute(
+            """
+            INSERT INTO dispatch_runs (
+                id, message_id, from_agent, target_agent, dispatch_mode, execution_mode,
+                runtime, message_type, subject, body, priority, status, claim_machine_id,
+                claim_bridge_id, require_reply, requested_at, claimed_at, started_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                "run-stale",
+                None,
+                "manager",
+                "managed-coder",
+                "start_if_possible",
+                "managed",
+                "codex",
+                "request",
+                "old work",
+                "old body",
+                "normal",
+                "running",
+                "wsl-Ubuntu:test-host",
+                "bridge-stale",
+                1,
+                "2026-01-01T00:00:00Z",
+                "2026-01-01T00:00:01Z",
+                "2026-01-01T00:00:01Z",
+            ),
+        )
+
+        sent = self._send_message(
+            from_agent="manager",
+            to="managed-coder",
+            type="request",
+            subject="new work",
+            body="please do this",
+            trigger=True,
+        )
+
+        self.assertFalse(sent["ok"])
+        self.assertIn("cannot start live work", sent["error"])
+        stale_run = self._fetchone("SELECT status, summary, error_text FROM dispatch_runs WHERE id = ?", ("run-stale",))
+        self.assertEqual(stale_run["status"], "failed")
+        self.assertIn("environment", stale_run["summary"])
+        self.assertIn("offline", stale_run["error_text"])
+        controls = self._fetchall("SELECT * FROM dispatch_controls WHERE run_id = ?", ("run-stale",))
+        self.assertEqual(controls, [])
+        messages = self._fetchall("SELECT * FROM messages WHERE to_agent = ?", ("managed-coder",))
+        self.assertEqual(messages, [])
+
+    def test_runs_listing_repairs_offline_environment_active_run(self):
+        self._heartbeat_environment(id="wsl:test-host:default", bridgeId="bridge-stale")
+        self._register(
+            "managed-coder",
+            role="coder",
+            runtime="codex",
+            machineId="wsl-Ubuntu:test-host",
+            cwd="/workspace/project",
+            launchMode="managed",
+            sessionMode="managed",
+            capabilities=["managed-run", "resume", "interrupt", "steer", "spawn"],
+            status="active",
+        )
+        self._execute(
+            "UPDATE environments SET last_seen = '2020-01-01T00:00:00Z' WHERE id = ?",
+            ("wsl:test-host:default",),
+        )
+        self._execute(
+            "UPDATE agents SET runtime_state = ? WHERE id = ?",
+            (
+                json.dumps({
+                    "bridgeInstanceId": "bridge-stale",
+                    "environmentId": "wsl:test-host:default",
+                    "threadId": "thread-1",
+                }),
+                "managed-coder",
+            ),
+        )
+        self._execute(
+            """
+            INSERT INTO dispatch_runs (
+                id, from_agent, target_agent, dispatch_mode, execution_mode, runtime,
+                message_type, subject, body, priority, status, claim_machine_id,
+                claim_bridge_id, require_reply, requested_at, claimed_at, started_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                "run-stale",
+                "manager",
+                "managed-coder",
+                "start_if_possible",
+                "managed",
+                "codex",
+                "request",
+                "old work",
+                "old body",
+                "normal",
+                "running",
+                "wsl-Ubuntu:test-host",
+                "bridge-stale",
+                1,
+                "2026-01-01T00:00:00Z",
+                "2026-01-01T00:00:01Z",
+                "2026-01-01T00:00:01Z",
+            ),
+        )
+        self._execute(
+            """
+            INSERT INTO dispatch_controls (
+                id, run_id, from_agent, action, body, source_message_id, status, requested_at
+            ) VALUES (?,?,?,?,?,?,?,?)
+            """,
+            ("ctl-stale", "run-stale", "manager", "steer", "wake up", "msg-1", "pending", "2026-01-01T00:00:02Z"),
+        )
+
+        listed = self.client.get("/api/v1/dispatch/runs?limit=5")
+        self.assertEqual(listed.status_code, 200, listed.text)
+        run = next(item for item in listed.json()["runs"] if item["id"] == "run-stale")
+        self.assertEqual(run["status"], "failed")
+        self.assertIn("environment", run["summary"])
+        control = self._fetchone("SELECT status, response_text FROM dispatch_controls WHERE id = ?", ("ctl-stale",))
+        self.assertEqual(control["status"], "failed")
+        self.assertIn("offline", control["response_text"])
 
     def test_environment_shutdown_heartbeat_marks_offline_only_for_current_bridge(self):
         self._heartbeat_environment(id="wsl:test-host:default", bridgeId="bridge-current")
