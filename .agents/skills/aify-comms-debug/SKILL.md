@@ -173,7 +173,7 @@ After opening the native CLI, re-register from that same session with the same `
 - `comms_run_interrupt(runId=<current active run>)` if the current work should stop.
 - Use the dashboard run controls to cancel stale queued work.
 - `comms_agent_info(agentId=<target>)` to inspect why the agent is not currently startable.
-- If the agent is actively running, ordinary `comms_send(...)` should steer when supported or queue/merge as the next-turn fallback. Set `steer=true` only when you need to be explicit; use `queueIfBusy=true` only to force next-turn delivery.
+- If the agent is actively running, ordinary `comms_send(...)` should steer when supported or queue/merge as the next-turn fallback. Set `steer=true` only when you need to be explicit; use `queueIfBusy=true` only to force next-turn delivery. When `queueIfBusy=true`, any `steer` value is intentionally ignored.
 
 ## Run stuck `running`, `comms_run_interrupt` has no effect
 

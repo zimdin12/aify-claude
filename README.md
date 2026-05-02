@@ -39,7 +39,7 @@ It now adds a first-class agent lifecycle layer:
 6. The agent identity, spawn spec, and session backing appear automatically.
 7. Talk to it in direct chat or channels, assign work through messages, inspect output, stop/restart/recover it, or compact it into a fresh backing.
 
-Manual `comms_register(...)` should become an advanced/debug path, not the normal user workflow.
+Manual `comms_register(...)` is an advanced/debug and resident-CLI path, not the normal dashboard-managed workflow.
 
 Normal dashboard chat is live-delivery gated for unreachable targets: offline, stale, stopped, or no-wake agents fail visibly and the message is not stored for a future run. Busy live targets receive ordinary sends as steer when supported, or as queued/merged next-turn work when steering is not available; the explicit **Queue** action forces next-turn delivery. Required handoffs are repaired automatically when a terminal run finishes without an explicit reply, and the Home page exposes repair/dismiss actions for old issue states.
 

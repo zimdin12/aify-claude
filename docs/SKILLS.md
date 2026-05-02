@@ -36,9 +36,9 @@ Current dashboard behavior reflected by the skills:
 - successful spawn requests may still have status `running` in old/current data; the dashboard labels them as session-started history and hides them from the normal spawn queue
 - ended/completed/cancelled session rows are debug history and are hidden by default in Sessions
 
-## Did This Product Pass Add A New Skill?
+## Install Or Update
 
-No new skill name was added in this pass. The existing `aify-comms` and `aify-comms-debug` skills were updated as part of the product work and can be reinstalled into Codex with:
+No separate dashboard skill exists. The existing `aify-comms` and `aify-comms-debug` skills are the current agent-facing guidance and can be reinstalled into Codex with:
 
 ```bash
 bash install.sh --client codex http://localhost:8800 --with-hook
