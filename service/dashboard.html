@@ -3781,7 +3781,7 @@ function renderChatInspector(meta, messages) {
       : disabledActionButton('Add member', 'All known agents are already members of this channel');
     html += '<h3>Members</h3>' +
       (members.length
-        ? `<div class="mini-list">${members.slice().sort((a, b) => a.localeCompare(b)).map(member => `<div class="mini-row"><span class="env-pill">${esc(member)}</span>${actionButtonFn('Remove', `Remove ${member} from #${meta.id}`, () => removeChannelMember(meta.id, member), 'btn-danger')}</div>`).join('')}</div>`
+        ? `<div class="mini-list">${members.slice().sort((a, b) => a.localeCompare(b)).map(member => renderChannelMemberRow(meta.id, member)).join('')}</div>`
         : '<p class="em">No members.</p>') +
       `<div class="send-row">` +
         `<select id="chat-channel-add-member" data-channel-member-select="${esc(meta.id)}" title="Agent to add to #${esc(meta.id)}">` +
@@ -3839,6 +3839,16 @@ function renderChatInspector(meta, messages) {
   el.innerHTML = html;
 }
 
+function renderChannelMemberRow(channelName, member) {
+  const isSelf = member === chatIdentity();
+  const label = isSelf ? 'Leave' : 'Remove';
+  const title = isSelf
+    ? `Leave #${channelName} as ${member}; you will stop receiving channel updates until re-added`
+    : `Remove ${member} from #${channelName}`;
+  return `<div class="mini-row"><span class="env-pill">${esc(member)}${isSelf ? ' (you)' : ''}</span>` +
+    `${actionButtonFn(label, title, () => removeChannelMember(channelName, member), 'btn-danger')}</div>`;
+}
+
 async function addSelectedChannelMember(channelName) {
   const select = document.getElementById('chat-channel-add-member');
   window._channelMemberDrafts = window._channelMemberDrafts || {};
@@ -3870,7 +3880,11 @@ async function addSelectedChannelMember(channelName) {
 }
 
 async function removeChannelMember(channelName, agentId) {
-  if (!confirm(`Remove ${agentId} from #${channelName}?`)) return;
+  const isSelf = agentId === chatIdentity();
+  const message = isSelf
+    ? `Leave #${channelName} as ${agentId}?\n\nThis identity will stop receiving channel fan-out/live updates and cannot send to the channel until it is added again. The channel and history remain.`
+    : `Remove ${agentId} from #${channelName}?\n\nThey will stop receiving channel fan-out/live updates and cannot send to the channel until re-added.`;
+  if (!confirm(message)) return;
   try {
     const response = await apiFetch(API + `/channels/${encodeURIComponent(channelName)}/leave`, {
       method: 'POST',
@@ -3886,9 +3900,9 @@ async function removeChannelMember(channelName, agentId) {
     }
     await refreshSelectedChannelMessages();
     renderChat();
-    toast(`${agentId} removed from #${channelName}`);
+    toast(isSelf ? `Left #${channelName}` : `${agentId} removed from #${channelName}`);
   } catch (e) {
-    toast(e.message || 'Remove member failed', '#f85149');
+    toast(e.message || (isSelf ? 'Leave channel failed' : 'Remove member failed'), '#f85149');
   }
 }
 
