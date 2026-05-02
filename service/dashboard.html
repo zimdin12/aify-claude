@@ -889,17 +889,19 @@ tr:hover{background:#1b1f21}
       <input id="contract-filter" placeholder="Search contracts..." oninput="renderWorkLoop()">
       <select id="contract-state" onchange="renderWorkLoop()">
         <option value="">All states</option>
+        <option value="open" selected>Open</option>
         <option value="overdue">Overdue</option>
         <option value="working">Working</option>
         <option value="queued">Queued</option>
         <option value="seen">Seen</option>
         <option value="sent">Sent</option>
         <option value="missing_reply">Missing reply</option>
+        <option value="failed">Failed</option>
         <option value="answered">Answered</option>
       </select>
       <select id="contract-category" onchange="renderWorkLoop()">
         <option value="">All categories</option>
-        <option value="direct">Direct</option>
+        <option value="direct" selected>Direct</option>
         <option value="channel">Channel</option>
         <option value="self_wake">Self-wake</option>
       </select>
@@ -2640,7 +2642,9 @@ function filteredContracts() {
   return (window._contracts || []).filter(contract => {
     const text = `${contract.from} ${contract.targetAgentId} ${contract.subject} ${contract.preview} ${contract.status} ${contract.state}`.toLowerCase();
     return (!q || text.includes(q)) &&
-      (!state || contract.state === state) &&
+      (!state || (state === 'open'
+        ? ['sent', 'seen', 'queued', 'working', 'overdue'].includes(contract.state)
+        : contract.state === state)) &&
       (!category || contract.category === category);
   }).sort((a, b) => {
     const score = value => ({overdue: 100, missing_reply: 90, working: 80, queued: 70, seen: 60, sent: 50, failed: 40, answered: 10, closed: 0}[value.state] || 0);
@@ -2651,9 +2655,16 @@ function filteredContracts() {
 }
 
 function renderWorkLoop() {
-  const stats = window._contractSummary || {};
   const settings = window._contractSettings || {};
   const contracts = filteredContracts();
+  const stats = {
+    overdue: contracts.filter(contract => contract.overdue).length,
+    open: contracts.filter(contract => ['sent', 'seen', 'queued', 'working', 'overdue'].includes(contract.state)).length,
+    working: contracts.filter(contract => contract.state === 'working').length,
+    queued: contracts.filter(contract => contract.state === 'queued').length,
+    missingReply: contracts.filter(contract => contract.state === 'missing_reply').length,
+    selfWake: contracts.filter(contract => contract.category === 'self_wake').length,
+  };
   const statsEl = document.getElementById('work-stats');
   if (statsEl) {
     statsEl.innerHTML =

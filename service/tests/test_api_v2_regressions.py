@@ -3194,6 +3194,73 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertFalse(any(item["id"] == run_id for item in response.json()["contracts"]))
 
+    def test_contracts_hide_answered_rows_until_history_is_requested(self):
+        self._register("lead", runtime="codex", sessionMode="resident", sessionHandle="lead-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:1"})
+        self._register("coder", runtime="codex", sessionMode="resident", sessionHandle="coder-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:2"})
+
+        created = self._dispatch(
+            from_agent="lead",
+            to="coder",
+            type="request",
+            subject="needs answer",
+            body="please answer",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        run_id = created["runs"][0]["runId"]
+        self.client.patch(
+            f"/api/v1/dispatch/runs/{run_id}",
+            json={
+                "status": "completed",
+                "summary": "answered",
+                "resultMessageId": "reply-1",
+            },
+        )
+
+        open_view = self.client.get("/api/v1/contracts?limit=20")
+        self.assertEqual(open_view.status_code, 200, open_view.text)
+        self.assertFalse(any(item["id"] == run_id for item in open_view.json()["contracts"]))
+
+        history_view = self.client.get("/api/v1/contracts?limit=20&includeClosed=true")
+        self.assertEqual(history_view.status_code, 200, history_view.text)
+        contract = next(item for item in history_view.json()["contracts"] if item["id"] == run_id)
+        self.assertEqual(contract["state"], "answered")
+
+    def test_contracts_can_filter_category_before_limit(self):
+        self._register("lead", runtime="codex", sessionMode="resident", sessionHandle="lead-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:1"})
+        self._register("coder", runtime="codex", sessionMode="resident", sessionHandle="coder-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:2"})
+
+        direct = self._dispatch(
+            from_agent="lead",
+            to="coder",
+            type="request",
+            subject="direct work",
+            body="please answer",
+            mode="start_if_possible",
+            createMessage=True,
+        )["runs"][0]["runId"]
+        self._dispatch(
+            from_agent="lead",
+            to="lead",
+            type="request",
+            subject="self wake",
+            body="continue",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        self.client.post("/api/v1/channels/ops", json={"description": "ops", "createdBy": "lead"})
+        self.client.post("/api/v1/channels/ops/join", json={"agentId": "coder"})
+        self.client.post(
+            "/api/v1/channels/ops/send",
+            json={"from_agent": "lead", "channel": "ops", "type": "request", "body": "channel work", "trigger": True},
+        )
+
+        response = self.client.get("/api/v1/contracts?limit=20&category=direct")
+        self.assertEqual(response.status_code, 200, response.text)
+        contracts = response.json()["contracts"]
+        self.assertTrue(any(item["id"] == direct for item in contracts))
+        self.assertTrue(all(item["category"] == "direct" for item in contracts))
+
     def test_deleted_agent_tombstone_blocks_auto_reregister_until_explicit_restore(self):
         self._register("worker", runtime="codex", sessionMode="resident", bridgeId="bridge-1")
 

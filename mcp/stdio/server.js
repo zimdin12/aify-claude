@@ -2257,10 +2257,11 @@ server.tool(
     agentId: z.string().optional().describe("Show contracts targeting this agent"),
     from: z.string().optional().describe("Show contracts created by this sender"),
     state: z.enum(["overdue", "working", "queued", "seen", "sent", "missing_reply", "failed", "answered", "closed"]).optional().describe("Filter by computed contract state"),
+    category: z.enum(["direct", "channel", "self_wake"]).optional().describe("Filter by category. Defaults to direct so old channel fan-out does not hide owned work."),
     includeClosed: z.boolean().optional().describe("Include answered/closed recent contracts. Default false."),
     limit: z.number().int().min(1).max(200).optional().describe("Max contracts to return. Default 25."),
   },
-  async ({ agentId, from, state, includeClosed, limit }) => {
+  async ({ agentId, from, state, category, includeClosed, limit }) => {
     if (!IS_REMOTE) {
       return { content: [{ type: "text", text: "Work contracts require remote server mode." }], isError: true };
     }
@@ -2268,6 +2269,7 @@ server.tool(
     if (agentId) params.set("agentId", agentId);
     if (from) params.set("fromAgent", from);
     if (state) params.set("state", state);
+    params.set("category", category || "direct");
     if (includeClosed) params.set("includeClosed", "true");
     params.set("limit", String(limit || 25));
     const r = await httpCall("GET", `/contracts?${params.toString()}`);

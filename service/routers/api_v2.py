@@ -5433,6 +5433,7 @@ async def list_work_contracts(
     agentId: Optional[str] = None,
     fromAgent: Optional[str] = None,
     state: Optional[str] = None,
+    category: Optional[str] = Query(None, pattern="^(direct|channel|self_wake)$"),
     includeClosed: bool = Query(False),
     limit: int = Query(120, ge=1, le=500),
 ):
@@ -5447,8 +5448,14 @@ async def list_work_contracts(
         if fromAgent:
             where.append("AND r.from_agent = ?")
             params.append(fromAgent)
+        if category == "direct":
+            where.append("AND r.from_agent != r.target_agent AND COALESCE(m.source, 'direct') != 'channel'")
+        elif category == "channel":
+            where.append("AND COALESCE(m.source, '') = 'channel'")
+        elif category == "self_wake":
+            where.append("AND r.from_agent = r.target_agent")
         stale_hours = max(1, int(settings.get("contract_stale_hours", 24) or 24))
-        if not includeClosed:
+        if includeClosed:
             where.append(
                 """
                 AND (
@@ -5459,6 +5466,12 @@ async def list_work_contracts(
                 """
             )
             params.append(f"-{stale_hours} hours")
+        else:
+            where.append(
+                """
+                AND COALESCE(r.result_message_id, '') = ''
+                """
+            )
         params.append(limit)
         cursor = await db.execute(_contract_list_query(where_sql="\n".join(where)), params)
         now_s = time.time()

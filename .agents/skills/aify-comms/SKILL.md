@@ -160,7 +160,7 @@ Gotchas regardless of runtime:
 ### Work Loop (1)
 | Tool | Use |
 |------|-----|
-| `comms_contracts` | List computed reply/work contracts. Use this to audit overdue replies, working/queued contracts, answered-but-stale rows, self-wakes, and old inbox noise before claiming a teammate did or did not respond. |
+| `comms_contracts` | List computed reply/work contracts. Defaults to direct contracts; pass `category="channel"` or `category="self_wake"` when auditing those separately. Use this before claiming a teammate did or did not respond. |
 
 ### Channels (5)
 | Tool | Use |

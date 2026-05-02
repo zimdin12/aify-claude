@@ -50,7 +50,7 @@ It should show:
 
 - open/overdue/working/queued/missing-reply counts
 - route, subject, age, read state, reminder count, and latest answer preview
-- filters for state, category (`direct`, `channel`, `self-wake`), and free text
+- filters for state, category (`direct`, `channel`, `self-wake`), and free text; the daily default should be direct contracts, with channel and self-wake audits opt-in
 - one-click run detail, chat jump, single-contract reminder, and batch due-reminder actions
 - hygiene indicators for old unread fan-out, answered-but-unread source messages, self-wakes, and pending fallback handoffs
 
