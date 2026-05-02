@@ -67,6 +67,8 @@ The structural insight that eliminates the old heuristics: the bridge-side gate 
 
 **Why per-sender.** Different senders are different conversations; merging across senders would lose the thread. The cap is per (sender, recipient) pair.
 
+**History note.** An earlier implementation briefly merged queued work across all senders for a target. That looked efficient in the queue, but it confused contract ownership and could route handoff replies to the wrong requester. Current code intentionally merges only within one `(sender, recipient)` pair.
+
 **Why 10.** Picked to be high enough that normal bursty workflows never hit it, low enough that a buggy sender can't grow a single run body past ~100 KB.
 
 ## Re-register is a full state refresh (except description)

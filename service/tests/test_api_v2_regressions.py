@@ -2608,6 +2608,18 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(contracts.status_code, 200, contracts.text)
         self.assertTrue(any(item["id"] == contract_run_id and item["state"] == "sent" for item in contracts.json()["contracts"]))
 
+        completed = self.client.patch(
+            f"/api/v1/dispatch/runs/{active_run_id}",
+            json={"status": "completed", "summary": "handled active and steered work", "resultMessageId": "reply-active"},
+        )
+        self.assertEqual(completed.status_code, 200, completed.text)
+        closed_contract = self._fetchone("SELECT result_message_id FROM dispatch_runs WHERE id = ?", (contract_run_id,))
+        self.assertEqual(closed_contract["result_message_id"], "reply-active")
+        answered = self.client.get("/api/v1/contracts?limit=20&state=answered&category=direct")
+        self.assertEqual(answered.status_code, 200, answered.text)
+        self.assertTrue(any(item["id"] == contract_run_id and item["state"] == "answered" for item in answered.json()["contracts"]))
+
+        self._execute("UPDATE dispatch_runs SET status = 'running', result_message_id = '' WHERE id = ?", (active_run_id,))
         queued = self._send_message(
             from_agent="lead",
             to="coder",
@@ -3275,6 +3287,8 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(reminder["to_agent"], "coder")
         self.assertIn("Reminder: reply overdue", reminder["subject"])
         self.assertIn('comms_inbox(agentId="coder"', reminder["body"])
+        self.assertIn(f'inReplyTo="{created["messageId"]}"', reminder["body"])
+        self.assertIn('comms_send(from="coder", to="lead", type="response"', reminder["body"])
         self.assertEqual(reminder["dispatch_requested"], 1)
 
         event = self._fetchone("SELECT event_type, body FROM dispatch_events WHERE run_id = ? AND event_type = 'reply_reminder'", (run_id,))
@@ -3342,6 +3356,36 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(answered_view.status_code, 200, answered_view.text)
         answered_contract = next(item for item in answered_view.json()["contracts"] if item["id"] == run_id)
         self.assertEqual(answered_contract["state"], "answered")
+
+    def test_contract_history_respects_stale_window(self):
+        self._register("lead", runtime="codex", sessionMode="resident", sessionHandle="lead-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:1"})
+        self._register("coder", runtime="codex", sessionMode="resident", sessionHandle="coder-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:2"})
+        self.client.put("/api/v1/settings", json={"contract_stale_hours": 1})
+
+        created = self._dispatch(
+            from_agent="lead",
+            to="coder",
+            type="request",
+            subject="old answered",
+            body="please answer",
+            mode="start_if_possible",
+            createMessage=True,
+        )
+        run_id = created["runs"][0]["runId"]
+        completed = self.client.patch(
+            f"/api/v1/dispatch/runs/{run_id}",
+            json={"status": "completed", "summary": "answered", "resultMessageId": "reply-old"},
+        )
+        self.assertEqual(completed.status_code, 200, completed.text)
+        self._execute("UPDATE dispatch_runs SET requested_at = ?, finished_at = ? WHERE id = ?", ("2000-01-01T00:00:00Z", "2000-01-01T00:00:01Z", run_id))
+
+        history_view = self.client.get("/api/v1/contracts?limit=20&includeClosed=true")
+        self.assertEqual(history_view.status_code, 200, history_view.text)
+        self.assertFalse(any(item["id"] == run_id for item in history_view.json()["contracts"]))
+
+        answered_view = self.client.get("/api/v1/contracts?limit=20&state=answered")
+        self.assertEqual(answered_view.status_code, 200, answered_view.text)
+        self.assertFalse(any(item["id"] == run_id for item in answered_view.json()["contracts"]))
 
     def test_contracts_can_filter_category_before_limit(self):
         self._register("lead", runtime="codex", sessionMode="resident", sessionHandle="lead-thread", runtimeConfig={"appServerUrl": "ws://127.0.0.1:1"})

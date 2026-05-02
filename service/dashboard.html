@@ -2686,6 +2686,9 @@ function filteredContracts() {
     const score = value => ({overdue: 100, missing_reply: 90, working: 80, queued: 70, seen: 60, sent: 50, failed: 40, answered: 10, closed: 0}[value.state] || 0);
     const diff = score(b) - score(a);
     if (diff) return diff;
+    const priorityScore = value => ({urgent: 20, high: 10, normal: 0}[String(value.priority || 'normal').toLowerCase()] || 0);
+    const priorityDiff = priorityScore(b) - priorityScore(a);
+    if (priorityDiff) return priorityDiff;
     return (Date.parse(b.requestedAt || '') || 0) - (Date.parse(a.requestedAt || '') || 0);
   });
 }

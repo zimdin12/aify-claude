@@ -2300,6 +2300,65 @@ _UNTHREADED_HANDOFF_TYPES = _HANDOFF_REPLY_TYPES
 _UNTHREADED_HANDOFF_WINDOW_MS = 24 * 60 * 60 * 1000
 
 
+async def _close_steered_contracts_for_parent_run(
+    db,
+    parent_row,
+    *,
+    result_message_id: str,
+) -> int:
+    """Close same-sender steer contracts that were injected into a terminal run.
+
+    Steer controls are extra guidance for the active turn. If the active turn's
+    final result answers the same sender, that result also satisfies same-sender
+    steered contracts that were delivered into the run.
+    """
+    result_message_id = str(result_message_id or "").strip()
+    if not parent_row or not result_message_id:
+        return 0
+    parent_run_id = str(parent_row["id"] or "").strip()
+    from_agent = str(parent_row["from_agent"] or "").strip()
+    target_agent = str(parent_row["target_agent"] or "").strip()
+    if not parent_run_id or not from_agent or not target_agent:
+        return 0
+
+    cursor = await db.execute(
+        """
+        SELECT r.id
+        FROM dispatch_runs r
+        JOIN dispatch_controls c ON c.source_message_id = r.message_id
+        WHERE c.run_id = ?
+          AND r.dispatch_mode = 'steer'
+          AND r.status = 'delivered'
+          AND r.from_agent = ?
+          AND r.target_agent = ?
+          AND COALESCE(r.result_message_id, '') = ''
+        """,
+        (parent_run_id, from_agent, target_agent),
+    )
+    rows = await cursor.fetchall()
+    closed = 0
+    for row in rows:
+        await db.execute(
+            "UPDATE dispatch_runs SET result_message_id = ? WHERE id = ?",
+            (result_message_id, row["id"]),
+        )
+        await _append_dispatch_event(
+            db,
+            row["id"],
+            "handoff",
+            f"Closed by parent run {parent_run_id} result {result_message_id}",
+        )
+        closed += 1
+    if closed:
+        await _append_dispatch_event(
+            db,
+            parent_run_id,
+            "handoff",
+            f"Closed {closed} same-sender steered contract(s) with result {result_message_id}",
+        )
+    return closed
+
+
 async def _link_unthreaded_reply_to_recent_dispatch_run(
     db,
     *,
@@ -2322,7 +2381,7 @@ async def _link_unthreaded_reply_to_recent_dispatch_run(
         WHERE target_agent = ?
           AND from_agent = ?
           AND require_reply = 1
-          AND status IN ('claimed', 'running', 'completed', 'failed', 'cancelled')
+          AND status IN ('delivered', 'claimed', 'running', 'completed', 'failed', 'cancelled')
           AND requested_at >= ?
           AND requested_at <= ?
         ORDER BY requested_at DESC
@@ -5602,6 +5661,12 @@ def _contract_reminder_body(row) -> str:
         if message_id
         else f'comms_run_status(runId="{row["id"]}")'
     )
+    reply_hint = (
+        f'comms_send(from="{target}", to="{sender}", type="response", inReplyTo="{message_id}", '
+        f'subject="Re: {subject}", body="<answer, blocker, or result>")'
+        if message_id and sender
+        else f'comms_send(from="{target}", to="{sender or "original-sender"}", type="response", body="<answer, blocker, or result>")'
+    )
     return (
         "Automated aify-comms reminder: this work message still needs an explicit reply.\n\n"
         f"Original sender: {sender}\n"
@@ -5610,6 +5675,8 @@ def _contract_reminder_body(row) -> str:
         f"Original run id: {row['id']}\n\n"
         "Read it if needed:\n"
         f"{read_hint}\n\n"
+        "Use this exact reply anchor when closing the original contract:\n"
+        f"{reply_hint}\n\n"
         "Close the contract by replying to the original sender/result, not by merely acknowledging this reminder. "
         "If you are blocked, reply with blocker, evidence checked, and next action."
     )
@@ -5802,7 +5869,13 @@ async def update_dispatch_run(run_id: str, req: DispatchRunUpdate, request: Requ
                 )
                 refreshed_cursor = await db.execute("SELECT * FROM dispatch_runs WHERE id = ?", (run_id,))
                 refreshed_row = await refreshed_cursor.fetchone()
-                await _mirror_missing_dispatch_handoff(db, refreshed_row)
+                mirrored_message_id = await _mirror_missing_dispatch_handoff(db, refreshed_row)
+                result_message_id = str((refreshed_row["result_message_id"] if refreshed_row else "") or mirrored_message_id or "").strip()
+                await _close_steered_contracts_for_parent_run(
+                    db,
+                    refreshed_row,
+                    result_message_id=result_message_id,
+                )
                 await _maybe_report_async_manager_result_to_dashboard(db, refreshed_row)
 
         if req.agentStatus:
