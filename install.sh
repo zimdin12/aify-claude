@@ -226,6 +226,16 @@ if [ -z "\$SAFE_CWD" ] || [ ! -d "\$SAFE_CWD" ]; then
 fi
 
 SERVER_URL="\${AIFY_SERVER_URL:-$default_server}"
+if [ "\${1:-}" = "--help" ] || [ "\${1:-}" = "-h" ]; then
+  cat <<'USAGE'
+Usage: aify-comms [server-url] [extra-root ...]
+
+Starts the local environment bridge for dashboard-managed agents.
+The current directory is always an allowed workspace root. Extra roots are
+optional safety boundaries.
+USAGE
+  exit 0
+fi
 if [ "\${1:-}" != "" ] && [[ "\${1:-}" == http* ]]; then
   SERVER_URL="\$1"
   shift

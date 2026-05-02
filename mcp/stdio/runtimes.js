@@ -25,6 +25,7 @@ function spawnProcess(command, args, options = {}) {
     env: runtimeChildEnv(options.env || {}),
     stdio: ["pipe", "pipe", "pipe"],
     shell: false,
+    detached: process.platform !== "win32",
     windowsHide: true,
   });
   // ChildProcess emits "error" when the executable is missing or cannot be
@@ -32,6 +33,48 @@ function spawnProcess(command, args, options = {}) {
   // bug cannot crash the bridge process before the adapter wires rejection.
   proc.on("error", () => {});
   return proc;
+}
+
+export function descendantPids(pid) {
+  const rootPid = Number(pid);
+  if (!Number.isInteger(rootPid) || rootPid <= 0 || process.platform === "win32") return [];
+  let result;
+  try {
+    result = spawnSync("ps", ["-eo", "pid=,ppid="], {
+      encoding: "utf8",
+      timeout: 3000,
+    });
+  } catch {
+    return [];
+  }
+  if (result.status !== 0) return [];
+  const childrenByParent = new Map();
+  for (const line of String(result.stdout || "").split(/\r?\n/)) {
+    const [childText, parentText] = line.trim().split(/\s+/);
+    const child = Number(childText);
+    const parent = Number(parentText);
+    if (!Number.isInteger(child) || !Number.isInteger(parent)) continue;
+    if (!childrenByParent.has(parent)) childrenByParent.set(parent, []);
+    childrenByParent.get(parent).push(child);
+  }
+  const descendants = [];
+  const stack = [...(childrenByParent.get(rootPid) || [])];
+  while (stack.length) {
+    const child = stack.pop();
+    if (!child || descendants.includes(child)) continue;
+    descendants.push(child);
+    stack.push(...(childrenByParent.get(child) || []));
+  }
+  return descendants;
+}
+
+function killPid(pid, signal) {
+  try {
+    process.kill(pid, signal);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function terminateProcessTree(proc, signal = "SIGTERM") {
@@ -46,6 +89,18 @@ export function terminateProcessTree(proc, signal = "SIGTERM") {
       if (result.status === 0) return;
     } catch {
       // Fall through to proc.kill below.
+    }
+  }
+  if (process.platform !== "win32") {
+    const pid = Number(proc.pid);
+    if (Number.isInteger(pid) && pid > 0) {
+      // Managed Codex/OpenCode spawn long-lived MCP children. Kill the
+      // process group first, then explicitly walk descendants as a fallback
+      // for processes that escaped the group or were orphaned during shutdown.
+      killPid(-pid, signal);
+      for (const childPid of descendantPids(pid).reverse()) {
+        killPid(childPid, signal);
+      }
     }
   }
   try {

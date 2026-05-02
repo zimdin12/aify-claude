@@ -348,6 +348,52 @@ class ApiV2RegressionTests(unittest.TestCase):
         self.assertEqual(by_id["windows:test-host:default"]["status"], "online")
         self.assertEqual(by_id["wsl:test-host:default"]["status"], "offline")
 
+    def test_managed_agent_status_follows_environment_not_child_heartbeat(self):
+        self._heartbeat_environment(
+            id="wsl:test-host:default",
+            bridgeId="env-bridge",
+            machineId="wsl-Ubuntu:test-host",
+        )
+        self._register(
+            "managed-coder",
+            role="coder",
+            runtime="codex",
+            machineId="wsl-Ubuntu:test-host",
+            cwd="/workspace/project",
+            launchMode="managed",
+            sessionMode="managed",
+            capabilities=["managed-run", "resume", "interrupt", "steer", "spawn"],
+            status="active",
+        )
+        self._execute(
+            "UPDATE agents SET runtime_state = ? WHERE id = ?",
+            (
+                json.dumps({
+                    "bridgeInstanceId": "env-bridge",
+                    "environmentId": "wsl:test-host:default",
+                    "threadId": "thread-1",
+                }),
+                "managed-coder",
+            ),
+        )
+        self._execute(
+            "UPDATE environments SET last_seen = '2020-01-01T00:00:00Z' WHERE id = ?",
+            ("wsl:test-host:default",),
+        )
+
+        # Stale managed Codex MCP children can outlive the real environment
+        # bridge. Their heartbeat must not make the teammate look reachable.
+        heartbeat = self.client.post(
+            "/api/v1/agents/managed-coder/heartbeat",
+            json={"bridgeId": "orphan-child-mcp"},
+        )
+        self.assertEqual(heartbeat.status_code, 200, heartbeat.text)
+
+        listed = self.client.get("/api/v1/agents")
+        self.assertEqual(listed.status_code, 200, listed.text)
+        agent = listed.json()["agents"]["managed-coder"]
+        self.assertEqual(agent["statusRaw"], "offline")
+
     def test_send_does_not_steer_into_offline_environment_active_run(self):
         self._heartbeat_environment(
             id="wsl:test-host:default",

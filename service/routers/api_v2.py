@@ -524,33 +524,9 @@ def _agent_execution_mode(row, requested_runtime: Optional[str] = None) -> tuple
 
 
 async def _managed_environment_unavailable_reason(db, row) -> Optional[str]:
-    if not row or _normalize_session_mode(row["session_mode"] or "resident") != "managed":
-        return None
-    runtime_state = _json_loads_or(row["runtime_state"], {})
-    environment_id = str(runtime_state.get("environmentId") or "").strip()
-    if not environment_id:
-        session_cursor = await db.execute(
-            """
-            SELECT environment_id
-            FROM agent_sessions
-            WHERE agent_id = ?
-            ORDER BY last_seen DESC
-            LIMIT 1
-            """,
-            (row["id"],),
-        )
-        session = await session_cursor.fetchone()
-        environment_id = str((session["environment_id"] if session else "") or "").strip()
+    environment_id, env_status, _env_bridge = await _managed_environment_status(db, row)
     if not environment_id:
         return None
-
-    settings = await _load_settings(db)
-    env_cursor = await db.execute("SELECT * FROM environments WHERE id = ?", (environment_id,))
-    env = await env_cursor.fetchone()
-    env_status = _environment_effective_status(
-        env,
-        offline_seconds=settings.get("environment_offline_seconds", 90),
-    ) if env else "offline"
     if env_status not in {"online", "degraded"}:
         return f'managed environment "{environment_id}" is {env_status}'
     return None
@@ -869,7 +845,7 @@ async def _fail_pending_controls_for_run(
 def _status_with_dispatch(status: str, dispatch_state: Optional[dict[str, Any]]) -> str:
     if not dispatch_state:
         return status
-    if dispatch_state.get("hasActiveRun") and status not in _MANUAL_STATUSES and status != "stale":
+    if dispatch_state.get("hasActiveRun") and status not in _MANUAL_STATUSES and status not in {"stale", "offline"}:
         return "working"
     return status
 
@@ -945,6 +921,38 @@ def _environment_record_to_dict(row, *, offline_seconds: int = 90) -> dict[str, 
         "registeredAt": row["registered_at"] or "",
         "lastSeen": row["last_seen"] or "",
     }
+
+
+async def _managed_environment_status(db, row) -> tuple[str, str, str]:
+    if not row or _normalize_session_mode(row["session_mode"] or "resident") != "managed":
+        return "", "", ""
+    runtime_state = _json_loads_or(row["runtime_state"], {})
+    environment_id = str(runtime_state.get("environmentId") or "").strip()
+    if not environment_id:
+        session_cursor = await db.execute(
+            """
+            SELECT environment_id
+            FROM agent_sessions
+            WHERE agent_id = ?
+            ORDER BY last_seen DESC
+            LIMIT 1
+            """,
+            (row["id"],),
+        )
+        session = await session_cursor.fetchone()
+        environment_id = str((session["environment_id"] if session else "") or "").strip()
+    if not environment_id:
+        return "", "", ""
+
+    settings = await _load_settings(db)
+    env_cursor = await db.execute("SELECT * FROM environments WHERE id = ?", (environment_id,))
+    env = await env_cursor.fetchone()
+    env_status = _environment_effective_status(
+        env,
+        offline_seconds=settings.get("environment_offline_seconds", 90),
+    ) if env else "offline"
+    env_bridge = str((env["bridge_id"] if env else "") or "").strip()
+    return environment_id, env_status, env_bridge
 
 
 async def _repair_spawn_requests_from_initial_dispatch_failures(db) -> int:
@@ -1199,8 +1207,12 @@ def _agent_session_to_dict(row) -> dict[str, Any]:
     }
 
 
-async def _compute_agent_status(row, idle_minutes: int, offline_minutes: int):
+async def _compute_agent_status(row, idle_minutes: int, offline_minutes: int, db=None):
     status = row["status"]
+    if db is not None and status not in _MANUAL_STATUSES:
+        _environment_id, env_status, _env_bridge = await _managed_environment_status(db, row)
+        if env_status and env_status not in {"online", "degraded"}:
+            return "offline"
     if status not in _MANUAL_STATUSES and status != "stale":
         try:
             from datetime import datetime, timezone, timedelta
@@ -1239,7 +1251,7 @@ async def _get_recipient_info(db, recipient_id: str):
     if not row:
         return None
     settings = await _load_settings(db)
-    status = await _compute_agent_status(row, settings.get("idle_minutes", 5), settings.get("offline_minutes", 30))
+    status = await _compute_agent_status(row, settings.get("idle_minutes", 5), settings.get("offline_minutes", 30), db)
     uc = await db.execute(
         "SELECT COUNT(*) FROM messages m LEFT JOIN read_receipts rr ON m.id = rr.message_id AND rr.agent_id = ? WHERE m.to_agent = ? AND rr.message_id IS NULL",
         (recipient_id, recipient_id)
@@ -1282,6 +1294,7 @@ async def _preflight_live_send_recipients(
             row,
             settings.get("idle_minutes", 5),
             settings.get("offline_minutes", 30),
+            db,
         )
         effective_status = _status_with_dispatch(base_status, dispatch_state)
 
@@ -1863,6 +1876,7 @@ async def _create_dispatch_runs(
                         recipient_row,
                         settings.get("idle_minutes", 5),
                         settings.get("offline_minutes", 30),
+                        db,
                     )
                     dispatch_state = await _get_dispatch_state_for_agent(db, recipient_id)
                     has_active = bool(dispatch_state.get("hasActiveRun"))
@@ -3572,7 +3586,7 @@ async def list_agents(request: Request):
                 (aid, aid)
             )
             unread = (await c.fetchone())[0]
-            status = await _compute_agent_status(a, idle_minutes, offline_minutes)
+            status = await _compute_agent_status(a, idle_minutes, offline_minutes, db)
             dispatch_state = await _get_dispatch_state_for_agent(db, aid)
             result[aid] = _agent_record_to_dict(a, status, unread, dispatch_state)
         return {"agents": result}
@@ -3787,7 +3801,7 @@ async def get_agent(agent_id: str, request: Request):
             (agent_id, agent_id)
         )
         unread = (await uc.fetchone())[0]
-        status = await _compute_agent_status(row, settings.get("idle_minutes", 5), settings.get("offline_minutes", 30))
+        status = await _compute_agent_status(row, settings.get("idle_minutes", 5), settings.get("offline_minutes", 30), db)
         dispatch_state = await _get_dispatch_state_for_agent(db, agent_id)
         return {"ok": True, "agentId": agent_id, "agent": _agent_record_to_dict(row, status, unread, dispatch_state)}
     finally:
@@ -4159,7 +4173,7 @@ async def control_agent(agent_id: str, req: AgentControlRequest, request: Reques
         await db.commit()
         updated = await (await db.execute("SELECT * FROM agents WHERE id = ?", (agent_id,))).fetchone()
         settings = await _load_settings(db)
-        status = await _compute_agent_status(updated, settings.get("idle_minutes", 5), settings.get("offline_minutes", 30))
+        status = await _compute_agent_status(updated, settings.get("idle_minutes", 5), settings.get("offline_minutes", 30), db)
         dispatch_state = await _get_dispatch_state_for_agent(db, agent_id)
         ws = await _get_ws(request)
         if ws:
@@ -6379,7 +6393,7 @@ async def get_analytics(request: Request):
             mode = _agent_wake_mode(row)
             if mode != "message-only" and mode != "disabled":
                 live_agents += 1
-            status = await _compute_agent_status(row, DEFAULT_SETTINGS["idle_minutes"], DEFAULT_SETTINGS["offline_minutes"])
+            status = await _compute_agent_status(row, DEFAULT_SETTINGS["idle_minutes"], DEFAULT_SETTINGS["offline_minutes"], db)
             if not status.startswith("offline") and not status.startswith("stale"):
                 online_agents += 1
             if status.startswith("working"):
